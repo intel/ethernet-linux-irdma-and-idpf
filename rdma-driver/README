@@ -1,0 +1,182 @@
+==============================================================================
+irdma - Linux* RDMA Driver for the 2100 Series Intel(R) Ethernet Controllers for Google Cloud Only
+==============================================================================
+
+--------
+Contents
+--------
+- Overview
+- Prerequisites
+- Build
+- Confirm RDMA functionality
+- License
+- Trademarks
+
+--------
+Overview
+--------
+
+The irdma Linux* driver enables RDMA functionality on RDMA-capable Intel
+network devices. Devices supported by this driver:
+   - Intel(R) Ethernet Controller 2100 Series (Google Cloud Only)
+
+Intel Ethernet 2100 Series for Google Cloud supports the RoCEv2 RDMA transport.
+
+The corresponding LAN driver (idpf) must be built from source included in
+this release and installed on your system prior to installing irdma.
+
+Note: This driver has not been tested on previous versions of Intel Ethernet hardware
+and is expected to be unstable at this time. This includes X722 and E810 devices.
+
+-------------
+Prerequisites
+-------------
+
+- Compile and install the Intel Ethernet 2100 LAN IDPF driver from source included in
+  this release. Refer to the idpf driver README for installation
+  instructions.
+
+-------------
+Build
+-------------
+
+To build and install the irdma driver
+
+1. Decompress the irdma driver archive:
+        tar zxf irdma-<version>.tgz
+
+2. Build and install the RDMA driver:
+        cd irdma-<version>
+        ./build.sh
+
+3. Load the driver:
+        insmod src/irdma/irdma.ko
+
+4. Uninstall any previous versions of rdma-core user-space libraries.
+   For example, in RHEL:
+        yum erase rdma-core
+
+        If yum erase doesn't work (on RHEL 8.4 it fails with "Error: The operation would result in removing the following protected packages: systemd"),
+        use the following command to uninstall the rdma-core packages:
+
+        rpm -e --nodeps ibacm iwpmd libibumad libibverbs librdmacm srp_daemon infiniband-diags 2>/dev/null
+        rpm -e --nodeps rdma-core
+
+        Note: The errors in post-uninstall scritps of these packages can be ignored with 2>/dev/null.
+              The packages provided to rpm -e --nodeps above could be looked up with the following command: rpm -e rdma-core
+              The output is "error: Failed dependencies: rdma-core(x86-64) =  is needed by (installed) rdma-core-devel
+                                                         rdma-core(x86-64) =  is needed by (installed) iwpmd
+                                                         rdma-core(x86-64) =  is needed by (installed) libibumad
+                                                         rdma-core(x86-64) =  is needed by (installed) libibverbs
+                                                         rdma-core(x86-64) =  is needed by (installed) ibacm
+                                                         rdma-core(x86-64) =  is needed by (installed) librdmacm
+                                                         rdma-core(x86-64) =  is needed by (installed) srp_daemon"
+
+              To confirm that rdma-core is uninstalled after rpm -e --nodeps run: yum erase rdma-core
+              The output should look like this: "No match for argument: rdma-core No packages marked for removal... Nothing to do. Complete!"
+
+5. Obtain, patch, build, and install rdma-core user space libraries:
+
+        # Download rdma-core-35.0.tar.gz from GitHub
+        wget https://github.com/linux-rdma/rdma-core/releases/download/v35.0/rdma-core-35.0.tar.gz
+        # Apply patch provider-irdma-35.0.patch to rdma-core
+        tar -xzvf rdma-core-35.0.tar.gz
+        cd rdma-core-35.0
+        patch -p2 < <repo_path>/provider-irdma/provider-irdma-35.0.patch
+        # Make sure directories rdma-core/redhat and contents are under group 'root'
+        cd ..
+        chgrp -R root rdma-core-35.0/redhat
+        tar -zcvf rdma-core-35.0.tar.gz rdma-core-35.0
+        # Build rdma-core
+        mkdir -p ~/rpmbuild/SOURCES
+        mkdir -p ~/rpmbuild/SPECS
+        cp rdma-core-35.0.tar.gz ~/rpmbuild/SOURCES/
+        cd ~/rpmbuild/SOURCES
+        tar -xzvf rdma-core-35.0.tar.gz
+        cp ~/rpmbuild/SOURCES/rdma-core-35.0/redhat/rdma-core.spec ~/rpmbuild/SPECS/
+        cd ~/rpmbuild/SPECS/
+        rpmbuild -ba rdma-core.spec
+        # Install RPMs
+        cd ~/rpmbuild/RPMS/x86_64
+        yum install *35.0*.rpm
+
+--------------------------
+Confirm RDMA functionality
+--------------------------
+
+After successful installation, RDMA devices are listed in the output of
+"ibv_devices". For example:
+    # ibv_devices
+    device                 node GUID
+    ------              ----------------
+    rdmap175s0f0        40a6b70b6f300000
+    rdmap175s0f1        40a6b70b6f310000
+
+Notes:
+    - Device names may differ depending on OS or kernel.
+
+Each RDMA device is associated with a network interface. The sysfs filesystem
+can help show how these devices are related. For example:
+    - To show RDMA devices associated with the "ens801f0" network interface:
+         # ls /sys/class/net/ens801f0/device/infiniband/
+         rdmap175s0f0
+    - To show the network interface associated with the "rdmap175s0f0" RDMA
+      device:
+         # ls /sys/class/infiniband/rdmap175s0f0/device/net/
+         ens801f0
+
+Before running RDMA applications, ensure that all hosts have IP addresses
+assigned to the network interface associated with the RDMA device. The RDMA
+device uses the IP configuration from the corresponding network interface.
+There is no additional configuration required for the RDMA device.
+
+To confirm RDMA functionality, run rping:
+
+    1) Start the rping server:
+          rping -sdvVa [server IP address]
+
+    2) Start the rping client:
+          rping -cdvVa [server IP address] -C 10
+
+    3) rping will run for 10 iterations (-C 10) and print data payloads on
+       the console.
+
+
+-------
+License
+-------
+This software is available to you under a choice of one of two
+licenses. You may choose to be licensed under the terms of the GNU
+General Public License (GPL) Version 2, available from the file
+COPYING in the main directory of this source tree, or the
+OpenFabrics.org BSD license below:
+
+  Redistribution and use in source and binary forms, with or
+  without modification, are permitted provided that the following
+  conditions are met:
+
+  - Redistributions of source code must retain the above
+    copyright notice, this list of conditions and the following
+    disclaimer.
+
+  - Redistributions in binary form must reproduce the above
+    copyright notice, this list of conditions and the following
+    disclaimer in the documentation and/or other materials
+    provided with the distribution.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+----------
+Trademarks
+----------
+Intel is a trademark or registered trademark of Intel Corporation
+or its subsidiaries in the United States and/or other countries.
+
+* Other names and brands may be claimed as the property of others
