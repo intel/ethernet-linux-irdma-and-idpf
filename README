@@ -1,0 +1,6 @@
+This release includes Intel(R) Ethernet 2100 Series Linux drivers
+for idpf and irdma (Google Cloud Only).
+
+Please note that each component (idpf and irdma) has its own License and README.
+
+Active development will not occur here.
