@@ -3488,11 +3488,29 @@ static void dump_qp_ae_info(struct irdma_qp *iwqp)
 
 		return;
 	}
-
-	ibdev_err(&iwdev->ibdev,
-		  "qp async event qp_id = %d, ae = 0x%x (%s), src = %d, ae_cnt = %d\n",
-		  iwqp->sc_qp.qp_uk.qp_id, ae, irdma_get_ae_desc(ae),
-		  iwqp->ae_src, atomic_read(&ae_info->ae_cnt));
+	switch (ae) {
+	case IRDMA_AE_BAD_CLOSE:
+	case IRDMA_AE_LLP_CLOSE_COMPLETE:
+	case IRDMA_AE_LLP_CONNECTION_RESET:
+	case IRDMA_AE_LLP_FIN_RECEIVED:
+	case IRDMA_AE_LLP_SYN_RECEIVED:
+	case IRDMA_AE_LLP_TERMINATE_RECEIVED:
+	case IRDMA_AE_LLP_DOUBT_REACHABILITY:
+	case IRDMA_AE_LLP_CONNECTION_ESTABLISHED:
+	case IRDMA_AE_RESET_SENT:
+	case IRDMA_AE_TERMINATE_SENT:
+	case IRDMA_AE_RESET_NOT_SENT:
+		ibdev_dbg(&iwdev->ibdev,
+			  "AEQ: qp async avent qp_id = %d, ae = 0x%x (%s), src = %d, ae_cnt = %d\n",
+			  iwqp->sc_qp.qp_uk.qp_id, ae, irdma_get_ae_desc(ae),
+			  iwqp->ae_src, atomic_read(&ae_info->ae_cnt));
+		break;
+	default:
+		ibdev_err(&iwdev->ibdev,
+			  "qp async event qp_id = %d, ae = 0x%x (%s), src = %d, ae_cnt = %d\n",
+			  iwqp->sc_qp.qp_uk.qp_id, ae, irdma_get_ae_desc(ae),
+			  iwqp->ae_src, atomic_read(&ae_info->ae_cnt));
+	}
 }
 
 /**
@@ -3730,7 +3748,7 @@ int irdma_accept(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	iwpd = iwqp->iwpd;
 	tagged_offset = (uintptr_t)iwqp->ietf_mem.va;
 	ibmr = irdma_reg_phys_mr(&iwpd->ibpd, iwqp->ietf_mem.pa, buf_len,
-				 IB_ACCESS_LOCAL_WRITE, &tagged_offset);
+				 IB_ACCESS_LOCAL_WRITE, &tagged_offset, false);
 	if (IS_ERR(ibmr)) {
 		ret = -ENOMEM;
 		goto error;

@@ -683,7 +683,8 @@ static void irdma_remove(struct auxiliary_device *aux_dev)
 	struct irdma_device *iwdev = auxiliary_get_drvdata(aux_dev);
 	u8 rdma_ver = iwdev->rf->rdma_ver;
 
-	if (rdma_ver == IRDMA_GEN_2 && !iwdev->rf->ftype) {
+	if (rdma_ver == IRDMA_GEN_2 && !iwdev->rf->ftype &&
+	    rdma_protocol_roce(&iwdev->ibdev, 1)) {
 		cancel_delayed_work_sync(&iwdev->rf->dwork_cqp_poll);
 		irdma_free_stag(iwdev->rf->iwdev, iwdev->rf->chk_stag);
 	}
@@ -973,7 +974,8 @@ static int irdma_probe(struct auxiliary_device *aux_dev, const struct auxiliary_
 	ibdev_dbg(&iwdev->ibdev, "INIT: Gen[%d] PF[%d] device probe success\n",
 		  rf->rdma_ver, PCI_FUNC(rf->pcidev->devfn));
 
-	if (rf->rdma_ver == IRDMA_GEN_2 && !rf->ftype) {
+	if (rf->rdma_ver == IRDMA_GEN_2 && !rf->ftype &&
+	    rdma_protocol_roce(&iwdev->ibdev, 1)) {
 		INIT_DELAYED_WORK(&rf->dwork_cqp_poll, cqp_poll_worker);
 		rf->chk_stag = irdma_create_stag(rf->iwdev);
 		rf->used_mrs++;

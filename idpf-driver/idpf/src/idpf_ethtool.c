@@ -1525,8 +1525,13 @@ static void idpf_get_drvinfo(struct net_device *netdev,
  *
  * Set the Tx/Rx timestamp filters
  */
+#ifdef HAVE_ETHTOOL_KERNEL_TS_INFO
+static void idpf_set_timestamp_filters(struct idpf_vport *vport,
+				       struct kernel_ethtool_ts_info *info)
+#else
 static void idpf_set_timestamp_filters(struct idpf_vport *vport,
 				       struct ethtool_ts_info *info)
+#endif /* HAVE_ETHTOOL_KERNEL_TS_INFO */
 {
 	if (vport->adapter->ptp.tx_tstamp_access == IDPF_PTP_NONE ||
 	    !vport->tx_tstamp_caps)
@@ -1548,8 +1553,13 @@ static void idpf_set_timestamp_filters(struct idpf_vport *vport,
  * @netdev: network interface device structure
  * @info: ethtool timestamping info structure
  */
+#ifdef HAVE_ETHTOOL_KERNEL_TS_INFO
+static int idpf_get_ts_info(struct net_device *netdev,
+			    struct kernel_ethtool_ts_info *info)
+#else
 static int idpf_get_ts_info(struct net_device *netdev,
 			    struct ethtool_ts_info *info)
+#endif /* HAVE_ETHTOOL_KERNEL_TS_INFO */
 {
 	struct idpf_adapter *adapter = idpf_netdev_to_adapter(netdev);
 	struct idpf_vport *vport;

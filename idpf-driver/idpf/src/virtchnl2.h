@@ -128,6 +128,7 @@ enum virtchnl2_op {
 	VIRTCHNL2_OP_PTP_GET_VPORT_TX_TSTAMP_CAPS	= 548,
 	VIRTCHNL2_OP_GET_LAN_MEMORY_REGIONS		= 549,
 	VIRTCHNL2_OP_GET_OEM_CAPS			= 4999,
+	VIRTCHNL2_OP_OEM_RCA                            = 5000,
 };
 
 #define VIRTCHNL2_RDMA_INVALID_QUEUE_IDX	0xFFFF
@@ -277,6 +278,7 @@ enum virtchnl2_cap_other {
 	VIRTCHNL2_CAP_MISS_COMPL_TAG		= BIT_ULL(20),
 	VIRTCHNL2_CAP_FLOW_STEER		= BIT_ULL(21),
 	VIRTCHNL2_CAP_LAN_MEMORY_REGIONS	= BIT_ULL(22),
+	VIRTCHNL2_CAP_TX_CMPL_TSTMP		= BIT_ULL(23),
 	/* This must be the last capability */
 	VIRTCHNL2_CAP_OEM			= BIT_ULL(63),
 };
@@ -325,6 +327,7 @@ enum virtchnl2_flow_types {
  * selected according to this identification.
  */
 #define VIRTCHNL2_CAP_OEM_P2P			BIT(0)
+#define VIRTCHNL2_CAP_OEM_RCA			BIT(1)
 /* Other OEM specific caps */
 
 /* Underlying device type */
@@ -716,6 +719,8 @@ VIRTCHNL2_CHECK_STRUCT_LEN(8, virtchnl2_version_info);
  *				'num_allocated_vectors'	should be used only
  *				for LAN. Driver can request the max vectors
  *				that is the sum of the two fields, to the OS.
+ * @tx_cmpl_tstamp_ns_s: Number of left bit shifts to convert Tx completion
+ *			 descriptor timestamp in nanoseconds.
  * @pad1: Padding for future extensions
  *
  * Dataplane driver sends this message to CP to negotiate capabilities and
@@ -766,7 +771,8 @@ struct virtchnl2_get_capabilities {
 	u8 min_sso_packet_len;
 	u8 max_hdr_buf_per_lso;
 	__le16 num_rdma_allocated_vectors;
-	u8 pad1[8];
+	u8 tx_cmpl_tstamp_ns_s;
+	u8 pad1[7];
 };
 VIRTCHNL2_CHECK_STRUCT_LEN(80, virtchnl2_get_capabilities);
 
@@ -2269,6 +2275,8 @@ static inline const char *virtchnl2_op_str(__le32 v_opcode)
 		return "VIRTCHNL2_OP_DEL_QUEUE_GROUPS";
 	case VIRTCHNL2_OP_GET_PORT_STATS:
 		return "VIRTCHNL2_OP_GET_PORT_STATS";
+	case VIRTCHNL2_OP_OEM_RCA:
+		return "VIRTCHNL2_OP_OEM_RCA";
 	case VIRTCHNL2_OP_GET_EDT_CAPS:
 		return "VIRTCHNL2_OP_GET_EDT_CAPS";
 	case VIRTCHNL2_OP_PTP_GET_CAPS:

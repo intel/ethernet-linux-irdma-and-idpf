@@ -168,6 +168,9 @@ static void idpf_tx_buf_rel_all(struct idpf_queue *txq)
  */
 static void idpf_tx_desc_rel(struct idpf_queue *txq, bool bufq)
 {
+	if (!txq)
+		return;
+
 	if (bufq) {
 		idpf_tx_buf_rel_all(txq);
 #ifdef HAVE_XDP_SUPPORT
@@ -203,7 +206,7 @@ static void idpf_tx_desc_rel_all(struct idpf_q_grp *q_grp)
 	for (i = 0; i < q_grp->num_txq; i++)
 		idpf_tx_desc_rel(q_grp->txqs[i], true);
 
-	if (!idpf_is_queue_model_split(q_grp->txq_model))
+	if (!q_grp->complqs)
 		return;
 
 	for (i = 0; i < q_grp->num_complq; i++)
@@ -446,7 +449,7 @@ static void idpf_rx_buf_rel_all(struct idpf_queue *q)
 #endif /* HAVE_NETDEV_BPF_XSK_POOL */
 			idpf_rx_buf_rel(q, &q->rx.bufs[i]);
 
-	if (q->rx_hsplit_en)
+	if (q->rx.hdr_buf_va)
 		idpf_rx_hdr_buf_rel(q);
 
 	kfree(q->rx.bufs);
@@ -856,15 +859,13 @@ static void idpf_tx_queue_rel_all(struct idpf_q_grp *q_grp)
 {
 	int i;
 
+	/* If we failed to allcoate txqs, no need to release complqs since they
+	 * won't have been allocated.
+	 */
+	if (!q_grp->txqs)
+		return;
+
 	idpf_tx_desc_rel_all(q_grp);
-
-	for (i = 0; i < q_grp->num_complq; i++) {
-		kfree(q_grp->complqs[i].tx.txqs);
-		q_grp->complqs[i].tx.txqs = NULL;
-	}
-
-	kfree(q_grp->complqs);
-	q_grp->complqs = NULL;
 
 	for (i = 0; i < q_grp->num_txq; i++) {
 		kfree(q_grp->txqs[i]);
@@ -873,6 +874,17 @@ static void idpf_tx_queue_rel_all(struct idpf_q_grp *q_grp)
 
 	kfree(q_grp->txqs);
 	q_grp->txqs = NULL;
+
+	if (!q_grp->complqs)
+		return;
+
+	for (i = 0; i < q_grp->num_complq; i++) {
+		kfree(q_grp->complqs[i].tx.txqs);
+		q_grp->complqs[i].tx.txqs = NULL;
+	}
+
+	kfree(q_grp->complqs);
+	q_grp->complqs = NULL;
 }
 
 /**
@@ -917,6 +929,9 @@ static void idpf_rxq_rel(struct idpf_q_grp *q_grp, struct idpf_queue *rxq,
  */
 static void idpf_bufq_rel(struct idpf_queue *bufq)
 {
+	if (!bufq)
+		return;
+
 	idpf_rx_buf_rel_all(bufq);
 
 	if (!bufq->desc_ring)
@@ -937,8 +952,15 @@ static void idpf_rx_queue_rel_all(struct idpf_q_grp *q_grp)
 	if (!idpf_is_queue_model_split(q_grp->rxq_model))
 		goto rxq_rel;
 
+	if (!q_grp->bufqs)
+		goto rxq_rel;
+
 	for (i = 0; i < q_grp->num_bufq; i++) {
 		idpf_bufq_rel(&q_grp->bufqs[i]);
+
+		if (!q_grp->refillqs)
+			continue;
+
 		kfree(q_grp->refillqs[i].ring);
 	}
 
@@ -948,7 +970,13 @@ static void idpf_rx_queue_rel_all(struct idpf_q_grp *q_grp)
 	q_grp->refillqs = NULL;
 
 rxq_rel:
+	if (!q_grp->rxqs)
+		return;
+
 	for (i = 0; i < q_grp->num_rxq; i++) {
+		if (!q_grp->rxqs[i])
+			continue;
+
 		idpf_rxq_rel(q_grp, q_grp->rxqs[i], q_grp->bufq_per_rxq);
 #ifdef HAVE_XDP_BUFF_RXQ
 		if (xdp_rxq_info_is_reg(&q_grp->rxqs[i]->xdp_rxq))
@@ -1215,6 +1243,10 @@ static int idpf_txq_alloc(struct idpf_vport *vport, struct idpf_q_grp *q_grp)
 		txq->tx_max_bufs = idpf_get_max_tx_bufs(adapter);
 		txq->crc_enable = vport->crc_enable;
 		txq->tx_min_pkt_len = idpf_get_min_tx_pkt_len(adapter);
+		if (adapter->tx_compl_tstamp_gran_s) {
+			txq->tx.cmpl_tstamp_ns_s = adapter->tx_compl_tstamp_gran_s;
+			txq->tstmp_en = true;
+		}
 
 		if (flow_sch_en) {
 			set_bit(__IDPF_Q_FLOW_SCH_EN, txq->flags);
@@ -1753,6 +1785,75 @@ static void idpf_tx_splitq_clean_hdr(struct idpf_queue *tx_q,
 }
 
 /**
+ * idpf_tx_hw_tstamp - report hw timestamp from completion desc to stack
+ * @txq: pointer to txq struct
+ * @skb: original skb
+ * @desc_ts: pointer to 3 byte timestamp from descriptor
+ */
+static void idpf_tx_hw_tstamp(struct idpf_queue *txq, struct sk_buff *skb,
+			      u8 *desc_ts)
+{
+	struct skb_shared_hwtstamps hwtstamps = { };
+	u64 ext_tstamp;
+	u32 tstamp;
+
+	if (likely(!(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) ||
+		   !txq->tstmp_en))
+		return;
+
+	tstamp = (desc_ts[0] | (desc_ts[1] << 8) | (desc_ts[2] << 16));
+	tstamp = tstamp << txq->tx.cmpl_tstamp_ns_s;
+
+	ext_tstamp =
+		idpf_ptp_tstamp_extend_32b_to_64b(txq->cached_phctime, tstamp);
+	hwtstamps.hwtstamp = ns_to_ktime(ext_tstamp);
+
+	skb_tstamp_tx(skb, &hwtstamps);
+}
+
+/**
+ * idpf_tx_read_tstamp - schedule a work to read Tx timestamp value
+ * @txq: queue to read the timestamp from
+ * @skb: socket buffer to provide Tx timestamp value
+ *
+ * Schedule a work to read Tx timestamp value generated once the packet is
+ * transmitted.
+ */
+static void idpf_tx_read_tstamp(struct idpf_queue *txq, struct sk_buff *skb)
+{
+	struct idpf_ptp_vport_tx_tstamp_caps *tx_tstamp_caps;
+	struct idpf_ptp_tx_tstamp_status *tx_tstamp_status;
+	enum idpf_ptp_access access;
+	int i;
+
+	if (!txq->vport->tx_tstamp_caps)
+		return;
+
+	access = txq->vport->adapter->ptp.tx_tstamp_access;
+	tx_tstamp_caps = txq->vport->tx_tstamp_caps;
+
+	for (i = 0; i < tx_tstamp_caps->num_entries; i++) {
+		tx_tstamp_status = &tx_tstamp_caps->tx_tstamp_status[i];
+		if (tx_tstamp_status->state == IDPF_PTP_FREE) {
+			tx_tstamp_status->skb = skb;
+			tx_tstamp_status->state = IDPF_PTP_REQUEST;
+
+			if (access == IDPF_PTP_MAILBOX) {
+				/* Fetch timestamp from completion descriptor through
+				 * virtchnl msg to report to stack.
+				 */
+				queue_work(system_unbound_wq,
+					   &txq->vport->tstamp_task);
+			} else if (access == IDPF_PTP_DIRECT) {
+				idpf_ptp_get_tx_tstamp(txq->vport);
+			}
+
+			break;
+		}
+	}
+}
+
+/**
  * idpf_tx_clean_stashed_bufs - clean bufs that were stored for
  * out of order completions
  * @txq: queue to clean
@@ -1765,11 +1866,8 @@ static void
 idpf_tx_clean_stashed_bufs(struct idpf_queue *txq, u16 compl_tag, u8 *desc_ts,
 			   struct idpf_cleaned_stats *cleaned, int budget)
 {
-	struct idpf_ptp_vport_tx_tstamp_caps *tx_tstamp_caps = txq->vport->tx_tstamp_caps;
-	struct idpf_ptp_tx_tstamp_status *tx_tstamp_status;
 	struct idpf_tx_stash *stash;
 	struct hlist_node *tmp_buf;
-	u16 i;
 
 	/* Buffer completion */
 	hash_for_each_possible_safe(txq->sched_buf_hash, stash, tmp_buf,
@@ -1784,21 +1882,7 @@ idpf_tx_clean_stashed_bufs(struct idpf_queue *txq, u16 compl_tag, u8 *desc_ts,
 			if (!(skb_shinfo(stash->buf.skb)->tx_flags & SKBTX_IN_PROGRESS))
 				goto skip_tx_tstamp;
 
-			for (i = 0; i < tx_tstamp_caps->num_entries; i++) {
-				tx_tstamp_status = &tx_tstamp_caps->tx_tstamp_status[i];
-				if (tx_tstamp_status->state == IDPF_PTP_FREE) {
-					tx_tstamp_status->skb = stash->buf.skb;
-					tx_tstamp_status->state = IDPF_PTP_REQUEST;
-
-					/* Fetch timestamp from completion
-					 * descriptor through virtchnl msg to
-					 * report to stack.
-					 */
-					queue_work(system_unbound_wq,
-						   &txq->vport->tstamp_task);
-					break;
-				}
-			}
+			idpf_tx_read_tstamp(txq, stash->buf.skb);
 skip_tx_tstamp:
 			idpf_tx_splitq_clean_hdr(txq, &stash->buf, cleaned,
 						 budget);
@@ -1806,6 +1890,11 @@ skip_tx_tstamp:
 		case IDPF_TX_BUF_SKB:
 			if (unlikely(stash->miss_pkt))
 				del_timer(&stash->reinject_timer);
+
+			/* Fetch timestamp from completion descriptor to report
+			 * to stack.
+			 */
+			idpf_tx_hw_tstamp(txq, stash->buf.skb, desc_ts);
 
 #ifdef HAVE_XDP_SUPPORT
 			fallthrough;
@@ -2080,12 +2169,9 @@ static bool idpf_tx_clean_buf_ring(struct idpf_queue *txq, u16 compl_tag,
 				   struct idpf_cleaned_stats *cleaned,
 				   u8 *desc_ts, int budget)
 {
-	struct idpf_ptp_vport_tx_tstamp_caps *tx_tstamp_caps = txq->vport->tx_tstamp_caps;
-	struct idpf_ptp_tx_tstamp_status *tx_tstamp_status;
 	u16 idx = compl_tag & txq->compl_tag_bufid_m;
 	u16 ntc, eop_idx, orig_idx = idx;
 	struct idpf_tx_buf *tx_buf;
-	u16 i;
 
 	tx_buf = &txq->tx.bufs[idx];
 
@@ -2097,25 +2183,17 @@ static bool idpf_tx_clean_buf_ring(struct idpf_queue *txq, u16 compl_tag,
 		if (!(skb_shinfo(tx_buf->skb)->tx_flags & SKBTX_IN_PROGRESS))
 			goto skip_tx_tstamp;
 
-		for (i = 0; i < tx_tstamp_caps->num_entries; i++) {
-			tx_tstamp_status = &tx_tstamp_caps->tx_tstamp_status[i];
-			if (tx_tstamp_status->state == IDPF_PTP_FREE) {
-				tx_tstamp_status->skb = tx_buf->skb;
-				tx_tstamp_status->state = IDPF_PTP_REQUEST;
-
-				/* Fetch timestamp from completion descriptor
-				 * through virtchnl msg to report to stack.
-				 */
-				queue_work(system_unbound_wq,
-					   &txq->vport->tstamp_task);
-				break;
-			}
-		}
+		idpf_tx_read_tstamp(txq, tx_buf->skb);
 skip_tx_tstamp:
 		eop_idx = tx_buf->eop_idx;
 		idpf_tx_splitq_clean_hdr(txq, tx_buf, cleaned, budget);
 		break;
 	case IDPF_TX_BUF_SKB:
+		/* fetch timestamp from completion
+		 * descriptor to report to stack
+		 */
+		idpf_tx_hw_tstamp(txq, tx_buf->skb, desc_ts);
+
 #ifdef HAVE_XDP_SUPPORT
 		fallthrough;
 	case IDPF_TX_BUF_XDP:
@@ -3400,7 +3478,7 @@ static bool idpf_tx_tstamp(struct idpf_queue *tx_q, u8 *index,
 		return false;
 
 	access = tx_q->vport->adapter->ptp.tx_tstamp_access;
-	if (access != IDPF_PTP_MAILBOX)
+	if (access == IDPF_PTP_NONE)
 		return false;
 
 	/* Grab an open timestamp slot */
@@ -3880,7 +3958,7 @@ static void idpf_rx_hwtstamp(struct idpf_queue *rxq,
 	u64 cached_time, ts_ns;
 	u32 ts_high;
 
-	cached_time = READ_ONCE(rxq->rx_cached_phctime);
+	cached_time = READ_ONCE(rxq->cached_phctime);
 
 	if (rx_desc->ts_low & VIRTCHNL2_RX_FLEX_TSTAMP_VALID) {
 		ts_high = le32_to_cpu(rx_desc->ts_high);
@@ -3924,7 +4002,7 @@ int idpf_rx_process_skb_fields(struct idpf_queue *rxq,
 
 	/* process RSS/hash */
 	idpf_rx_hash(rxq, skb, rx_desc, &decoded);
-	if (!rxq->ptp_rx)
+	if (!rxq->tstmp_en)
 		goto skip_tstamp;
 
 	idpf_rx_hwtstamp(rxq, rx_desc, skb);
@@ -5456,7 +5534,7 @@ static int idpf_vport_splitq_napi_poll(struct napi_struct *napi, int budget)
 	/* Exit the polling mode, but don't re-enable interrupts if stack might
 	 * poll us due to busy-polling
 	 */
-	if (likely(napi_complete_done(napi, work_done)))
+	if (napi_complete_done(napi, work_done))
 		idpf_vport_intr_update_itr_ena_irq(q_vector);
 	else
 		idpf_vport_intr_set_wb_on_itr(q_vector);

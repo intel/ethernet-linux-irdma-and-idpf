@@ -52,7 +52,7 @@ struct idpf_rss_data;
 #endif /* CONFIG_IOMMU_BYPASS */
 
 #define IDPF_DRV_NAME "idpf"
-#define IDPF_DRV_VER "0.0.647"
+#define IDPF_DRV_VER "0.0.650"
 
 #define IDPF_M(m, s)	((m) << (s))
 
@@ -122,18 +122,11 @@ struct idpf_mac_filter {
 	bool add;
 };
 
-#ifdef CONFIG_RCA_SUPPORT
-#define IIDC_RDMA_RCA_NAME     "rca"
-
-#endif /* CONFIG_RCA_SUPPORT */
 struct idpf_rdma_data {
 	struct iidc_core_dev_info *cdev_info;
 	struct msix_entry *msix_entries;
 	int aux_idx;
 	u16 num_vecs;
-#ifdef CONFIG_RCA_SUPPORT
-	bool rca_en;
-#endif /* CONFIG_RCA_SUPPORT */
 };
 
 /**
@@ -934,9 +927,6 @@ struct idpf_adapter {
 	struct virtchnl2_edt_caps edt_caps;
 	struct idpf_dev_ops dev_ops;
 	struct idpf_rdma_data rdma_data;
-#ifdef CONFIG_RCA_SUPPORT
-	struct idpf_rdma_data rca_data;
-#endif /* CONFIG_RCA_SUPPORT */
 	int num_vfs;
 	bool req_tx_splitq;
 	bool req_rx_splitq;
@@ -953,6 +943,7 @@ struct idpf_adapter {
 	unsigned short sf_cnt;
 #endif /* DEVLINK_ENABLED */
 	struct idpf_ptp ptp;
+	u32 tx_compl_tstamp_gran_s;
 	struct completion corer_done;
 };
 
