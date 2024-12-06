@@ -156,23 +156,17 @@ static bool irdma_ws_in_use(struct irdma_sc_vsi *vsi, u8 user_pri)
 {
 	int i;
 
-	mutex_lock(&vsi->qos[user_pri].qos_mutex);
-	if (!list_empty(&vsi->qos[user_pri].qplist)) {
-		mutex_unlock(&vsi->qos[user_pri].qos_mutex);
+	if (!list_empty(&vsi->qos[user_pri].qplist))
 		return true;
-	}
 
 	/* Check if the qs handle associated with the given user priority
 	 * is in use by any other user priority. If so, nothing left to do
 	 */
 	for (i = 0; i < IRDMA_MAX_USER_PRIORITY; i++) {
 		if (vsi->qos[i].qs_handle[0] == vsi->qos[user_pri].qs_handle[0] &&
-		    !list_empty(&vsi->qos[i].qplist)) {
-			mutex_unlock(&vsi->qos[user_pri].qos_mutex);
+		    !list_empty(&vsi->qos[i].qplist))
 			return true;
-		}
 	}
-	mutex_unlock(&vsi->qos[user_pri].qos_mutex);
 
 	return false;
 }
@@ -444,13 +438,14 @@ exit:
  */
 void irdma_ws_remove(struct irdma_sc_vsi *vsi, u8 user_pri)
 {
+	mutex_lock(&vsi->qos[user_pri].qos_mutex);
 	mutex_lock(&vsi->dev->ws_mutex);
 	if (irdma_ws_in_use(vsi, user_pri))
 		goto exit;
 	irdma_remove_leaf(vsi, user_pri);
-
 exit:
 	mutex_unlock(&vsi->dev->ws_mutex);
+	mutex_unlock(&vsi->qos[user_pri].qos_mutex);
 }
 
 /**

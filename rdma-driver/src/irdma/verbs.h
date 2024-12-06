@@ -143,6 +143,7 @@ struct irdma_mr {
 	int access;
 	u8 is_hwreg;
 	u16 type;
+	bool dma_mr:1;
 	u32 page_cnt;
 	u64 page_size;
 	u64 page_msk;
@@ -158,7 +159,7 @@ struct irdma_mr {
 
 struct irdma_srq {
 	struct ib_srq ibsrq;
-	struct irdma_sc_srq sc_srq;
+	struct irdma_sc_srq sc_srq __aligned(64);
 	struct irdma_dma_mem kmem;
 	struct completion free_srq;
 	u64 *srq_wrid_mem;

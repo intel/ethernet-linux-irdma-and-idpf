@@ -84,7 +84,7 @@ extern struct auxiliary_driver i40iw_auxiliary_drv;
 #define IRDMA_MACIP_ADD		1
 #define IRDMA_MACIP_DELETE	2
 
-#define IW_CCQ_SIZE	(IRDMA_CQP_SW_SQSIZE_2048 + 1)
+#define IW_CCQ_SIZE	(IRDMA_CQP_SW_SQSIZE_2048 + 2)
 #define IW_CEQ_SIZE	2048
 #define IW_AEQ_SIZE	2048
 
@@ -325,7 +325,6 @@ struct irdma_pci_f {
 	u32 max_mcg;
 	u32 next_mcg;
 	u32 max_pd;
-	u32 next_qp;
 	u32 next_cq;
 	u32 next_pd;
 	u32 max_mr_size;
@@ -681,7 +680,7 @@ void irdma_copy_ip_htonl(__be32 *dst, u32 *src);
 u16 irdma_get_vlan_ipv4(u32 *addr);
 void irdma_get_vlan_mac_ipv6(u32 *addr, u16 *vlan_id, u8 *mac);
 struct ib_mr *irdma_reg_phys_mr(struct ib_pd *ib_pd, u64 addr, u64 size,
-				int acc, u64 *iova_start);
+				int acc, u64 *iova_start, bool dma_mr);
 int irdma_upload_qp_context(struct irdma_qp *iwqp, bool freeze, bool raw);
 void irdma_del_hmc_objects(struct irdma_sc_dev *dev,
 			   struct irdma_hmc_info *hmc_info, bool privileged,

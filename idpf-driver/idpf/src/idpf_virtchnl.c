@@ -902,6 +902,7 @@ static int idpf_send_get_caps_msg(struct idpf_adapter *adapter)
 			    VIRTCHNL2_CAP_PROMISC		|
 			    VIRTCHNL2_CAP_EDT			|
 			    VIRTCHNL2_CAP_PTP			|
+			    VIRTCHNL2_CAP_TX_CMPL_TSTMP		|
 			    VIRTCHNL2_CAP_MISS_COMPL_TAG	|
 			    VIRTCHNL2_CAP_LOOPBACK);
 
@@ -1042,6 +1043,7 @@ static int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport)
 	enum idpf_ptp_access access_type;
 	int err = 0, i, reply_sz;
 	struct list_head *head;
+	unsigned long flags;
 	u16 num_latches;
 	u32 size;
 
@@ -1088,8 +1090,8 @@ static int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport)
 	INIT_LIST_HEAD(&tx_tstamp_caps->latches_in_use);
 	INIT_LIST_HEAD(&tx_tstamp_caps->latches_free);
 
-	mutex_init(&tx_tstamp_caps->lock_free);
-	mutex_init(&tx_tstamp_caps->lock_in_use);
+	spin_lock_init(&tx_tstamp_caps->lock_free);
+	spin_lock_init(&tx_tstamp_caps->lock_in_use);
 
 	tx_tstamp_caps->tstamp_ns_lo_bit = rcv_tx_tstamp_caps->tstamp_ns_lo_bit;
 
@@ -1117,9 +1119,9 @@ static int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport)
 
 		ptp_tx_tstamp->idx = rcv_tx_tstamp_caps->tstamp_latches[i].index;
 
-		mutex_lock(&tx_tstamp_caps->lock_free);
+		spin_lock_irqsave(&tx_tstamp_caps->lock_free, flags);
 		list_add(&ptp_tx_tstamp->list_member, &tx_tstamp_caps->latches_free);
-		mutex_unlock(&tx_tstamp_caps->lock_free);
+		spin_unlock_irqrestore(&tx_tstamp_caps->lock_free, flags);
 
 		tx_tstamp_caps->tx_tstamp_status[i].state = IDPF_PTP_FREE;
 	}
@@ -1127,13 +1129,13 @@ static int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport)
 	goto get_tstamp_caps_out;
 
 err_free_ptp_tx_stamp_list:
-	mutex_lock(&tx_tstamp_caps->lock_free);
+	spin_lock_irqsave(&tx_tstamp_caps->lock_free, flags);
 	head = &tx_tstamp_caps->latches_free;
 	list_for_each_entry_safe(ptp_tx_tstamp, tmp, head, list_member) {
 		list_del(&ptp_tx_tstamp->list_member);
 		kfree(ptp_tx_tstamp);
 	}
-	mutex_unlock(&tx_tstamp_caps->lock_free);
+	spin_unlock_irqrestore(&tx_tstamp_caps->lock_free, flags);
 err_free_tstamp_caps:
 	kfree(tx_tstamp_caps);
 get_tstamp_caps_out:
@@ -1316,9 +1318,9 @@ int idpf_ptp_adj_dev_clk_fine(struct idpf_adapter *adapter, u64 incval)
  *
  * Returns 0 on success, negative otherwise.
  */
-static int idpf_ptp_get_tx_tstamp_async_handler(struct idpf_adapter *adapter,
-						struct idpf_vc_xn *xn,
-						const struct idpf_ctlq_msg *ctlq_msg)
+static int idpf_ptp_get_tx_tstamp_mb_async_handler(struct idpf_adapter *adapter,
+						   struct idpf_vc_xn *xn,
+						   const struct idpf_ctlq_msg *ctlq_msg)
 {
 	struct virtchnl2_ptp_get_vport_tx_tstamp_latches *recv_tx_tstamp_latches_msg;
 	bool vport_found = false, tracker_found = false, idx_found = false;
@@ -1356,13 +1358,15 @@ static int idpf_ptp_get_tx_tstamp_async_handler(struct idpf_adapter *adapter,
 	num_latches = le16_to_cpu(recv_tx_tstamp_latches_msg->num_latches);
 
 	for (i = 0; i < num_latches; i++) {
+		unsigned long flags;
+
 		idx = recv_tx_tstamp_latches_msg->tstamp_latches[i].index;
 		valid = recv_tx_tstamp_latches_msg->tstamp_latches[i].valid;
 
 		if (!valid)
 			continue;
 
-		mutex_lock(&tx_tstamp_caps->lock_in_use);
+		spin_lock_irqsave(&tx_tstamp_caps->lock_in_use, flags);
 		list_for_each_entry(ptp_tx_tstamp, head, list_member) {
 			if (idx == ptp_tx_tstamp->idx) {
 				idx_found = true;
@@ -1370,7 +1374,7 @@ static int idpf_ptp_get_tx_tstamp_async_handler(struct idpf_adapter *adapter,
 				break;
 			}
 		}
-		mutex_unlock(&tx_tstamp_caps->lock_in_use);
+		spin_unlock_irqrestore(&tx_tstamp_caps->lock_in_use, flags);
 
 		if (!idx_found)
 			continue;
@@ -1378,7 +1382,7 @@ static int idpf_ptp_get_tx_tstamp_async_handler(struct idpf_adapter *adapter,
 		ptp_tx_tstamp->tstamp = le64_to_cpu(recv_tx_tstamp_latches_msg->tstamp_latches[i].tstamp);
 		ptp_tx_tstamp->tstamp >>= tstamp_ns_lo_bit;
 
-		tstamp = idpf_ptp_extend_ts(vport->adapter, (u32)ptp_tx_tstamp->tstamp);
+		tstamp = idpf_ptp_extend_ts(vport->adapter, ptp_tx_tstamp->tstamp);
 
 		for (id = 0; id < tx_tstamp_caps->num_entries; id++) {
 			if (ptp_tx_tstamp->skb == tx_tstamp_caps->tx_tstamp_status[id].skb &&
@@ -1398,10 +1402,10 @@ static int idpf_ptp_get_tx_tstamp_async_handler(struct idpf_adapter *adapter,
 
 		dev_kfree_skb_any(skb);
 
-		mutex_lock(&tx_tstamp_caps->lock_free);
+		spin_lock_irqsave(&tx_tstamp_caps->lock_free, flags);
 		list_add(&ptp_tx_tstamp->list_member,
 			 &tx_tstamp_caps->latches_free);
-		mutex_unlock(&tx_tstamp_caps->lock_free);
+		spin_unlock_irqrestore(&tx_tstamp_caps->lock_free, flags);
 	}
 
 	return 0;
@@ -1416,7 +1420,7 @@ static int idpf_ptp_get_tx_tstamp_async_handler(struct idpf_adapter *adapter,
  *
  * Returns 0 on success, negative otherwise.
  */
-int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport)
+int idpf_ptp_get_tx_tstamp_mb(struct idpf_vport *vport)
 {
 	struct virtchnl2_ptp_get_vport_tx_tstamp_latches *send_tx_tstamp_latches_msg;
 	struct idpf_ptp_vport_tx_tstamp_caps *tx_tstamp_caps = vport->tx_tstamp_caps;
@@ -1424,6 +1428,7 @@ int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport)
 	struct idpf_vc_xn_params xn_params = { };
 	struct idpf_ptp_tx_tstamp *ptp_tx_tstamp;
 	int reply_sz, msg_size, size, err = 0;
+	unsigned long flags;
 	u16 id = 0, i;
 
 	size = struct_size(send_tx_tstamp_latches_msg, tstamp_latches,
@@ -1433,7 +1438,7 @@ int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport)
 	if (!send_tx_tstamp_latches_msg)
 		return -ENOMEM;
 
-	mutex_lock(&tx_tstamp_caps->lock_in_use);
+	spin_lock_irqsave(&tx_tstamp_caps->lock_in_use, flags);
 	list_for_each_entry(ptp_tx_tstamp, head, list_member) {
 		for (i = 0; i < tx_tstamp_caps->num_entries; i++) {
 			if (tx_tstamp_caps->tx_tstamp_status[i].skb == ptp_tx_tstamp->skb  &&
@@ -1445,7 +1450,7 @@ int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport)
 			}
 		}
 	}
-	mutex_unlock(&tx_tstamp_caps->lock_in_use);
+	spin_unlock_irqrestore(&tx_tstamp_caps->lock_in_use, flags);
 
 	send_tx_tstamp_latches_msg->vport_id = cpu_to_le32(vport->vport_id);
 	send_tx_tstamp_latches_msg->num_latches = cpu_to_le16(id);
@@ -1460,7 +1465,7 @@ int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport)
 	xn_params.send_buf.iov_len = msg_size;
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 	xn_params.async = true;
-	xn_params.async_handler = idpf_ptp_get_tx_tstamp_async_handler;
+	xn_params.async_handler = idpf_ptp_get_tx_tstamp_mb_async_handler;
 
 	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
 	if (reply_sz < 0)
@@ -3362,11 +3367,20 @@ int idpf_send_create_adi_msg(struct idpf_adapter *adapter,
 {
 	struct idpf_vc_xn_params xn_params = { };
 	ssize_t reply_sz;
+	size_t iov_len;
+	u16 cnt;
 
 	xn_params.vc_op = VIRTCHNL2_OP_NON_FLEX_CREATE_ADI;
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 	xn_params.send_buf.iov_base = vchnl_adi;
-	xn_params.send_buf.iov_len = sizeof(*vchnl_adi);
+	iov_len = sizeof(*vchnl_adi);
+	cnt = le16_to_cpu(vchnl_adi->chunks.num_chunks);
+	if (cnt)
+		iov_len += (cnt - 1) * sizeof(vchnl_adi->chunks.chunks[0]);
+	cnt = le16_to_cpu(vchnl_adi->vchunks.num_vchunks);
+	if (cnt)
+		iov_len += (cnt - 1) * sizeof(vchnl_adi->vchunks.vchunks[0]);
+	xn_params.send_buf.iov_len = iov_len;
 	xn_params.recv_buf.iov_base = vchnl_adi;
 	xn_params.recv_buf.iov_len = IDPF_CTLQ_MAX_BUF_LEN;
 	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
@@ -3634,6 +3648,10 @@ restart:
 	err = idpf_ptp_init(adapter);
 	if (err)
 		dev_err(idpf_adapter_to_dev(adapter), "failed to initialize PTP\n");
+	else if (idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS,
+				 VIRTCHNL2_CAP_TX_CMPL_TSTMP))
+		adapter->tx_compl_tstamp_gran_s =
+			adapter->caps.tx_cmpl_tstamp_ns_s;
 
 	idpf_init_avail_queues(adapter);
 #if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)

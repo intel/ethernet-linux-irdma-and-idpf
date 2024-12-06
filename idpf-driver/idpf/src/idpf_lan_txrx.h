@@ -191,7 +191,6 @@ struct idpf_splitq_tx_compl_desc {
 	} q_head_compl_tag;
 	u8 ts[3];
 	u8 rsvd; /* Reserved */
-
 };/* writeback used with completion queues*/
 
 /* Context descriptors */

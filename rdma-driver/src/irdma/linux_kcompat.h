@@ -21,6 +21,10 @@
 #define USE_KMAP
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0)
+#define COPY_USER_PGADDR_VER_1
+#endif
+
 /* CREATE_AH */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
 #define CREATE_AH_VER_5
