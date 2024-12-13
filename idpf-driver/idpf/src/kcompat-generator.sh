@@ -115,6 +115,7 @@ function gen-devlink() {
 	gen HAVE_DEVLINK_SET_FEATURES  if fun devlink_set_features in "$dh"
 	gen HAVE_DEVL_HEALTH_REPORTER_DESTROY if fun devl_health_reporter_destroy in "$dh"
 	gen HAVE_DEVL_PORT_REGISTER if fun devl_port_register in "$dh"
+	gen HAVE_DEVL_PORT_REG_WITH_OPS_AND_UNREG if fun devl_port_register_with_ops in "$dh"
 	gen NEED_DEVLINK_HEALTH_DEFAULT_AUTO_RECOVER if fun devlink_health_reporter_create matches auto_recover in "$dh"
 	gen NEED_DEVLINK_RESOURCES_UNREGISTER_NO_RESOURCE if fun devlink_resources_unregister matches 'struct devlink_resource \\*' in "$dh"
 	gen NEED_DEVLINK_TO_DEV  if fun devlink_to_dev absent in "$dh"

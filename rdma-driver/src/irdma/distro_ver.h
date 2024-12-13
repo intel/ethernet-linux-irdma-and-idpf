@@ -11,8 +11,12 @@
 
 #if defined(RHEL_RELEASE_CODE)
 
-#if (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9, 2)) && (RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10, 0))
-#define RHEL_9_2 /* Assume any 9.X greater than 9.2 will also work with current 9.2 defines */
+#if (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9, 6)) && (RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10, 0))
+#define RHEL_9_6 /* assume releases 9.x greater than 9.6 also work with 9.6 defines */
+#endif
+
+#if (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9, 2)) && (RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9, 6))
+#define RHEL_9_2 /* releases 9.2 up to 9.5 work with 9.2 defines */
 #endif
 
 #if (RHEL_RELEASE_CODE == RHEL_RELEASE_VERSION(9, 1))

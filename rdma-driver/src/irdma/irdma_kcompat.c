@@ -1882,6 +1882,7 @@ int irdma_create_qp(struct ib_qp *ibqp,
 	struct irdma_srq *iwsrq;
 	bool srq_valid = false;
 	u32 srq_id = 0;
+	u32 next_qp = 0;
 
 	if (init_attr->srq) {
 		iwsrq = to_iwsrq(init_attr->srq);
@@ -1938,7 +1939,7 @@ int irdma_create_qp(struct ib_qp *ibqp,
 		qp_num = 1;
 	else
 		err_code = irdma_alloc_rsrc(rf, rf->allocated_qps, rf->max_qp,
-					    &qp_num, &rf->next_qp);
+					    &qp_num, &next_qp);
 	if (err_code)
 		goto error;
 
@@ -2137,6 +2138,7 @@ struct ib_qp *irdma_create_qp(struct ib_pd *ibpd,
 	struct irdma_srq *iwsrq;
 	bool srq_valid = false;
 	u32 srq_id = 0;
+	u32 next_qp = 0;
 
 	if (init_attr->srq) {
 		iwsrq = to_iwsrq(init_attr->srq);
@@ -2200,7 +2202,7 @@ struct ib_qp *irdma_create_qp(struct ib_pd *ibpd,
 		qp_num = 1;
 	else
 		err_code = irdma_alloc_rsrc(rf, rf->allocated_qps, rf->max_qp,
-					    &qp_num, &rf->next_qp);
+					    &qp_num, &next_qp);
 	if (err_code)
 		goto error;
 
@@ -2557,6 +2559,8 @@ struct ib_cq *irdma_create_cq(struct ib_device *ibdev,
 		entries++;
 		if (!cqe_64byte_ena && dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_2)
 			entries *= 2;
+		if (entries & 1)
+			entries += 1; /* cq size must be an even number */
 		ukinfo->cq_size = entries;
 
 		if (cqe_64byte_ena)

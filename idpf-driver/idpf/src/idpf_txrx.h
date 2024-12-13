@@ -74,9 +74,6 @@
 #define IDPF_MBX_Q_VEC		1
 #define IDPF_MIN_Q_VEC		1
 #define IDPF_MIN_RDMA_VEC	2 /* Minimum vectors to be shared with RDMA */
-#ifdef CONFIG_RCA_SUPPORT
-#define IDPF_MIN_RCA_VEC	1
-#endif /* CONFIG_RCA_SUPPORT */
 
 #define IDPF_DFLT_TX_Q_DESC_COUNT		512
 #define IDPF_DFLT_TX_COMPLQ_DESC_COUNT		512
@@ -867,6 +864,7 @@ struct idpf_queue {
 			struct idpf_tx_buf *bufs;
 			u32 rel_qid;
 			u16 num_txq;
+			u8 cmpl_tstamp_ns_s;
 		} tx;
 		struct {
 			union {
@@ -888,8 +886,8 @@ struct idpf_queue {
 		} rx;
 	};
 
-	u64 rx_cached_phctime;
-	bool ptp_rx;
+	u64 cached_phctime;
+	bool tstmp_en;
 
 	u16 idx;
 	void __iomem *tail;

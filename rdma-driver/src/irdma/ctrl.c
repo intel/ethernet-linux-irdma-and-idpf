@@ -657,7 +657,7 @@ static int irdma_sc_srq_create(struct irdma_sc_srq *srq, u64 scratch,
 		      FIELD_PREP(IRDMA_CQPSQ_SRQ_RQSIZE, srq->hw_srq_size) |
 		      FIELD_PREP(IRDMA_CQPSQ_SRQ_RQ_WQE_SIZE, srq->srq_uk.wqe_size));
 	set_64bit_val(wqe, 8,
-		      srq->srq_uk.srq_id << IRDMA_AEQE_CMPL_CTXT_S);
+		      FIELD_PREP(IRDMA_AEQE_CMPL_CTXT, srq->srq_uk.srq_id));
 	set_64bit_val(wqe, 16,
 		      FIELD_PREP(IRDMA_CQPSQ_SRQ_PD_ID, srq->pd->pd_id));
 	set_64bit_val(wqe, 32,
@@ -718,7 +718,7 @@ static int irdma_sc_srq_modify(struct irdma_sc_srq *srq,
 		      FIELD_PREP(IRDMA_CQPSQ_SRQ_RQSIZE, srq->hw_srq_size) |
 		      FIELD_PREP(IRDMA_CQPSQ_SRQ_RQ_WQE_SIZE, srq->srq_uk.wqe_size));
 	set_64bit_val(wqe, 8,
-		      srq->srq_uk.srq_id << IRDMA_AEQE_CMPL_CTXT_S);
+		      FIELD_PREP(IRDMA_AEQE_CMPL_CTXT, srq->srq_uk.srq_id));
 	set_64bit_val(wqe, 16,
 		      FIELD_PREP(IRDMA_CQPSQ_SRQ_PD_ID, srq->pd->pd_id));
 	set_64bit_val(wqe, 32,
@@ -6346,6 +6346,8 @@ int irdma_get_rdma_features(struct irdma_sc_dev *dev)
 		feat_type = FIELD_GET(IRDMA_FEATURE_TYPE, temp);
 		dev->feature_info[feat_type] = temp;
 	}
+	if (dev->feature_info[IRDMA_FTN_FLAGS] & IRDMA_ATOMICS_ALLOWED_BIT)
+		dev->hw_attrs.uk_attrs.feature_flags |= IRDMA_FEATURE_ATOMIC_OPS;
 exit:
 	dma_free_coherent(dev->hw->device, feat_buf.size, feat_buf.va,
 			  feat_buf.pa);
@@ -7688,7 +7690,6 @@ void mev_enable_hw_wa(struct irdma_sc_dev *dev, u64 hw_wa,
 	case MMG_DEV_00:
 		dev->hw_wa |= REDUCE_ORD_IRD |
 			      MAX_QP_2K |
-			      FORCE_LPB |
 			      MMG_WA;
 		break;
 	case MEV_B0_37:
