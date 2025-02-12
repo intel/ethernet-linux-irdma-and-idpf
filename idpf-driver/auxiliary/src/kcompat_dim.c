@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2024 Intel Corporation */
+/* Copyright (C) 2019-2025 Intel Corporation */
 
 // SPDX-License-Identifier: GPL-2.0 OR Linux-OpenIB
 /*
@@ -54,7 +54,7 @@ void dim_park_tired(struct dim *dim)
 	dim->tune_state   = DIM_PARKING_TIRED;
 }
 
-void dim_calc_stats(struct dim_sample *start, struct dim_sample *end,
+void dim_calc_stats(struct dim_sample *start, const struct dim_sample *end,
 		    struct dim_stats *curr_stats)
 {
 	/* u32 holds up to 71 minutes, should be enough */

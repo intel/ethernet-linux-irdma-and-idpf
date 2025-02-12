@@ -301,6 +301,7 @@ struct irdma_cqp_init_info {
 	u8 hmc_profile;
 	u8 ena_vf_count;
 	u8 ceqs_per_vf;
+	u8 timer_slots;
 	u8 ooisc_blksize;
 	u8 rrsp_blksize;
 	u8 q1_blksize;
@@ -478,6 +479,7 @@ struct irdma_sc_cqp {
 	u8 ena_vf_count;
 	u8 timeout_count;
 	u8 ceqs_per_vf;
+	u8 timer_slots;
 	u8 ooisc_blksize;
 	u8 rrsp_blksize;
 	u8 q1_blksize;
@@ -1086,6 +1088,7 @@ struct irdma_udp_offload_info {
 };
 
 struct irdma_roce_offload_info {
+	u64 rca_key[2];
 	u16 p_key;
 	u32 err_rq_idx;
 	u32 qkey;
@@ -1257,16 +1260,8 @@ struct irdma_allocate_stag_info {
 	u16 access_rights;
 	bool remote_access:1;
 	bool use_hmc_fcn_index:1;
-	bool use_pf_rid:1;
 	bool all_memory:1;
 	bool remote_atomics_en:1;
-	bool pasid_valid:1;
-	u32 pasid;
-	bool use_aso:1;
-	u8 aso_host_id;
-	u8 aso_vm_vf_type;
-	u8 aso_vm_vf_num;
-	u8 aso_pf_num;
 	bool non_cached:1;
 	u8 placement_type;
 	u16 hmc_fcn_index;
@@ -1296,7 +1291,6 @@ struct irdma_reg_ns_stag_info {
 	irdma_stag_key stag_key;
 	bool use_hmc_fcn_index:1;
 	u16 hmc_fcn_index;
-	bool use_pf_rid:1;
 	bool all_memory:1;
 	bool pasid_valid:1;
 	u8 remote_atomics_en;
@@ -1325,7 +1319,6 @@ struct irdma_fast_reg_stag_info {
 	bool push_wqe:1;
 	bool use_hmc_fcn_index:1;
 	u16 hmc_fcn_index;
-	bool use_pf_rid:1;
 	bool defer_flag:1;
 	bool remote_atomics_en:1;
 };
@@ -1876,6 +1869,7 @@ struct cqp_cmds_info {
 	u8 cqp_cmd;
 	u8 post_sq;
 	struct cqp_info in;
+	int cqp_cmd_exec_status;
 	bool create;
 };
 

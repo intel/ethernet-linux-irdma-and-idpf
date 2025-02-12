@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2024 Intel Corporation */
+/* Copyright (C) 2019-2025 Intel Corporation */
 
 #include "idpf.h"
 
@@ -1043,6 +1043,8 @@ static void idpf_vport_stop(struct idpf_vport *vport)
 	if (!np->active)
 		return;
 
+	/* Make sure soft reset has finished */
+	cancel_work_sync(&vport->finish_reset_task);
 	idpf_netdev_stop(vport->netdev);
 
 	if (!test_bit(IDPF_CORER_IN_PROG, vport->adapter->flags)) {
@@ -1143,8 +1145,6 @@ static void idpf_vport_rel(struct idpf_vport *vport)
 
 	kfree(adapter->vport_params_recvd[idx]);
 	adapter->vport_params_recvd[idx] = NULL;
-	kfree(adapter->vport_params_reqd[idx]);
-	adapter->vport_params_reqd[idx] = NULL;
 	if (adapter->vport_config[idx]) {
 		kfree(adapter->vport_config[idx]->req_qs_chunks);
 		adapter->vport_config[idx]->req_qs_chunks = NULL;
@@ -2052,7 +2052,7 @@ int idpf_init_hard_reset(struct idpf_adapter *adapter)
 	if (test_and_clear_bit(IDPF_HR_DRV_LOAD, adapter->flags)) {
 		reg_ops->trigger_reset(adapter, IDPF_HR_DRV_LOAD);
 	} else if (test_bit(IDPF_HR_FUNC_RESET, adapter->flags)) {
-		idpf_idc_event(&adapter->rdma_data, IDPF_HR_WARN_RESET, true);
+		idpf_idc_event(&adapter->rdma_data, IIDC_EVENT_WARN_RESET);
 
 		if (!idpf_is_reset_detected(adapter)) {
 			reg_ops->trigger_reset(adapter, IDPF_HR_FUNC_RESET);
@@ -2121,6 +2121,24 @@ func_reset:
 drv_load:
 	set_bit(IDPF_HR_RESET_IN_PROG, adapter->flags);
 	idpf_init_hard_reset(adapter);
+}
+
+/**
+ * idpf_finish_soft_reset - Delayed task to finish vport soft reset
+ * @work: work_struct handle
+ *
+ * All work that needs to be done __without__ RTNL.
+ */
+void idpf_finish_soft_reset(struct work_struct *work)
+{
+	struct idpf_vport *vport;
+
+	vport = container_of(work, struct idpf_vport, finish_reset_task);
+
+	if (test_and_clear_bit(IDPF_VPORT_MTU_CHANGED, vport->flags)) {
+		idpf_idc_event(&vport->adapter->rdma_data,
+			       IIDC_EVENT_AFTER_MTU_CHANGE);
+	}
 }
 
 /**
@@ -2197,10 +2215,6 @@ int idpf_initiate_soft_reset(struct idpf_vport *vport,
 	err = idpf_vport_queue_alloc_all(new_vport, new_q_grp);
 	if (err)
 		goto free_vport;
-	if (!new_vport->idx) {
-		idpf_idc_event(&adapter->rdma_data, reset_cause, true);
-	}
-
 	if (!vport_is_up) {
 		idpf_send_delete_queues_msg(vport);
 	} else {
@@ -2279,8 +2293,10 @@ int idpf_initiate_soft_reset(struct idpf_vport *vport,
 		 * .ndo_open() callback will be called.
 		 */
 		idpf_vport_queue_rel_all(vport, q_grp);
-	if (!new_vport->idx) {
-		idpf_idc_event(&adapter->rdma_data, reset_cause, false);
+
+	if (!err && !vport->idx && reset_cause == IDPF_SR_MTU_CHANGE) {
+		set_bit(IDPF_VPORT_MTU_CHANGED, vport->flags);
+		queue_work(system_unbound_wq, &vport->finish_reset_task);
 	}
 
 	kfree(new_vport);

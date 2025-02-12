@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2024 Intel Corporation */
+/* Copyright (C) 2019-2025 Intel Corporation */
 
 #ifndef _IDPF_TXRX_H_
 #define _IDPF_TXRX_H_
@@ -170,12 +170,15 @@
 
 #define IDPF_TX_COMPLQ_OVERFLOW_THRESH(txcq)	((txcq)->desc_count >> 1)
 /* Determine the absolute number of completions pending, i.e. the number of
- * completions that are expected to arrive on the TX completion queue.
+ * completions that are expected to arrive on the TX completion queue.  This
+ * number should never be more than ~IDPF_TX_COMPLQ_OVERFLOW_THRESH. That is
+ * because once the delta hits IDPF_TX_COMPLQ_OVERFLOW_THRESH, the txq is
+ * stopped, i.e. num_compl_pend won't increment. Meanwhile, num_compl should
+ * continue incrementing as completions are processed. Eventually the delta
+ * will become small enough that the txq can be restarted.
  */
 #define IDPF_TX_COMPLQ_PENDING(txq)	\
-	(((txq)->tx.num_compl_pend >= (txq)->tx.num_compl ? \
-	0 : U32_MAX) + \
-	(txq)->tx.num_compl_pend - (txq)->tx.num_compl)
+	((txq)->tx.num_compl_pend - (txq)->tx.num_compl)
 
 #define IDPF_TX_SPLITQ_COMPL_TAG_WIDTH	16
 #define IDPF_TX_SPLITQ_MISS_COMPL_TAG	BIT(15)
@@ -888,7 +891,6 @@ struct idpf_queue {
 
 	u64 cached_phctime;
 	bool tstmp_en;
-
 	u16 idx;
 	void __iomem *tail;
 	u16 q_type;

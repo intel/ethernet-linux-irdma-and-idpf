@@ -2,7 +2,7 @@
 idpf Linux* Base Driver for the Intel(R) Infrastructure Data Path Function
 ===============================================================================
 
-December 6, 2024
+April 10, 2023
 
 
 Contents
@@ -367,7 +367,7 @@ St - Fifth Floor, Boston, MA 02110-1301 USA.
 The full GNU General Public License is included in this distribution in the
 file called "COPYING".
 
-Copyright(c) 2019 - 2024 Intel Corporation.
+Copyright(c) 2019 - 2023 Intel Corporation.
 
 
 Trademarks

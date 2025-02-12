@@ -94,7 +94,7 @@ int irdma_get_rdma_features(struct irdma_sc_dev *dev);
 void free_sd_mem(struct irdma_sc_dev *dev);
 int irdma_process_cqp_cmd(struct irdma_sc_dev *dev,
 			  struct cqp_cmds_info *pcmdinfo);
-int irdma_process_bh(struct irdma_sc_dev *dev);
+void irdma_process_bh(struct irdma_sc_dev *dev);
 u8 __iomem *irdma_ioremap_db(struct irdma_sc_dev *dev, u32 size);
 void irdma_iounmap_db(struct irdma_sc_dev *dev);
 void mev_enable_hw_wa(struct irdma_sc_dev *dev, u64 hw_wa,

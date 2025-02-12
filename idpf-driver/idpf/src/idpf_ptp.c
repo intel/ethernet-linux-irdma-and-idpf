@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2024 Intel Corporation */
+/* Copyright (C) 2019-2025 Intel Corporation */
 
 #include "idpf.h"
 #if IS_ENABLED(CONFIG_ARM_ARCH_TIMER)
@@ -231,8 +231,8 @@ static int idpf_ptp_get_crosststamp(struct ptp_clock_info *info,
 					     adapter, NULL, cts);
 }
 
-#endif /* HAVE_PTP_CROSSTIMESTAMP */
 #endif /* CONFIG_ARM_ARCH_TIMER || CONFIG_PCIE_PTM */
+#endif /* HAVE_PTP_CROSSTIMESTAMP */
 
 /**
  * idpf_ptp_update_cached_phctime - Update the cached PHC time values
@@ -548,56 +548,6 @@ static int idpf_ptp_gpio_enable(struct ptp_clock_info *info,
 }
 
 /**
- * idpf_ptp_periodic_work - Scheduling PTP periodic work
- * @work: PTP work
- */
-static void idpf_periodic_work(struct kthread_work *work)
-{
-	struct idpf_ptp *ptp = container_of(work, struct idpf_ptp, work.work);
-	struct idpf_adapter *adapter;
-	u32 err;
-
-	adapter = container_of(ptp, struct idpf_adapter, ptp);
-
-	err = idpf_ptp_update_cached_phctime(adapter);
-	if (err)
-		dev_warn(idpf_adapter_to_dev(adapter),
-			 "Unable to immediately update cached PHC time\n");
-
-	kthread_queue_delayed_work(ptp->kworker, &ptp->work,
-				   msecs_to_jiffies(err ? 10 : 500));
-}
-
-/**
- * idpf_ptp_init_work - Initialize PTP work threads
- * @adapter: Driver specific private structure
- */
-static int idpf_ptp_init_work(struct idpf_adapter *adapter)
-{
-	struct idpf_ptp *ptp = &adapter->ptp;
-	struct kthread_worker *kworker;
-
-	/* Do not initialize the PTP work if the device clock time cannot be
-	 * read.
-	 */
-	if (adapter->ptp.get_dev_clk_time_access == IDPF_PTP_NONE)
-		return 0;
-
-	kthread_init_delayed_work(&ptp->work, idpf_periodic_work);
-
-	kworker = kthread_create_worker(0, "idpf-ptp-%s",
-					dev_name(idpf_adapter_to_dev(adapter)));
-
-	if (IS_ERR(kworker))
-		return PTR_ERR(kworker);
-
-	ptp->kworker = kworker;
-	kthread_queue_delayed_work(ptp->kworker, &ptp->work, 0);
-
-	return 0;
-}
-
-/**
  * idpf_ptp_extend_40b_ts - Convert a 40b timestamp to 64b nanoseconds
  * @adapter: Driver specific private structure
  * @in_tstamp: Ingress/egress timestamp value
@@ -860,6 +810,64 @@ int idpf_ptp_get_ts_config(struct idpf_vport *vport, struct ifreq *ifr)
 }
 
 /**
+ * idpf_ptp_do_aux_work - Do PTP periodic work
+ * @info: Driver's PTP info structure
+ *
+ * Return: Number of jiffies to periodic work.
+ */
+static long idpf_ptp_do_aux_work(struct ptp_clock_info *info)
+{
+	struct idpf_adapter *adapter = idpf_ptp_info_to_adapter(info);
+	int err;
+
+	err = idpf_ptp_update_cached_phctime(adapter);
+	if (err)
+		dev_warn(idpf_adapter_to_dev(adapter),
+			 "Unable to immediately update cached PHC time\n");
+
+	return msecs_to_jiffies(err ? 10 : 500);
+}
+
+#ifndef HAVE_PTP_CANCEL_WORKER_SYNC
+/**
+ * idpf_ptp_periodic_work - Do PTP periodic work
+ * @work: PTP work
+ */
+static void idpf_periodic_work(struct kthread_work *work)
+{
+	struct idpf_ptp *ptp = container_of(work, struct idpf_ptp, work.work);
+
+	kthread_queue_delayed_work(ptp->kworker, &ptp->work,
+				   idpf_ptp_do_aux_work(&ptp->info));
+}
+
+/**
+ * idpf_ptp_init_work - Initialize PTP work threads
+ * @adapter: Driver specific private structure
+ *
+ * Return: 0 on success, negative error code otherwise.
+ */
+static int idpf_ptp_init_work(struct idpf_adapter *adapter)
+{
+	struct idpf_ptp *ptp = &adapter->ptp;
+	struct kthread_worker *kworker;
+
+	kthread_init_delayed_work(&ptp->work, idpf_periodic_work);
+
+	kworker = kthread_create_worker(0, "idpf-ptp-%s",
+					dev_name(idpf_adapter_to_dev(adapter)));
+
+	if (IS_ERR(kworker))
+		return PTR_ERR(kworker);
+
+	ptp->kworker = kworker;
+	kthread_queue_delayed_work(ptp->kworker, &ptp->work, 0);
+
+	return 0;
+}
+
+#endif /* !HAVE_PTP_CANCEL_WORKER_SYNC */
+/**
  * idpf_ptp_set_caps - Set PTP capabilities
  * @adapter: Driver specific private structure
  *
@@ -888,7 +896,9 @@ static void idpf_ptp_set_caps(struct idpf_adapter *adapter)
 #endif /* HAVE_PTP_CLOCK_INFO_GETTIME64 */
 	info->verify = idpf_ptp_verify_pin;
 	info->enable = idpf_ptp_gpio_enable;
-
+#ifdef HAVE_PTP_CANCEL_WORKER_SYNC
+	info->do_aux_work = idpf_ptp_do_aux_work;
+#endif /* HAVE_PTP_CANCEL_WORKER_SYNC */
 #if defined(HAVE_PTP_CLOCK_INFO_GETTIMEX64)
 	info->gettimex64 = idpf_ptp_gettimex64;
 #elif defined(HAVE_PTP_CLOCK_INFO_GETTIME64)
@@ -1002,6 +1012,7 @@ static void idpf_ptp_release_tstamp(struct idpf_adapter *adapter)
  */
 int idpf_ptp_init(struct idpf_adapter *adapter)
 {
+	struct idpf_ptp *ptp = &adapter->ptp;
 	struct timespec64 ts;
 	int err = 0;
 
@@ -1025,43 +1036,48 @@ int idpf_ptp_init(struct idpf_adapter *adapter)
 		return err;
 	}
 
+	/* Write the default increment time value if the clock adjustments
+	 * are enabled.
+	 */
+	if (ptp->adj_dev_clk_time_access != IDPF_PTP_NONE) {
+		err = idpf_ptp_adj_dev_clk_fine(adapter, ptp->base_incval);
+		if (err)
+			goto remove_clock;
+	}
+
+	/* Write the initial time value if the set time operation is enabled */
+	if (ptp->set_dev_clk_time_access != IDPF_PTP_NONE) {
+		ts = ktime_to_timespec64(ktime_get_real());
+		err = idpf_ptp_settime64(&ptp->info, &ts);
+		if (err)
+			goto remove_clock;
+	}
+
+	/* Do not initialize the PTP if the device clock time cannot be read. */
+	if (ptp->get_dev_clk_time_access == IDPF_PTP_NONE) {
+		err = -EIO;
+		goto remove_clock;
+	}
+
+#ifdef HAVE_PTP_CANCEL_WORKER_SYNC
+	ptp_schedule_worker(ptp->clock, 0);
+#else /* !HAVE_PTP_CANCEL_WORKER_SYNC */
 	err = idpf_ptp_init_work(adapter);
 	if (err) {
 		dev_info(idpf_adapter_to_dev(adapter), "Cannot init PTP work\n");
 		goto remove_clock;
 	}
 
-	/* Write the default increment time value if the clock adjustments
-	 * are enabled
-	 */
-	if (adapter->ptp.adj_dev_clk_time_access != IDPF_PTP_NONE) {
-		err = idpf_ptp_adj_dev_clk_fine(adapter, adapter->ptp.base_incval);
-		if (err)
-			goto release;
-	}
+#endif /* HAVE_PTP_CANCEL_WORKER_SYNC */
+	dev_info(idpf_adapter_to_dev(adapter), "PTP init successful\n");
 
-	/* Write the initial time value if the set time operation is enabled */
-	if (adapter->ptp.set_dev_clk_time_access != IDPF_PTP_NONE) {
-		ts = ktime_to_timespec64(ktime_get_real());
-		err = idpf_ptp_settime64(&adapter->ptp.info, &ts);
-		if (err)
-			goto release;
-	}
+	return 0;
 
-	if (!err)
-		dev_info(idpf_adapter_to_dev(adapter), "PTP init successful\n");
-	else
-		dev_err(idpf_adapter_to_dev(adapter), "PTP init failed, err=%d\n", err);
-
-	return err;
-
-release:
-	kthread_cancel_delayed_work_sync(&adapter->ptp.work);
 remove_clock:
-	if (adapter->ptp.clock) {
-		ptp_clock_unregister(adapter->ptp.clock);
-		adapter->ptp.clock = NULL;
-		memset(&adapter->ptp.info, 0, sizeof(adapter->ptp.info));
+	if (ptp->clock) {
+		ptp_clock_unregister(ptp->clock);
+		ptp->clock = NULL;
+		memset(&ptp->info, 0, sizeof(ptp->info));
 	}
 
 	return err;
@@ -1073,13 +1089,15 @@ remove_clock:
  */
 void idpf_ptp_release(struct idpf_adapter *adapter)
 {
-	if (adapter->ptp.get_dev_clk_time_access != IDPF_PTP_NONE)
-		kthread_cancel_delayed_work_sync(&adapter->ptp.work);
-
 	if (adapter->ptp.tx_tstamp_access != IDPF_PTP_NONE)
 		idpf_ptp_release_tstamp(adapter);
 
 	if (adapter->ptp.clock) {
+#ifndef HAVE_PTP_CANCEL_WORKER_SYNC
+		kthread_cancel_delayed_work_sync(&adapter->ptp.work);
+#else /* HAVE_PTP_CANCEL_WORKER_SYNC */
+		ptp_cancel_worker_sync(adapter->ptp.clock);
+#endif /* HAVE_PTP_CANCEL_WORKER_SYNC */
 		ptp_clock_unregister(adapter->ptp.clock);
 		adapter->ptp.clock = NULL;
 		memset(&adapter->ptp.info, 0, sizeof(adapter->ptp.info));

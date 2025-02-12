@@ -1642,7 +1642,7 @@ struct ib_ah *irdma_create_ah(struct ib_pd *ibpd,
 		ah_info->tc_tos = attr->grh.traffic_class;
 	}
 
-#if defined(HPM_FBSD) || defined(IB_RESOLVE_ETH_DMAC)
+#if   defined(IB_RESOLVE_ETH_DMAC)
 	if (udata) {
 		err = ib_resolve_eth_dmac(ibpd->device, attr);
 		if (err)
@@ -1964,8 +1964,7 @@ int irdma_create_qp(struct ib_qp *ibqp,
 		init_info.qp_uk_init_info.abi_ver = iwpd->sc_pd.abi_ver;
 		err_code = irdma_setup_umode_qp(udata, iwdev, iwqp, &init_info, init_attr);
 	} else {
-		if (uk_attrs->hw_rev <= IRDMA_GEN_2)
-			INIT_DELAYED_WORK(&iwqp->dwork_flush, irdma_flush_worker);
+		INIT_DELAYED_WORK(&iwqp->dwork_flush, irdma_flush_worker);
 		init_info.qp_uk_init_info.abi_ver = IRDMA_ABI_VER;
 		err_code = irdma_setup_kmode_qp(iwdev, iwqp, &init_info, init_attr);
 	}
@@ -2227,8 +2226,7 @@ struct ib_qp *irdma_create_qp(struct ib_pd *ibpd,
 		init_info.qp_uk_init_info.abi_ver = iwpd->sc_pd.abi_ver;
 		err_code = irdma_setup_umode_qp(udata, iwdev, iwqp, &init_info, init_attr);
 	} else {
-		if (uk_attrs->hw_rev <= IRDMA_GEN_2)
-			INIT_DELAYED_WORK(&iwqp->dwork_flush, irdma_flush_worker);
+		INIT_DELAYED_WORK(&iwqp->dwork_flush, irdma_flush_worker);
 		init_info.qp_uk_init_info.abi_ver = IRDMA_ABI_VER;
 		err_code = irdma_setup_kmode_qp(iwdev, iwqp, &init_info, init_attr);
 	}
@@ -2963,6 +2961,7 @@ int irdma_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start, u64 len,
 
 	return 0;
 }
+
 #endif
 #ifdef REREG_MR_VER_2
 /*
@@ -3030,9 +3029,80 @@ struct ib_mr *irdma_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 
 	return NULL;
 }
-#endif
-#ifdef SET_ROCE_CM_INFO_VER_3
 
+#endif
+#ifdef SET_DMABUF
+#ifdef REG_USER_MR_DMABUF_VER_1
+/**
+ * irdma_reg_user_mr_dmabuf - register dma-buf based memory region
+ * @pd: ibpd pointer
+ * @start: offset
+ * @len: size of memory to register
+ * @virt: virtual address of memory to register
+ * @fd: fd associated with dma_buf
+ * @access: access rights
+ * @udata: user data
+ */
+struct ib_mr *irdma_reg_user_mr_dmabuf(struct ib_pd *pd, u64 start, u64 len,
+				       u64 virt, int fd, int access,
+				       struct ib_udata *udata)
+{
+#elif defined(REG_USER_MR_DMABUF_VER_2)
+/**
+ * irdma_reg_user_mr_dmabuf - register dma-buf based memory region
+ * @pd: ibpd pointer
+ * @start: offset
+ * @len: size of memory to register
+ * @virt: virtual address of memory to register
+ * @fd: fd associated with dma_buf
+ * @access: access rights
+ * @attrs: uverbs attribute bundle
+ */
+struct ib_mr *irdma_reg_user_mr_dmabuf(struct ib_pd *pd, u64 start, u64 len,
+				       u64 virt, int fd, int access,
+				       struct uverbs_attr_bundle *attrs)
+{
+#endif /* REG_USER_MR_DMABUF_VER_2 */
+#if defined(REG_USER_MR_DMABUF_VER_1) || defined(REG_USER_MR_DMABUF_VER_2)
+	struct irdma_device *iwdev = to_iwdev(pd->device);
+	struct ib_umem_dmabuf *umem_dmabuf;
+	struct irdma_mr *iwmr;
+	int err;
+
+	if (len > iwdev->rf->sc_dev.hw_attrs.max_mr_size)
+		return ERR_PTR(-EINVAL);
+
+	umem_dmabuf = ib_umem_dmabuf_get_pinned(pd->device, start, len, fd, access);
+	if (IS_ERR(umem_dmabuf)) {
+		err = PTR_ERR(umem_dmabuf);
+		ibdev_dbg(&iwdev->ibdev, "Failed to get dmabuf umem[%d]\n", err);
+		return ERR_PTR(err);
+	}
+
+	iwmr = irdma_alloc_iwmr(&umem_dmabuf->umem, pd, virt, IRDMA_MEMREG_TYPE_MEM);
+	if (IS_ERR(iwmr)) {
+		err = PTR_ERR(iwmr);
+		goto err_release;
+	}
+
+	err = irdma_reg_user_mr_type_mem(iwmr, access, true);
+	if (err)
+		goto err_iwmr;
+
+	return &iwmr->ibmr;
+
+err_iwmr:
+	irdma_free_iwmr(iwmr);
+
+err_release:
+	ib_umem_release(&umem_dmabuf->umem);
+
+	return ERR_PTR(err);
+}
+
+#endif /* defined(REG_USER_MR_DMABUF_VER_1) || defined(REG_USER_MR_DMABUF_VER_2) */
+#endif /* SET_DMABUF */
+#ifdef SET_ROCE_CM_INFO_VER_3
 int kc_irdma_set_roce_cm_info(struct irdma_qp *iwqp, struct ib_qp_attr *attr,
 			      u16 *vlan_id)
 {

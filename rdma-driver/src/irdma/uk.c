@@ -119,35 +119,10 @@ void irdma_clr_wqes(struct irdma_qp_uk *qp, u32 qp_wqe_idx)
  */
 void irdma_uk_qp_post_wr(struct irdma_qp_uk *qp)
 {
-	u64 temp;
-	u32 hw_sq_tail;
-	u32 sw_sq_head;
+	/* valid bit is written before ringing doorbell */
+	dma_wmb();
 
-	/* valid bit is written and loads completed before reading shadow */
-	mb();
-
-	/* read the doorbell shadow area */
-	get_64bit_val(qp->shadow_area, 0, &temp);
-
-	hw_sq_tail = (u32)FIELD_GET(IRDMA_QP_DBSA_HW_SQ_TAIL, temp);
-	sw_sq_head = IRDMA_RING_CURRENT_HEAD(qp->sq_ring);
-	if (sw_sq_head != qp->initial_ring.head) {
-		if (qp->push_dropped) {
-			writel(qp->qp_id, qp->wqe_alloc_db);
-			qp->push_dropped = false;
-		} else if (sw_sq_head != hw_sq_tail) {
-			if (sw_sq_head > qp->initial_ring.head) {
-				if (hw_sq_tail >= qp->initial_ring.head &&
-				    hw_sq_tail < sw_sq_head)
-					writel(qp->qp_id, qp->wqe_alloc_db);
-			} else {
-				if (hw_sq_tail >= qp->initial_ring.head ||
-				    hw_sq_tail < sw_sq_head)
-					writel(qp->qp_id, qp->wqe_alloc_db);
-			}
-		}
-	}
-
+	writel(qp->qp_id, qp->wqe_alloc_db);
 	qp->initial_ring.head = qp->sq_ring.head;
 }
 
@@ -225,7 +200,6 @@ static inline bool irdma_enable_push_wqe(struct irdma_qp_uk *qp, u32 total_size)
 		total_size <= qp->uk_attrs->max_hw_push_len) {
 		return true;
 	}
-
 	return false;
 }
 
@@ -1430,7 +1404,19 @@ int irdma_uk_cq_poll_cmpl(struct irdma_cq_uk *cq,
 			info->comp_status = IRDMA_COMPL_STATUS_FLUSHED;
 			break;
 		default:
-			info->comp_status = IRDMA_COMPL_STATUS_UNKNOWN;
+#define IRDMA_CIE_SIGNATURE 0xE
+#define IRDMA_CQMAJERR_HIGH_NIBBLE GENMASK(15, 12)
+			if (info->q_type == IRDMA_CQE_QTYPE_SQ
+			    && qp->qp_type == IRDMA_QP_TYPE_ROCE_UD
+			    && FIELD_GET(IRDMA_CQMAJERR_HIGH_NIBBLE, info->major_err)
+			    == IRDMA_CIE_SIGNATURE) {
+				info->error = 0;
+				info->major_err = 0;
+				info->minor_err = 0;
+				info->comp_status = IRDMA_COMPL_STATUS_SUCCESS;
+			} else {
+				info->comp_status = IRDMA_COMPL_STATUS_UNKNOWN;
+			}
 			break;
 		}
 	} else {

@@ -5,6 +5,7 @@
 LIST_HEAD(irdma_handlers);
 DEFINE_SPINLOCK(irdma_handler_lock);
 
+static const char *const irdma_cqp_cmd_names[IRDMA_MAX_CQP_OPS];
 static const struct ae_desc ae_desc_list[] = {
 	{IRDMA_AE_AMP_UNALLOCATED_STAG, "Unallocated memory key (L-Key/R-Key)"},
 	{IRDMA_AE_AMP_INVALID_STAG, "Invalid memory key (L-Key/R-Key)"},
@@ -933,6 +934,18 @@ static int irdma_wait_event(struct irdma_pci_f *rf,
 				       READ_ONCE(cqp_request->request_done),
 				       msecs_to_jiffies(wait_time_ms)))
 			break;
+		if (cqp_request->info.cqp_cmd_exec_status) {
+			ibdev_dbg(to_ibdev(&rf->sc_dev),
+				  "CQP: %s (%d) cqp op error status reported: %d, %d %x %x\n",
+				  irdma_cqp_cmd_names[cqp_request->info.cqp_cmd],
+				  cqp_request->info.cqp_cmd,
+				  cqp_request->info.cqp_cmd_exec_status,
+				  cqp_request->compl_info.error,
+				  cqp_request->compl_info.maj_err_code,
+				  cqp_request->compl_info.min_err_code);
+			break;
+		}
+
 
 		if (cqp_request->pending)
 			/* There was a deferred or pending completion
@@ -1661,6 +1674,9 @@ void irdma_dealloc_push_page(struct irdma_pci_f *rf,
 	cqp_info->in.u.manage_push_page.info.qs_handle = qp->qs_handle;
 	cqp_info->in.u.manage_push_page.info.free_page = 1;
 	cqp_info->in.u.manage_push_page.info.push_page_type = 0;
+	cqp_info->in.u.manage_push_page.info.hmc_fn_id =
+		iwqp->iwdev->rf->sc_dev.hmc_fn_id;
+	cqp_info->in.u.manage_push_page.info.use_hmc_fn_id = 1;
 	cqp_info->in.u.manage_push_page.cqp = &rf->cqp.sc_cqp;
 	cqp_info->in.u.manage_push_page.scratch = (uintptr_t)cqp_request;
 
@@ -3503,11 +3519,18 @@ static void irdma_set_cpi_common_values(struct irdma_cq_poll_info *cpi,
 
 static inline void irdma_comp_handler(struct irdma_cq *cq)
 {
+	struct irdma_device *iwdev = to_iwdev(cq->ibcq.device);
+	struct irdma_ceq *ceq = &iwdev->rf->ceqlist[cq->sc_cq.ceq_id];
+	unsigned long flags;
+
 	if (!cq->ibcq.comp_handler)
 		return;
 
-	if (atomic_cmpxchg(&cq->armed, 1, 0))
+	if (atomic_read(&cq->armed)) {
+		spin_lock_irqsave(&ceq->ce_lock, flags);
 		cq->ibcq.comp_handler(&cq->ibcq, cq->ibcq.cq_context);
+		spin_unlock_irqrestore(&ceq->ce_lock, flags);
+	}
 }
 
 /**

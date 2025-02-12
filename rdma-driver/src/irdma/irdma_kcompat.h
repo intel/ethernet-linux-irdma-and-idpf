@@ -497,15 +497,28 @@ int irdma_hwdereg_mr(struct ib_mr *ib_mr);
 int irdma_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start, u64 len,
 			u64 virt, int new_access, struct ib_pd *new_pd,
 			struct ib_udata *udata);
-#endif
 
+#endif
 #ifdef REREG_MR_VER_2
 struct ib_mr *irdma_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 				  u64 len, u64 virt, int new_access,
 				  struct ib_pd *new_pd,
 				  struct ib_udata *udata);
-#endif
 
+#endif
+#ifdef SET_DMABUF
+#ifdef REG_USER_MR_DMABUF_VER_1
+struct ib_mr *irdma_reg_user_mr_dmabuf(struct ib_pd *pd, u64 start, u64 len,
+				       u64 virt, int fd, int access,
+				       struct ib_udata *udata);
+
+#elif defined(REG_USER_MR_DMABUF_VER_2)
+struct ib_mr *irdma_reg_user_mr_dmabuf(struct ib_pd *pd, u64 start, u64 len,
+				       u64 virt, int fd, int access,
+				       struct uverbs_attr_bundle *attrs);
+
+#endif
+#endif /* SET_DMABUF */
 int irdma_hwreg_mr(struct irdma_device *iwdev, struct irdma_mr *iwmr,
 		   u16 access);
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2015 - 2023 Intel Corporation */
+/* Copyright (c) 2015 - 2025 Intel Corporation */
 #include "osdep.h"
 #include "hmc.h"
 #include "defs.h"
@@ -1223,6 +1223,7 @@ static void irdma_sc_qp_setctx_roce_gen_3(struct irdma_sc_qp *qp, __le64 *qp_ctx
 	qw8 = FIELD_PREP(IRDMAQPC_QKEY, roce_info->qkey) |
 	      FIELD_PREP(IRDMAQPC_DESTQP, roce_info->dest_qp);
 	set_64bit_val(qp_ctx, 64, qw8);
+	set_64bit_val(qp_ctx, 72, roce_info->rca_key[0]);
 	set_64bit_val(qp_ctx, 80,
 		      FIELD_PREP(IRDMAQPC_PSNNXT, udp->psn_nxt) |
 		      FIELD_PREP(IRDMAQPC_LSN, udp->lsn));
@@ -1231,6 +1232,7 @@ static void irdma_sc_qp_setctx_roce_gen_3(struct irdma_sc_qp *qp, __le64 *qp_ctx
 	set_64bit_val(qp_ctx, 96,
 		      FIELD_PREP(IRDMAQPC_PSNMAX, udp->psn_max) |
 		      FIELD_PREP(IRDMAQPC_PSNUNA, udp->psn_una));
+	set_64bit_val(qp_ctx, 104, roce_info->rca_key[1]);
 	set_64bit_val(qp_ctx, 112,
 		      FIELD_PREP(IRDMAQPC_CWNDROCE, udp->cwnd));
 	set_64bit_val(qp_ctx, 128,
@@ -1514,7 +1516,6 @@ void irdma_sc_qp_setctx(struct irdma_sc_qp *qp, __le64 *qp_ctx,
 		       FIELD_PREP(IRDMAQPC_LIMIT, tcp->cwnd_inc_limit) |
 		       FIELD_PREP(IRDMAQPC_DROPOOOSEG, tcp->drop_ooo_seg) |
 		       FIELD_PREP(IRDMAQPC_DUPACK_THRESH, tcp->dup_ack_thresh);
-
 		if (iw->ecn_en || iw->dctcp_en) {
 			tcp->tos &= ~ECN_CODE_PT_MASK;
 			tcp->tos |= ECN_CODE_PT_VAL;
@@ -1632,16 +1633,16 @@ static int irdma_sc_alloc_stag(struct irdma_sc_dev *dev,
 	set_64bit_val(wqe, 16,
 		      FIELD_PREP(IRDMA_CQPSQ_STAG_IDX, info->stag_idx) |
 		      FIELD_PREP(IRDMA_CQPSQ_STAG_PDID_HI, info->pd_id >> 18));
-	set_64bit_val(wqe, 40,
-		      FIELD_PREP(IRDMA_CQPSQ_STAG_HMCFNIDX, info->hmc_fcn_index) |
-		      FIELD_PREP(IRDMA_CQPSQ_STAG_NON_CACHED, info->non_cached) |
-		      FIELD_PREP(IRDMA_CQPSQ_STAG_USE_ASO, info->use_aso) |
-		      FIELD_PREP(IRDMA_CQPSQ_STAG_ASO_HOST_ID, info->aso_host_id) |
-		      FIELD_PREP(IRDMA_CQPSQ_STAG_ASO_VM_VF_TYPE, info->aso_vm_vf_type) |
-		      FIELD_PREP(IRDMA_CQPSQ_STAG_ASO_VM_VF_NUM, info->aso_vm_vf_num) |
-		      FIELD_PREP(IRDMA_CQPSQ_STAG_ASO_PF_NUM, info->aso_pf_num));
-	set_64bit_val(wqe, 56,
-		      FIELD_PREP(IRDMA_CQPSQ_PASID, info->pasid));
+	if (dev->hw_attrs.uk_attrs.hw_rev < IRDMA_GEN_3) {
+		set_64bit_val(wqe, 40,
+			      FIELD_PREP(IRDMA_CQPSQ_STAG_HMCFNIDX, info->hmc_fcn_index));
+	} else {
+		hdr = 0;
+		hdr |= FIELD_PREP(IRDMA_CQPSQ_STAG_HMCFNIDX, info->hmc_fcn_index);
+		if (dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_4)
+			hdr |= FIELD_PREP(IRDMA_CQPSQ_STAG_NON_CACHED, info->non_cached);
+		set_64bit_val(wqe, 40, hdr);
+	}
 
 	if (info->chunk_size)
 		set_64bit_val(wqe, 48,
@@ -1653,12 +1654,15 @@ static int irdma_sc_alloc_stag(struct irdma_sc_dev *dev,
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_LPBLSIZE, info->chunk_size) |
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_HPAGESIZE, page_size) |
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_REMACCENABLED, info->remote_access) |
-	      FIELD_PREP(IRDMA_CQPSQ_STAG_USEHMCFNIDX, info->use_hmc_fcn_index) |
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_PLACEMENTTYPE, info->placement_type) |
-	      FIELD_PREP(IRDMA_CQPSQ_STAG_USEPFRID, info->use_pf_rid) |
-	      FIELD_PREP(IRDMA_CQPSQ_PASID_VALID, info->pasid_valid) |
-	      FIELD_PREP(IRDMA_CQPSQ_STAG_REMOTE_ATOMIC_EN, info->remote_atomics_en) |
 	      FIELD_PREP(IRDMA_CQPSQ_WQEVALID, cqp->polarity);
+	if (dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_3) {
+		hdr |= FIELD_PREP(IRDMA_CQPSQ_STAG_REMOTE_ATOMIC_EN, info->remote_atomics_en);
+		hdr |= FIELD_PREP(IRDMA_CQPSQ_STAG_USEHMCFNIDX, info->use_hmc_fcn_index);
+	} else {
+		/* for FNIC, a PF can send this WQE for a VF */
+		hdr |= FIELD_PREP(IRDMA_CQPSQ_STAG_USEHMCFNIDX, info->use_hmc_fcn_index);
+	}
 	dma_wmb(); /* make sure WQE is written before valid bit is set */
 
 	set_64bit_val(wqe, 24, hdr);
@@ -1749,7 +1753,6 @@ static int irdma_sc_mr_reg_non_shared(struct irdma_sc_dev *dev,
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_VABASEDTO, addr_type) |
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_USEHMCFNIDX, info->use_hmc_fcn_index) |
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_PLACEMENTTYPE, info->placement_type) |
-	      FIELD_PREP(IRDMA_CQPSQ_STAG_USEPFRID, info->use_pf_rid) |
 	      FIELD_PREP(IRDMA_CQPSQ_PASID_VALID, info->pasid_valid) |
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_REMOTE_ATOMIC_EN,
 			 info->remote_atomics_en) |
@@ -1899,7 +1902,6 @@ int irdma_sc_mr_fast_register(struct irdma_sc_qp *qp,
 	set_64bit_val(wqe, 16,
 		      info->total_len |
 		      FIELD_PREP(IRDMAQPSQ_FIRSTPMPBLIDXLO, info->first_pm_pbl_index));
-
 	hdr = FIELD_PREP(IRDMAQPSQ_STAGKEY, info->stag_key) |
 	      FIELD_PREP(IRDMAQPSQ_STAGINDEX, info->stag_idx) |
 	      FIELD_PREP(IRDMAQPSQ_OPCODE, IRDMAQP_OP_FAST_REGISTER) |
@@ -1918,7 +1920,7 @@ int irdma_sc_mr_fast_register(struct irdma_sc_qp *qp,
 	set_64bit_val(wqe, 24, hdr);
 
 	print_hex_dump_debug("WQE: FAST_REG WQE", DUMP_PREFIX_OFFSET, 16, 8,
-			     wqe, IRDMA_QP_WQE_MIN_SIZE, false);
+			     wqe, quanta * IRDMA_QP_WQE_MIN_SIZE, false);
 	if (sq_info.push_wqe)
 		irdma_qp_push_wqe(&qp->qp_uk, wqe, quanta, wqe_idx, post_sq);
 	else if (post_sq)
@@ -4307,6 +4309,7 @@ int irdma_sc_cqp_init(struct irdma_sc_cqp *cqp,
 	cqp->protocol_used = info->protocol_used;
 	memcpy(&cqp->dcqcn_params, &info->dcqcn_params, sizeof(cqp->dcqcn_params));
 	cqp->en_rem_endpoint_trk = info->en_rem_endpoint_trk;
+	cqp->timer_slots = info->timer_slots;
 	if (cqp->dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_3) {
 		cqp->ooisc_blksize = info->ooisc_blksize;
 		cqp->rrsp_blksize = info->rrsp_blksize;
@@ -4442,6 +4445,8 @@ int irdma_sc_cqp_create(struct irdma_sc_cqp *cqp, u16 *maj_err, u16 *min_err)
 	temp = FIELD_PREP(IRDMA_CQPHC_ENABLED_VFS, cqp->ena_vf_count) |
 	       FIELD_PREP(IRDMA_CQPHC_HMC_PROFILE, cqp->hmc_profile);
 
+	if (hw_rev == IRDMA_GEN_2)
+		temp |= FIELD_PREP(IRDMA_CQPHC_TMR_SLOT, cqp->timer_slots);
 	if (hw_rev >= IRDMA_GEN_2)
 		temp |= FIELD_PREP(IRDMA_CQPHC_EN_REM_ENDPOINT_TRK,
 				   cqp->en_rem_endpoint_trk);
@@ -5536,12 +5541,13 @@ int irdma_sc_get_next_aeqe(struct irdma_sc_aeq *aeq,
 	case IRDMA_AE_LLP_SEGMENT_TOO_SMALL:
 	case IRDMA_AE_LLP_TOO_MANY_RETRIES:
 	case IRDMA_AE_LCE_QP_CATASTROPHIC:
-	case IRDMA_AE_LLP_TOO_MANY_RNRS:
+	case IRDMA_AE_INVALID_RSN_GAP_IN_RSN:
 	case IRDMA_AE_REMOTE_QP_CATASTROPHIC:
 	case IRDMA_AE_LOCAL_QP_CATASTROPHIC:
 	case IRDMA_AE_RCE_QP_CATASTROPHIC:
 	case IRDMA_AE_LLP_DOUBT_REACHABILITY:
 	case IRDMA_AE_LLP_CONNECTION_ESTABLISHED:
+	case IRDMA_AE_LLP_TOO_MANY_RNRS:
 	case IRDMA_AE_RESET_SENT:
 	case IRDMA_AE_TERMINATE_SENT:
 	case IRDMA_AE_RESET_NOT_SENT:
@@ -7321,6 +7327,7 @@ int irdma_process_cqp_cmd(struct irdma_sc_dev *dev,
 		status = irdma_exec_cqp_cmd(dev, pcmdinfo);
 	else
 		list_add_tail(&pcmdinfo->cqp_cmd_entry, &dev->cqp_cmd_head);
+	pcmdinfo->cqp_cmd_exec_status = status;
 	spin_unlock_irqrestore(&dev->cqp_lock, flags);
 	return status;
 }
@@ -7329,7 +7336,7 @@ int irdma_process_cqp_cmd(struct irdma_sc_dev *dev,
  * irdma_process_bh - called from tasklet for cqp list
  * @dev: sc device struct
  */
-int irdma_process_bh(struct irdma_sc_dev *dev)
+void irdma_process_bh(struct irdma_sc_dev *dev)
 {
 	int status = 0;
 	struct cqp_cmds_info *pcmdinfo;
@@ -7341,10 +7348,9 @@ int irdma_process_bh(struct irdma_sc_dev *dev)
 		pcmdinfo = (struct cqp_cmds_info *)irdma_remove_cqp_head(dev);
 		status = irdma_exec_cqp_cmd(dev, pcmdinfo);
 		if (status)
-			break;
+			pcmdinfo->cqp_cmd_exec_status = status;
 	}
 	spin_unlock_irqrestore(&dev->cqp_lock, flags);
-	return status;
 }
 
 #if IS_ENABLED(CONFIG_CONFIGFS_FS)
@@ -7581,14 +7587,16 @@ int irdma_sc_dev_init(struct irdma_sc_dev *dev, struct irdma_device_init_info *i
 			return -ETIMEDOUT;
 
 		val = readl(dev->hw_regs[IRDMA_GLPCI_LBARCTRL]);
-		db_size = (u8)FIELD_GET(IRDMA_GLPCI_LBARCTRL_PE_DB_SIZE, val);
-		if (db_size != IRDMA_PE_DB_SIZE_4M &&
-		    db_size != IRDMA_PE_DB_SIZE_8M) {
-			ibdev_dbg(to_ibdev(dev),
-				  "DEV: RDMA PE doorbell is not enabled in CSR val 0x%x db_size=%d\n",
-				  val, db_size);
-			return -ENODEV;
+		if (dev->hw_attrs.uk_attrs.hw_rev <= IRDMA_GEN_2) {
+			db_size = (u8)FIELD_GET(IRDMA_GLPCI_LBARCTRL_PE_DB_SIZE, val);
+			if (db_size != IRDMA_PE_DB_SIZE_4M &&
+			    db_size != IRDMA_PE_DB_SIZE_8M) {
+				ibdev_dbg(to_ibdev(dev),
+					  "DEV: RDMA PE doorbell is not enabled in CSR val 0x%x db_size=%d\n",
+					  val, db_size);
+				return -ENODEV;
 			}
+		}
 	} else if (dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_3) {
 		ret_code = irdma_vchnl_req_get_reg_layout(dev);
 		if (ret_code)
@@ -7685,7 +7693,8 @@ void mev_enable_hw_wa(struct irdma_sc_dev *dev, u64 hw_wa,
 			      CQ_NO_CHECKFLOW;
 		break;
 	case MEV_C0_45:
-		dev->hw_wa |= REDUCE_ORD_IRD;
+		if (dev->hw_attrs.uk_attrs.hw_rev == IRDMA_GEN_4)
+			dev->hw_wa |= REDUCE_ORD_IRD;
 		break;
 	case MMG_DEV_00:
 		dev->hw_wa |= REDUCE_ORD_IRD |

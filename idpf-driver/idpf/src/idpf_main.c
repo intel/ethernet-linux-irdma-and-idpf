@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2024 Intel Corporation */
+/* Copyright (C) 2019-2025 Intel Corporation */
 
 #include "kcompat.h"
 #include <linux/aer.h>
@@ -8,7 +8,7 @@
 MODULE_VERSION(IDPF_DRV_VER);
 #define DRV_SUMMARY    "Intel(R) Infrastructure Data Path Function Linux Driver"
 static const char idpf_driver_string[] = DRV_SUMMARY;
-static const char idpf_copyright[] = "Copyright (C) 2019-2024 Intel Corporation";
+static const char idpf_copyright[] = "Copyright (C) 2019-2025 Intel Corporation";
 MODULE_DESCRIPTION(DRV_SUMMARY);
 MODULE_LICENSE("GPL");
 
@@ -577,7 +577,7 @@ static void idpf_reset_prepare(struct idpf_adapter *adapter)
 	idpf_netdev_stop_all(adapter);
 	idpf_vc_xn_shutdown(&adapter->vcxn_mngr);
 
-	idpf_idc_event(&adapter->rdma_data, IDPF_HR_WARN_RESET, true);
+	idpf_idc_event(&adapter->rdma_data, IIDC_EVENT_WARN_RESET);
 	idpf_set_vport_state(adapter);
 	idpf_vc_core_deinit(adapter);
 	idpf_deinit_dflt_mbx(adapter);
@@ -748,4 +748,5 @@ static struct pci_driver idpf_driver = {
 	.shutdown		= idpf_shutdown,
 	.err_handler		= &idpf_pci_err_handler,
 };
+
 module_pci_driver(idpf_driver);
