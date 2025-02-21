@@ -4,33 +4,6 @@
 
 extern unsigned int irdma_rca_rq_size;
 
-static struct irdma_rsrc_limits rsrc_limits_table[] = {
-	[0] = {
-		.qplimit = SZ_128,
-	},
-	[1] = {
-		.qplimit = SZ_1K,
-	},
-	[2] = {
-		.qplimit = SZ_2K,
-	},
-	[3] = {
-		.qplimit = SZ_4K,
-	},
-	[4] = {
-		.qplimit = SZ_16K,
-	},
-	[5] = {
-		.qplimit = SZ_64K,
-	},
-	[6] = {
-		.qplimit = SZ_128K,
-	},
-	[7] = {
-		.qplimit = SZ_256K,
-	},
-};
-
 /* types of hmc objects */
 static enum irdma_hmc_rsrc_type iw_hmc_obj_types[] = {
 	IRDMA_HMC_IW_QP,
@@ -573,7 +546,7 @@ static int irdma_save_msix_info(struct irdma_pci_f *rf)
 
 	size = sizeof(struct irdma_msix_vector) * rf->msix_count;
 	size += sizeof(*iw_qvlist);
-	size += sizeof(*iw_qvinfo) * rf->msix_count - 1;
+	size += sizeof(*iw_qvinfo) * (rf->msix_count - 1);
 	rf->iw_msixtbl = kzalloc(size, GFP_KERNEL);
 	if (!rf->iw_msixtbl)
 		return -ENOMEM;
@@ -1122,6 +1095,7 @@ static int irdma_create_cqp(struct irdma_pci_f *rf)
 	cqp_init_info.rq_scratch_array = cqp->rq_scratch_array;
 	cqp_init_info.protocol_used = rf->protocol_used;
 	cqp_init_info.en_rem_endpoint_trk = rf->en_rem_endpoint_trk;
+	cqp_init_info.timer_slots = rf->timer_slots;
 	memcpy(&cqp_init_info.dcqcn_params, &rf->dcqcn_params,
 	       sizeof(cqp_init_info.dcqcn_params));
 
@@ -1751,8 +1725,6 @@ static int irdma_hmc_setup(struct irdma_pci_f *rf)
 	struct irdma_sc_dev *dev = &rf->sc_dev;
 	int status;
 	u32 qpcnt;
-
-	qpcnt = rsrc_limits_table[rf->limits_sel].qplimit;
 
 	qpcnt = IRDMA_MAX_MEV_QPCNT;
 	rf->sd_type = IRDMA_SD_TYPE_DIRECT;
@@ -3187,7 +3159,7 @@ void irdma_flush_wqes(struct irdma_qp *iwqp, u32 flush_mask)
 		}
 		if (irdma_upload_context && irdma_upload_qp_context(iwqp, 0, 1))
 			ibdev_warn(&iwqp->iwdev->ibdev, "failed to upload QP context\n");
-		if (!iwqp->user_mode && rf->rdma_ver <= IRDMA_GEN_2)
+		if (!iwqp->user_mode)
 			irdma_sched_qp_flush_work(iwqp);
 	}
 

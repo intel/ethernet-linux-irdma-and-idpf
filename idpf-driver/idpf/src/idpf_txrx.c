@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2024 Intel Corporation */
+/* Copyright (C) 2019-2025 Intel Corporation */
 
 #include "kcompat.h"
 #include <linux/timer.h>
@@ -1784,6 +1784,7 @@ static void idpf_tx_splitq_clean_hdr(struct idpf_queue *tx_q,
 	cleaned->packets += tx_buf->gso_segs;
 }
 
+#if IS_ENABLED(CONFIG_PTP_1588_CLOCK)
 /**
  * idpf_tx_hw_tstamp - report hw timestamp from completion desc to stack
  * @txq: pointer to txq struct
@@ -1810,6 +1811,10 @@ static void idpf_tx_hw_tstamp(struct idpf_queue *txq, struct sk_buff *skb,
 
 	skb_tstamp_tx(skb, &hwtstamps);
 }
+#else
+static inline void idpf_tx_hw_tstamp(struct idpf_queue *txq,
+				     struct sk_buff *skb, u8 *desc_ts) { }
+#endif /* CONFIG_PTP_1588_CLOCK */
 
 /**
  * idpf_tx_read_tstamp - schedule a work to read Tx timestamp value
@@ -4658,6 +4663,11 @@ static int idpf_rx_splitq_clean(struct idpf_queue *rxq, int budget)
 		gen_id = le16_to_cpu(rx_desc->pktlen_gen_bufq_id);
 		gen_id = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_ADV_GEN_M, gen_id);
 
+		/* This memory barrier is needed to keep us from reading
+		 * any other fields out of the rx_desc
+		 */
+		dma_rmb();
+
 		if (test_bit(__IDPF_Q_GEN_CHK, rxq->flags) != gen_id)
 			break;
 
@@ -5152,7 +5162,7 @@ static void idpf_net_dim(struct idpf_q_vector *q_vector)
 
 	idpf_update_dim_sample(q_vector, &dim_sample, &q_vector->tx_dim,
 			       packets, bytes);
-	net_dim(&q_vector->tx_dim, dim_sample);
+	net_dim(&q_vector->tx_dim, &dim_sample);
 
 check_rx_itr:
 	if (!IDPF_ITR_IS_DYNAMIC(q_vector->rx_intr_mode))
@@ -5171,7 +5181,7 @@ check_rx_itr:
 
 	idpf_update_dim_sample(q_vector, &dim_sample, &q_vector->rx_dim,
 			       packets, bytes);
-	net_dim(&q_vector->rx_dim, dim_sample);
+	net_dim(&q_vector->rx_dim, &dim_sample);
 }
 
 /**

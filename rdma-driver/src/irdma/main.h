@@ -341,6 +341,7 @@ struct irdma_pci_f {
 	u32 next_ws_node_id;
 	u32 max_ws_node_id;
 	u32 limits_sel;
+	u8 timer_slots;
 	unsigned long *allocated_ws_nodes;
 	unsigned long *allocated_qps;
 	unsigned long *allocated_cqs;

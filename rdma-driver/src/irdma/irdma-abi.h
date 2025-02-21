@@ -106,7 +106,9 @@ struct irdma_mem_reg_req {
 struct irdma_modify_qp_req {
 	__u8 sq_flush;
 	__u8 rq_flush;
-	__u8 rsvd[6];
+	__u8 rca_key_present;
+	__u8 rsvd[5];
+	__u64 rca_key[2];
 };
 
 struct irdma_create_cq_resp {

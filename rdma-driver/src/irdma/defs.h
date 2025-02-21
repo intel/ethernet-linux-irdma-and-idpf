@@ -542,6 +542,8 @@ enum irdma_cqp_op_type {
 #define IRDMA_CQPHC_EN_REM_ENDPOINT_TRK_S 3
 #define IRDMA_CQPHC_EN_REM_ENDPOINT_TRK BIT_ULL(3)
 
+#define IRDMA_CQPHC_TMR_SLOT_S 16
+#define IRDMA_CQPHC_TMR_SLOT GENMASK_ULL(19, 16)
 #define IRDMA_CQPHC_ENABLED_VFS_S 32
 #define IRDMA_CQPHC_ENABLED_VFS GENMASK_ULL(37, 32)
 
@@ -921,8 +923,6 @@ enum irdma_cqp_op_type {
 #define IRDMA_CQPSQ_STAG_VABASEDTO BIT_ULL(59)
 #define IRDMA_CQPSQ_STAG_USEHMCFNIDX_S 60
 #define IRDMA_CQPSQ_STAG_USEHMCFNIDX BIT_ULL(60)
-#define IRDMA_CQPSQ_STAG_USEPFRID_S 61
-#define IRDMA_CQPSQ_STAG_USEPFRID BIT_ULL(61)
 #define IRDMA_CQPSQ_STAG_PLACEMENTTYPE_S 54
 #define IRDMA_CQPSQ_STAG_PLACEMENTTYPE GENMASK_ULL(57, 54)
 #define IRDMA_CQPSQ_STAG_NON_CACHED_S 55
@@ -937,17 +937,6 @@ enum irdma_cqp_op_type {
 #define IRDMA_CQPSQ_STAG_PASID GENMASK_ULL(51, 32)
 #define IRDMA_CQPSQ_STAG_REMOTE_ATOMIC_EN_S 61
 #define IRDMA_CQPSQ_STAG_REMOTE_ATOMIC_EN BIT_ULL(61)
-
-#define IRDMA_CQPSQ_STAG_USE_ASO_S 54
-#define IRDMA_CQPSQ_STAG_USE_ASO BIT_ULL(54)
-#define IRDMA_CQPSQ_STAG_ASO_HOST_ID_S 51
-#define IRDMA_CQPSQ_STAG_ASO_HOST_ID GENMASK_ULL(53, 51)
-#define IRDMA_CQPSQ_STAG_ASO_VM_VF_TYPE_S 49
-#define IRDMA_CQPSQ_STAG_ASO_VM_VF_TYPE GENMASK_ULL(50, 49)
-#define IRDMA_CQPSQ_STAG_ASO_VM_VF_NUM_S 38
-#define IRDMA_CQPSQ_STAG_ASO_VM_VF_NUM GENMASK_ULL(48, 38)
-#define IRDMA_CQPSQ_STAG_ASO_PF_NUM_S 32
-#define IRDMA_CQPSQ_STAG_ASO_PF_NUM GENMASK_ULL(37, 32)
 
 #define IRDMA_CQPSQ_STAG_FIRSTPMPBLIDX_S 0
 #define IRDMA_CQPSQ_STAG_FIRSTPMPBLIDX GENMASK_ULL(27, 0)
@@ -1577,7 +1566,10 @@ enum irdma_cqp_op_type {
 #define IRDMAQPSQ_FLUSH_MR BIT_ULL(20)
 #define IRDMAQPSQ_REMOTE_ATOMICS_EN_S 55
 #define IRDMAQPSQ_REMOTE_ATOMICS_EN BIT_ULL(55)
-
+#define IRDMAQPSQ_FAST_REG_PASID_S 0
+#define IRDMAQPSQ_FAST_REG_PASID GENMASK_ULL(19, 0)
+#define IRDMAQPSQ_FAST_REG_PASID_VALID_S 55
+#define IRDMAQPSQ_FAST_REG_PASID_VALID BIT_ULL(55)
 #define IRDMAQPSQ_LOCSTAG_S 0
 #define IRDMAQPSQ_LOCSTAG GENMASK_ULL(31, 0)
 
@@ -1711,9 +1703,9 @@ enum irdma_cqp_op_type {
 #define IRDMA_RING_MOVE_HEAD(_ring, _retcode) \
 	{ \
 		u32 size; \
-		size = (_ring).size;  \
+		size = IRDMA_RING_SIZE(_ring);  \
 		if (!IRDMA_RING_FULL_ERR(_ring)) { \
-			(_ring).head = ((_ring).head + 1) % size; \
+			IRDMA_RING_CURRENT_HEAD(_ring) = (IRDMA_RING_CURRENT_HEAD(_ring) + 1) % size; \
 			(_retcode) = 0; \
 		} else { \
 			(_retcode) = -ENOMEM; \
@@ -1722,79 +1714,40 @@ enum irdma_cqp_op_type {
 #define IRDMA_RING_MOVE_HEAD_BY_COUNT(_ring, _count, _retcode) \
 	{ \
 		u32 size; \
-		size = (_ring).size; \
+		size = IRDMA_RING_SIZE(_ring); \
 		if ((IRDMA_RING_USED_QUANTA(_ring) + (_count)) < size) { \
-			(_ring).head = ((_ring).head + (_count)) % size; \
+			IRDMA_RING_CURRENT_HEAD(_ring) = (IRDMA_RING_CURRENT_HEAD(_ring) + (_count)) % size; \
 			(_retcode) = 0; \
 		} else { \
 			(_retcode) = -ENOMEM; \
 		} \
 	}
-#define IRDMA_SQ_RING_MOVE_HEAD(_ring, _retcode) \
-	{ \
-		u32 size; \
-		size = (_ring).size;  \
-		if (!IRDMA_SQ_RING_FULL_ERR(_ring)) { \
-			(_ring).head = ((_ring).head + 1) % size; \
-			(_retcode) = 0; \
-		} else { \
-			(_retcode) = -ENOMEM; \
-		} \
-	}
-#define IRDMA_SQ_RING_MOVE_HEAD_BY_COUNT(_ring, _count, _retcode) \
-	{ \
-		u32 size; \
-		size = (_ring).size; \
-		if ((IRDMA_RING_USED_QUANTA(_ring) + (_count)) < (size - 256)) { \
-			(_ring).head = ((_ring).head + (_count)) % size; \
-			(_retcode) = 0; \
-		} else { \
-			(_retcode) = -ENOMEM; \
-		} \
-	}
-#define IRDMA_RING_MOVE_HEAD_BY_COUNT_NOCHECK(_ring, _count) \
-	(_ring).head = ((_ring).head + (_count)) % (_ring).size
 
-#define IRDMA_RING_MOVE_TAIL(_ring) \
-	(_ring).tail = ((_ring).tail + 1) % (_ring).size
+#define IRDMA_RING_MOVE_HEAD_BY_COUNT_NOCHECK(_ring, _count) \
+	(IRDMA_RING_CURRENT_HEAD(_ring) = (IRDMA_RING_CURRENT_HEAD(_ring) + (_count)) % IRDMA_RING_SIZE(_ring))
 
 #define IRDMA_RING_MOVE_HEAD_NOCHECK(_ring) \
-	(_ring).head = ((_ring).head + 1) % (_ring).size
+	IRDMA_RING_MOVE_HEAD_BY_COUNT_NOCHECK(_ring, 1)
 
 #define IRDMA_RING_MOVE_TAIL_BY_COUNT(_ring, _count) \
-	(_ring).tail = ((_ring).tail + (_count)) % (_ring).size
+	IRDMA_RING_CURRENT_TAIL(_ring) = (IRDMA_RING_CURRENT_TAIL(_ring) + (_count)) % IRDMA_RING_SIZE(_ring)
+
+#define IRDMA_RING_MOVE_TAIL(_ring) \
+	IRDMA_RING_MOVE_TAIL_BY_COUNT(_ring, 1)
 
 #define IRDMA_RING_SET_TAIL(_ring, _pos) \
-	(_ring).tail = (_pos) % (_ring).size
+	WRITE_ONCE(IRDMA_RING_CURRENT_TAIL(_ring), (_pos) % IRDMA_RING_SIZE(_ring))
 
 #define IRDMA_RING_FULL_ERR(_ring) \
 	( \
-		(IRDMA_RING_USED_QUANTA(_ring) == ((_ring).size - 1))  \
-	)
-
-#define IRDMA_ERR_RING_FULL2(_ring) \
-	( \
-		(IRDMA_RING_USED_QUANTA(_ring) == ((_ring).size - 2))  \
-	)
-
-#define IRDMA_ERR_RING_FULL3(_ring) \
-	( \
-		(IRDMA_RING_USED_QUANTA(_ring) == ((_ring).size - 3))  \
+		(IRDMA_RING_USED_QUANTA(_ring) == (IRDMA_RING_SIZE(_ring) - 1))  \
 	)
 
 #define IRDMA_SQ_RING_FULL_ERR(_ring) \
 	( \
-		(IRDMA_RING_USED_QUANTA(_ring) == ((_ring).size - 257))  \
+		(IRDMA_RING_USED_QUANTA(_ring) == (IRDMA_RING_SIZE(_ring) - 257))  \
 	)
 
-#define IRDMA_ERR_SQ_RING_FULL2(_ring) \
-	( \
-		(IRDMA_RING_USED_QUANTA(_ring) == ((_ring).size - 258))  \
-	)
-#define IRDMA_ERR_SQ_RING_FULL3(_ring) \
-	( \
-		(IRDMA_RING_USED_QUANTA(_ring) == ((_ring).size - 259))  \
-	)
 #define IRDMA_RING_MORE_WORK(_ring) \
 	( \
 		(IRDMA_RING_USED_QUANTA(_ring) != 0) \
@@ -1802,17 +1755,17 @@ enum irdma_cqp_op_type {
 
 #define IRDMA_RING_USED_QUANTA(_ring) \
 	( \
-		(((_ring).head + (_ring).size - (_ring).tail) % (_ring).size) \
+		((READ_ONCE(IRDMA_RING_CURRENT_HEAD(_ring)) + IRDMA_RING_SIZE(_ring) - READ_ONCE(IRDMA_RING_CURRENT_TAIL(_ring))) % IRDMA_RING_SIZE(_ring)) \
 	)
 
 #define IRDMA_RING_FREE_QUANTA(_ring) \
 	( \
-		((_ring).size - IRDMA_RING_USED_QUANTA(_ring) - 1) \
+		(IRDMA_RING_SIZE(_ring) - IRDMA_RING_USED_QUANTA(_ring) - 1) \
 	)
 
 #define IRDMA_SQ_RING_FREE_QUANTA(_ring) \
 	( \
-		((_ring).size - IRDMA_RING_USED_QUANTA(_ring) - 257) \
+		(IRDMA_RING_SIZE(_ring) - IRDMA_RING_USED_QUANTA(_ring) - 257) \
 	)
 
 #define IRDMA_ATOMIC_RING_MOVE_HEAD(_ring, index, _retcode) \

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2024 Intel Corporation */
+/* Copyright (C) 2019-2025 Intel Corporation */
 
 #ifndef _IDPF_PTP_H_
 #define _IDPF_PTP_H_
@@ -150,13 +150,15 @@ struct idpf_ptp {
 	u64 max_adj;
 	u64 cached_phc_time;
 	unsigned long cached_phc_jiffies;
-	struct kthread_delayed_work work;
-	struct kthread_worker *kworker;
 	enum idpf_ptp_access get_dev_clk_time_access;
 	enum idpf_ptp_access get_cross_tstamp_access;
 	enum idpf_ptp_access set_dev_clk_time_access;
 	enum idpf_ptp_access adj_dev_clk_time_access;
 	enum idpf_ptp_access tx_tstamp_access;
+#ifndef HAVE_PTP_CANCEL_WORKER_SYNC
+	struct kthread_delayed_work work;
+	struct kthread_worker *kworker;
+#endif /* !HAVE_PTP_CANCEL_WORKER_SYNC */
 };
 
 struct idpf_ptp_dev_timers {
@@ -166,9 +168,10 @@ struct idpf_ptp_dev_timers {
 
 #if IS_ENABLED(CONFIG_PTP_1588_CLOCK)
 int idpf_ptp_get_caps(struct idpf_adapter *adapter);
+int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport);
 bool idpf_ptp_is_cap_ena(struct idpf_adapter *adapter, u32 cap);
 void idpf_ptp_get_features_access(struct idpf_adapter *adapter);
-int idpf_ptp_init(struct idpf_adapter *adpater);
+int idpf_ptp_init(struct idpf_adapter *adapter);
 void idpf_ptp_release(struct idpf_adapter *adapter);
 int idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
 			      struct idpf_ptp_dev_timers *dev_clk_time);
@@ -218,6 +221,11 @@ static inline int idpf_ptp_get_caps(struct idpf_adapter *adapter)
 	return -EOPNOTSUPP;
 }
 
+static inline int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport)
+{
+	return -EOPNOTSUPP;
+}
+
 static inline bool idpf_ptp_is_cap_ena(struct idpf_adapter *adapter, u32 cap)
 {
 	return false;
@@ -225,10 +233,9 @@ static inline bool idpf_ptp_is_cap_ena(struct idpf_adapter *adapter, u32 cap)
 
 static inline void idpf_ptp_get_features_access(struct idpf_adapter *adapter) { }
 
-static inline int idpf_ptp_init(struct idpf_adapter *adpater)
+static inline int idpf_ptp_init(struct idpf_adapter *adapter)
 {
-	dev_err(&adapter->pdev->dev, "PTP not supported when CONFIG_PTP_1588_CLOCK is disabled\n");
-	return 0;
+	return -EOPNOTSUPP;
 }
 
 static inline void idpf_ptp_release(struct idpf_adapter *adapter) { }

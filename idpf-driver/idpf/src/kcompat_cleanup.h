@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2024 Intel Corporation */
+/* Copyright (C) 2019-2025 Intel Corporation */
 
 /* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _KCOMPAT_CLEANUP_H_
@@ -10,9 +10,19 @@
 #ifndef typeof_member
 #define typeof_member(T, m)     typeof(((T*)0)->m)
 #endif
+#ifndef GCC_VERSION
+#define GCC_VERSION (__GNUC__ * 10000		\
+		     + __GNUC_MINOR__ * 100	\
+		     + __GNUC_PATCHLEVEL__)
+#endif /* GCC_VERSION */
+#define GCC_IS_BELOW(x) (GCC_VERSION < (x))
 
 #if defined __has_attribute
 #if __has_attribute(cleanup)
+#define HAVE_ATTRIBUTE_CLEANUP
+#endif
+#else
+#if !GCC_IS_BELOW(30306)
 #define HAVE_ATTRIBUTE_CLEANUP
 #endif
 #endif

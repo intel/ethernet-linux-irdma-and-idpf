@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2024 Intel Corporation */
+/* Copyright (C) 2019-2025 Intel Corporation */
 
 #include "idpf_controlq.h"
 
@@ -381,6 +381,10 @@ static int __idpf_ctlq_clean_sq(struct idpf_ctlq_info *cq, u16 *clean_count,
 		if (!force && !(le16_to_cpu(desc->flags) & IDPF_CTLQ_FLAG_DD))
 			break;
 
+		/* This barrier is needed to ensure that no other fields
+		 *  are read until we check 	the DD flag
+		 */
+		dma_rmb();
 		/* strip off FW internal code */
 		desc_err = le16_to_cpu(desc->ret_val) & 0xff;
 
@@ -621,6 +625,10 @@ int idpf_ctlq_recv(struct idpf_ctlq_info *cq, u16 *num_q_msg,
 		if (!(flags & IDPF_CTLQ_FLAG_DD))
 			break;
 
+		/* This barrier is needed to ensure that no other fields
+		 *  are read until we check 	the DD flag
+		 */
+		dma_rmb();
 		ret_val = le16_to_cpu(desc->ret_val);
 
 		q_msg[i].vmvf_type = (flags &

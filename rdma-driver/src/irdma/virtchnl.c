@@ -1066,8 +1066,8 @@ int irdma_vchnl_req_get_reg_layout(struct irdma_sc_dev *dev)
 				(hw_addr + reg_array[rindex].reg_offset +
 				 db_page_offset);
 
-		ibdev_dbg(to_ibdev(dev), "VIRT: hw_regs[%d] %p\n", reg_idx,
-			  dev->hw_regs[reg_idx]);
+		ibdev_dbg(to_ibdev(dev), "VIRT: hw_regs[%d] %llx\n", reg_idx,
+			  (u64)dev->hw_regs[reg_idx]);
 	}
 
 	if (!regfld_array)
@@ -1340,6 +1340,8 @@ int irdma_vchnl_req_get_hmc_fcn(struct irdma_sc_dev *dev)
 
 	if (dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_3) {
 		int i;
+
+		dev->hmc_fn_id = resp_hmc.hmc_func;
 
 		for (i = 0;  i < IRDMA_MAX_USER_PRIORITY; i++) {
 			dev->qos[i].qs_handle[0] = resp_hmc.qs_handle[i];

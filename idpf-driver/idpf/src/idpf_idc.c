@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2024 Intel Corporation */
+/* Copyright (C) 2019-2025 Intel Corporation */
 
 #include "idpf.h"
 
@@ -62,36 +62,23 @@ idpf_get_auxiliary_drv(struct iidc_core_dev_info *cdev_info)
 /**
  * idpf_idc_event - Function to handle IDC event
  * @rdma_data: pointer to rdma data struct
- * @reason: event reason
- * @pre_event: before triggering the event
+ * @event_type: IDC event type
  */
 void idpf_idc_event(struct idpf_rdma_data *rdma_data,
-		    enum idpf_vport_reset_cause reason,
-		    bool pre_event)
+		    enum iidc_event_type event_type)
 {
 	struct iidc_core_dev_info *cdev_info = rdma_data->cdev_info;
 	struct iidc_auxiliary_drv *iadrv;
-	enum iidc_event_type event_type;
 	struct iidc_event *event;
 
 	if (!cdev_info)
 		/* RDMA is not enabled */
 		return;
 
-	switch (reason) {
-	case IDPF_SR_MTU_CHANGE:
-		if (pre_event)
-			event_type = IIDC_EVENT_BEFORE_MTU_CHANGE;
-		else
-			event_type = IIDC_EVENT_AFTER_MTU_CHANGE;
-		break;
-	case IDPF_HR_WARN_RESET:
-		event_type = IIDC_EVENT_WARN_RESET;
-		break;
-	default:
-		/* We do not care about other events */
+	/* We do not care about other events */
+	if (event_type != IIDC_EVENT_WARN_RESET &&
+	    event_type != IIDC_EVENT_AFTER_MTU_CHANGE)
 		return;
-	};
 
 	event = kzalloc(sizeof(*event), GFP_KERNEL);
 	if (!event)
@@ -215,7 +202,7 @@ idpf_idc_vc_send(struct iidc_core_dev_info *cdev_info,
 	xn_params.send_buf.iov_len = msg_size;
 	xn_params.async = true;
 	xn_params.async_handler = idpf_idc_vc_async_handler;
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0) {
 		pr_err("Failed to pass send IDC msg, err %ld\n", reply_sz);
 		return reply_sz;
@@ -252,7 +239,7 @@ idpf_idc_vc_send_sync(struct iidc_core_dev_info *cdev_info, u8 *send_msg,
 	xn_params.send_buf.iov_len = msg_size;
 	xn_params.recv_buf.iov_base = recv_msg;
 	xn_params.recv_buf.iov_len = recv_size;
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 	*recv_len = reply_sz;

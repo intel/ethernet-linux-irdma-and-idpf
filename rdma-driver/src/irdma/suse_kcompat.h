@@ -48,6 +48,7 @@ int irdma_del_gid(struct ib_device *device,
 #define QUERY_PKEY_V2
 #define QUERY_PORT_V2
 #define REREG_MR_VER_2
+#define REG_USER_MR_DMABUF_VER_1
 #define SET_DMABUF
 #define ROCE_PORT_IMMUTABLE_V2
 #define RDMA_MMAP_DB_SUPPORT
@@ -119,6 +120,7 @@ int irdma_del_gid(struct ib_device *device,
 #define QUERY_PKEY_V2
 #define QUERY_PORT_V2
 #define REREG_MR_VER_2
+#define REG_USER_MR_DMABUF_VER_1
 #define SET_DMABUF
 #define ROCE_PORT_IMMUTABLE_V2
 #define RDMA_MMAP_DB_SUPPORT
@@ -193,6 +195,7 @@ int irdma_del_gid(struct ib_device *device,
 #define QUERY_PKEY_V2
 #define QUERY_PORT_V2
 #define REREG_MR_VER_2
+#define REG_USER_MR_DMABUF_VER_1
 #define SET_DMABUF
 #define ROCE_PORT_IMMUTABLE_V2
 #define RDMA_MMAP_DB_SUPPORT

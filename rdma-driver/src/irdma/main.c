@@ -46,6 +46,10 @@ static bool en_rem_endpoint_trk;
 module_param(en_rem_endpoint_trk, bool, 0444);
 MODULE_PARM_DESC(en_rem_endpoint_trk, "Remote Endpoint Tracking: 1=enabled (not supported on x722), 0=disabled(default)");
 
+static u8 timer_bucket_slots = 8;
+module_param(timer_bucket_slots, byte, 0444);
+MODULE_PARM_DESC(timer_bucket_slots, "timer_bucket_slots, Range: 3-13, default=8");
+
 static u8 fragment_count_limit = 6;
 module_param(fragment_count_limit, byte, 0444);
 MODULE_PARM_DESC(fragment_count_limit, "adjust maximum values for queue depth and inline data size, default=6, Range: 2-13");
@@ -202,6 +206,13 @@ void irdma_set_rf_user_cfg_params(struct irdma_pci_f *rf)
 	rf->max_rdma_vfs = (rf->rsrc_profile != IRDMA_HMC_PROFILE_DEFAULT) ?
 				max_rdma_vfs : 0;
 	rf->en_rem_endpoint_trk = en_rem_endpoint_trk;
+	rf->timer_slots = timer_bucket_slots;
+	if (!rf->timer_slots)
+		rf->timer_slots = 8;
+	else if (rf->timer_slots < 3)
+		rf->timer_slots = 3;
+	else if (rf->timer_slots > 13)
+		rf->timer_slots = 13;
 	rf->fragcnt_limit = fragment_count_limit;
 	if (rf->fragcnt_limit > 13 || rf->fragcnt_limit < 2) {
 		rf->fragcnt_limit = 6;
@@ -953,9 +964,11 @@ static int irdma_probe(struct auxiliary_device *aux_dev, const struct auxiliary_
 	if (err)
 		goto err_rt_init;
 
-	err = irdma_register_notifiers(iwdev);
-	if (err)
-		goto err_notifier_reg;
+	if (rf->rdma_ver <= IRDMA_GEN_2) {
+		err = irdma_register_notifiers(iwdev);
+		if (err)
+			goto err_notifier_reg;
+	}
 	irdma_add_handler(hdl);
 #ifdef CONFIG_DEBUG_FS
 	irdma_dbg_pf_init(hdl);

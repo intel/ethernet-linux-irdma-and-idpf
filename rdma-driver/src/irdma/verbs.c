@@ -1021,6 +1021,7 @@ int irdma_modify_qp_roce(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 {
 #define IRDMA_MODIFY_QP_MIN_REQ_LEN offsetofend(struct irdma_modify_qp_req, rq_flush)
 #define IRDMA_MODIFY_QP_MIN_RESP_LEN offsetofend(struct irdma_modify_qp_resp, push_valid)
+#define IRDMA_MODIFY_QP_RCAKEY_REQ_LEN offsetofend(struct irdma_modify_qp_req, rca_key)
 	struct irdma_pd *iwpd = to_iwpd(ibqp->pd);
 	struct irdma_qp *iwqp = to_iwqp(ibqp);
 	struct irdma_device *iwdev = iwqp->iwdev;
@@ -1085,6 +1086,8 @@ int irdma_modify_qp_roce(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		udp_info->rexmit_thresh = attr->retry_cnt;
 
 	ctx_info->roce_info->pd_id = iwpd->sc_pd.pd_id;
+	ctx_info->roce_info->rca_key[0] = 0ULL;
+	ctx_info->roce_info->rca_key[1] = 0ULL;
 
 	if (attr_mask & IB_QP_AV) {
 		struct irdma_av *av = &iwqp->roce_ah.av;
@@ -1229,6 +1232,17 @@ int irdma_modify_qp_roce(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 
 			if (iwqp->iwarp_state == IRDMA_QP_STATE_INVALID) {
 				info.next_iwarp_state = IRDMA_QP_STATE_IDLE;
+				if (udata && udata->inlen >= IRDMA_MODIFY_QP_RCAKEY_REQ_LEN
+				    && ureq.rca_key_present) {
+					if (ib_copy_from_udata(&ureq, udata,
+							       min(sizeof(ureq), udata->inlen))) {
+						ret = -EINVAL;
+						goto exit;
+					}
+
+					ctx_info->roce_info->rca_key[0] = ureq.rca_key[0];
+					ctx_info->roce_info->rca_key[1] = ureq.rca_key[1];
+				}
 				issue_modify_qp = 1;
 			}
 			break;
@@ -2807,13 +2821,13 @@ static void irdma_set_best_pagesz(u64 addr, struct irdma_mr *iwmr, u64 page_size
  * @reg_type - registration type
  */
 #ifndef SET_BEST_PAGE_SZ_V1
-static struct irdma_mr *irdma_alloc_iwmr(struct ib_umem *region,
-					 struct ib_pd *pd, u64 virt,
-					 enum irdma_memreg_type reg_type)
+struct irdma_mr *irdma_alloc_iwmr(struct ib_umem *region,
+				  struct ib_pd *pd, u64 virt,
+				  enum irdma_memreg_type reg_type)
 #else
-static struct irdma_mr *irdma_alloc_iwmr(struct ib_umem *region,
-					 struct ib_pd *pd, u64 virt, u64 start,
-					 enum irdma_memreg_type reg_type)
+struct irdma_mr *irdma_alloc_iwmr(struct ib_umem *region,
+				  struct ib_pd *pd, u64 virt, u64 start,
+				  enum irdma_memreg_type reg_type)
 #endif /* SET_BEST_PAGE_SZ_V1 */
 {
 #if defined(SET_BEST_PAGE_SZ_V2) || defined(SET_BEST_PAGE_SZ_V1)
@@ -2867,7 +2881,7 @@ static struct irdma_mr *irdma_alloc_iwmr(struct ib_umem *region,
 	return iwmr;
 }
 
-static void irdma_free_iwmr(struct irdma_mr *iwmr)
+void irdma_free_iwmr(struct irdma_mr *iwmr)
 {
 	kfree(iwmr);
 }
@@ -2878,8 +2892,8 @@ static void irdma_free_iwmr(struct irdma_mr *iwmr)
  * @access - access rights
  * @create_stag - flag to create stag or not
  */
-static int irdma_reg_user_mr_type_mem(struct irdma_mr *iwmr, int access,
-				      bool create_stag)
+int irdma_reg_user_mr_type_mem(struct irdma_mr *iwmr, int access,
+			       bool create_stag)
 {
 	struct irdma_device *iwdev = to_iwdev(iwmr->ibmr.device);
 	struct irdma_pbl *iwpbl = &iwmr->iwpbl;
@@ -3281,48 +3295,6 @@ err:
 }
 
 #ifdef SET_DMABUF
-
-static struct ib_mr *irdma_reg_user_mr_dmabuf(struct ib_pd *pd, u64 start,
-					      u64 len, u64 virt,
-					      int fd, int access,
-					      struct ib_udata *udata)
-{
-	struct irdma_device *iwdev = to_iwdev(pd->device);
-	struct ib_umem_dmabuf *umem_dmabuf;
-	struct irdma_mr *iwmr;
-	int err;
-
-	if (len > iwdev->rf->sc_dev.hw_attrs.max_mr_size)
-		return ERR_PTR(-EINVAL);
-
-	umem_dmabuf = ib_umem_dmabuf_get_pinned(pd->device, start, len, fd, access);
-	if (IS_ERR(umem_dmabuf)) {
-		err = PTR_ERR(umem_dmabuf);
-		ibdev_dbg(&iwdev->ibdev, "Failed to get dmabuf umem[%d]\n", err);
-		return ERR_PTR(err);
-	}
-
-	iwmr = irdma_alloc_iwmr(&umem_dmabuf->umem, pd, virt, IRDMA_MEMREG_TYPE_MEM);
-	if (IS_ERR(iwmr)) {
-		err = PTR_ERR(iwmr);
-		goto err_release;
-	}
-
-	err = irdma_reg_user_mr_type_mem(iwmr, access, true);
-	if (err)
-		goto err_iwmr;
-
-	return &iwmr->ibmr;
-
-err_iwmr:
-	irdma_free_iwmr(iwmr);
-
-err_release:
-	ib_umem_release(&umem_dmabuf->umem);
-
-	return ERR_PTR(err);
-}
-
 #endif /* SET_DMABUF */
 /**
  * irdma_reg_phys_mr - register kernel physical memory
@@ -3331,6 +3303,7 @@ err_release:
  * @size: size of memory to register
  * @access: Access rights
  * @iova_start: start of virtual address for physical buffers
+ * @dma_mr: Flag indicating DMA Mem region
  */
 struct ib_mr *irdma_reg_phys_mr(struct ib_pd *pd, u64 addr, u64 size, int access,
 				u64 *iova_start, bool dma_mr)
@@ -3620,18 +3593,13 @@ static int irdma_post_send(struct ib_qp *ibqp,
 		ib_wr = ib_wr->next;
 	}
 
-	if (ukqp->uk_attrs->hw_rev <= IRDMA_GEN_2) {
-		if (!atomic_read(&iwqp->flush_issued)) {
-			if (iwqp->hw_iwarp_state <= IRDMA_QP_STATE_RTS)
-				irdma_uk_qp_post_wr(ukqp);
-			spin_unlock_irqrestore(&iwqp->lock, flags);
-		} else {
-			spin_unlock_irqrestore(&iwqp->lock, flags);
-			irdma_sched_qp_flush_work(iwqp);
-		}
-	} else {
-		irdma_uk_qp_post_wr(ukqp);
+	if (!atomic_read(&iwqp->flush_issued)) {
+		if (iwqp->hw_iwarp_state <= IRDMA_QP_STATE_RTS)
+			irdma_uk_qp_post_wr(ukqp);
 		spin_unlock_irqrestore(&iwqp->lock, flags);
+	} else {
+		spin_unlock_irqrestore(&iwqp->lock, flags);
+		irdma_sched_qp_flush_work(iwqp);
 	}
 
 	if (err)
@@ -3727,8 +3695,8 @@ static int irdma_post_recv(struct ib_qp *ibqp,
 
 out:
 	spin_unlock_irqrestore(&iwqp->lock, flags);
-	if (ukqp->uk_attrs->hw_rev <= IRDMA_GEN_2 &&
-	    atomic_read(&iwqp->flush_issued))
+
+	if (atomic_read(&iwqp->flush_issued))
 		irdma_sched_qp_flush_work(iwqp);
 
 	if (err)

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2015 - 2023 Intel Corporation */
+/* Copyright (c) 2015 - 2024 Intel Corporation */
 #ifndef IRDMA_VERBS_H
 #define IRDMA_VERBS_H
 
@@ -440,6 +440,18 @@ irdma_user_mmap_entry_add_hash(struct irdma_ucontext *ucontext, u64 bar_offset,
 			       enum irdma_mmap_flag mmap_flag, u64 *mmap_offset);
 void irdma_user_mmap_entry_del_hash(struct irdma_user_mmap_entry *entry);
 #endif /* RDMA_MMAP_DB_SUPPORT */
+#ifndef SET_BEST_PAGE_SZ_V1
+struct irdma_mr *irdma_alloc_iwmr(struct ib_umem *region,
+				  struct ib_pd *pd, u64 virt,
+				  enum irdma_memreg_type reg_type);
+#else
+struct irdma_mr *irdma_alloc_iwmr(struct ib_umem *region,
+				  struct ib_pd *pd, u64 virt, u64 start,
+				  enum irdma_memreg_type reg_type);
+#endif /* !SET_BEST_PAGE_SZ_V1 */
+void irdma_free_iwmr(struct irdma_mr *iwmr);
+int irdma_reg_user_mr_type_mem(struct irdma_mr *iwmr, int access,
+			       bool create_stag);
 int irdma_ib_register_device(struct irdma_device *iwdev);
 void irdma_ib_unregister_device(struct irdma_device *iwdev);
 void irdma_ib_qp_event(struct irdma_qp *iwqp, enum irdma_qp_event_type event);

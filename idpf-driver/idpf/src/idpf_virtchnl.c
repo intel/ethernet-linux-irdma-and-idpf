@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2024 Intel Corporation */
+/* Copyright (C) 2019-2025 Intel Corporation */
 
 #include "idpf.h"
 
@@ -338,8 +338,7 @@ void idpf_vc_xn_init(struct idpf_vc_xn_manager *vcxn_mngr)
 	if (WARN_ONCE(vcxn_mngr->active, "Attempt to init vcxn_mngr already active\n"))
 		return;
 
-	INIT_LIST_HEAD(&vcxn_mngr->free_xns);
-	spin_lock_init(&vcxn_mngr->xn_list_lock);
+	spin_lock_init(&vcxn_mngr->xn_bm_lock);
 
 	for (i = 0; i < ARRAY_SIZE(vcxn_mngr->ring); i++) {
 		struct idpf_vc_xn *xn = &vcxn_mngr->ring[i];
@@ -349,11 +348,10 @@ void idpf_vc_xn_init(struct idpf_vc_xn_manager *vcxn_mngr)
 		xn->idx = i;
 		idpf_vc_xn_release_bufs(xn);
 		reinit_completion(&xn->completed);
-		INIT_LIST_HEAD(&xn->free_list);
-		list_add(&xn->free_list, &vcxn_mngr->free_xns);
 		idpf_vc_xn_unlock(xn);
 	}
 	WRITE_ONCE(vcxn_mngr->active, true);
+	bitmap_fill(vcxn_mngr->free_xn_bm, IDPF_VC_XN_RING_LEN);
 }
 
 /**
@@ -365,16 +363,14 @@ void idpf_vc_xn_init(struct idpf_vc_xn_manager *vcxn_mngr)
  */
 void idpf_vc_xn_shutdown(struct idpf_vc_xn_manager *vcxn_mngr)
 {
-	struct list_head *curs, *tmp;
 	int i;
 
 	if (!vcxn_mngr->active)
 		return;
 
-	spin_lock_bh(&vcxn_mngr->xn_list_lock);
-	list_for_each_safe(curs, tmp, &vcxn_mngr->free_xns)
-		list_del(curs);
-	spin_unlock_bh(&vcxn_mngr->xn_list_lock);
+	spin_lock_bh(&vcxn_mngr->xn_bm_lock);
+	bitmap_zero(vcxn_mngr->free_xn_bm, IDPF_VC_XN_RING_LEN);
+	spin_unlock_bh(&vcxn_mngr->xn_bm_lock);
 
 	for (i = 0; i < ARRAY_SIZE(vcxn_mngr->ring); i++) {
 		struct idpf_vc_xn *xn = &vcxn_mngr->ring[i];
@@ -394,21 +390,23 @@ void idpf_vc_xn_shutdown(struct idpf_vc_xn_manager *vcxn_mngr)
  *
  * Returns NULL if no free transactions
  */
-static struct idpf_vc_xn *idpf_vc_xn_pop_free(struct idpf_vc_xn_manager *vcxn_mngr)
+static
+struct idpf_vc_xn *idpf_vc_xn_pop_free(struct idpf_vc_xn_manager *vcxn_mngr)
 {
-	struct idpf_vc_xn *xn;
+	struct idpf_vc_xn *xn = NULL;
+	unsigned long free_idx;
 
-	spin_lock_bh(&vcxn_mngr->xn_list_lock);
-	if (list_empty(&vcxn_mngr->free_xns)) {
-		spin_unlock_bh(&vcxn_mngr->xn_list_lock);
-		return NULL;
-	}
+	spin_lock_bh(&vcxn_mngr->xn_bm_lock);
+	free_idx = find_first_bit(vcxn_mngr->free_xn_bm, IDPF_VC_XN_RING_LEN);
+	if (free_idx == IDPF_VC_XN_RING_LEN)
+		goto do_unlock;
 
-	xn = list_first_entry(&vcxn_mngr->free_xns, struct idpf_vc_xn,
-			      free_list);
-	list_del(&xn->free_list);
+	clear_bit(free_idx, vcxn_mngr->free_xn_bm);
+	xn = &vcxn_mngr->ring[free_idx];
 	xn->salt = vcxn_mngr->salt++;
-	spin_unlock_bh(&vcxn_mngr->xn_list_lock);
+
+do_unlock:
+	spin_unlock_bh(&vcxn_mngr->xn_bm_lock);
 
 	return xn;
 }
@@ -421,10 +419,8 @@ static struct idpf_vc_xn *idpf_vc_xn_pop_free(struct idpf_vc_xn_manager *vcxn_mn
 static void idpf_vc_xn_push_free(struct idpf_vc_xn_manager *vcxn_mngr,
 				 struct idpf_vc_xn *xn)
 {
-	spin_lock_bh(&vcxn_mngr->xn_list_lock);
-	INIT_LIST_HEAD(&xn->free_list);
-	list_add(&xn->free_list, &vcxn_mngr->free_xns);
-	spin_unlock_bh(&vcxn_mngr->xn_list_lock);
+	idpf_vc_xn_release_bufs(xn);
+	set_bit(xn->idx, vcxn_mngr->free_xn_bm);
 }
 
 /**
@@ -443,12 +439,11 @@ static void idpf_vc_xn_push_free(struct idpf_vc_xn_manager *vcxn_mngr,
  * error.
  */
 ssize_t idpf_vc_xn_exec(struct idpf_adapter *adapter,
-			struct idpf_vc_xn_params params)
+			const struct idpf_vc_xn_params *params)
 {
-	struct kvec *send_buf = &params.send_buf;
+	const struct kvec *send_buf = &params->send_buf;
 	struct idpf_vc_xn *xn;
 	ssize_t retval;
-	int timeout;
 	u16 cookie;
 
 	xn = idpf_vc_xn_pop_free(&adapter->vcxn_mngr);
@@ -461,43 +456,49 @@ ssize_t idpf_vc_xn_exec(struct idpf_adapter *adapter,
 		retval = -ENXIO;
 		goto only_unlock;
 	} else if (xn->state != IDPF_VC_XN_IDLE) {
-		dev_err_ratelimited(idpf_adapter_to_dev(adapter), "There should only be idle transactions in free list (idx %d op %d)\n",
-				    xn->idx, xn->vc_op);
-		retval = -EBUSY;
-		goto only_unlock;
+		/* We're just going to clobber this transaction even though
+		 * it's not IDLE. If we don't reuse it we could theoretically
+		 * eventually leak all the free transactions and not be able to
+		 * send any messages. At least this way we make an attempt to
+		 * remain functional even though something really bad is
+		 * happening that's corrupting what was supposed to be free
+		 * transactions.
+		 */
+		WARN_ONCE(1, "There should only be idle transactions in free list (idx %d op %d)\n",
+			  xn->idx, xn->vc_op);
 	}
 
-	xn->reply = params.recv_buf;
+	xn->reply = params->recv_buf;
 	xn->reply_sz = 0;
-	xn->state = params.async ? IDPF_VC_XN_ASYNC : IDPF_VC_XN_WAITING;
-	xn->vc_op = params.vc_op;
-	xn->async_handler = params.async_handler;
+	xn->state = params->async ? IDPF_VC_XN_ASYNC : IDPF_VC_XN_WAITING;
+	xn->vc_op = params->vc_op;
+	xn->async_handler = params->async_handler;
 	idpf_vc_xn_unlock(xn);
 
-	if (!params.async)
+	if (!params->async)
 		reinit_completion(&xn->completed);
 	cookie = FIELD_PREP(IDPF_VC_XN_SALT_M, xn->salt) |
 		 FIELD_PREP(IDPF_VC_XN_IDX_M, xn->idx);
 
-	retval = idpf_send_mb_msg(adapter, params.vc_op,
+	retval = idpf_send_mb_msg(adapter, params->vc_op,
 				  send_buf->iov_len, (u8 *)send_buf->iov_base,
 				  cookie);
 	if (retval) {
 		idpf_vc_xn_lock(xn);
-		if (xn->state != IDPF_VC_XN_SHUTDOWN)
-			WARN_ON_ONCE(xn->state != IDPF_VC_XN_WAITING);
 		goto release_and_unlock;
 	}
 
-	if (params.async)
+	if (params->async)
 		return 0;
-	timeout = params.timeout_ms;
-	WARN_ONCE(!timeout, "Timeout should not be zero, it will timeout immediately! (op %d)\n",
-		  params.vc_op);
-	wait_for_completion_timeout(&xn->completed, msecs_to_jiffies(timeout));
 
-	/* no need to check the return value: we check the final state of the
-	 * transaction below.
+	wait_for_completion_timeout(&xn->completed,
+				    msecs_to_jiffies(params->timeout_ms));
+
+	/* No need to check the return value; we check the final state of the
+	 * transaction below. It's possible the transaction actually gets more
+	 * timeout than specified if we get preempted here but after
+	 * wait_for_completion_timeout returns. This should be non-issue
+	 * however.
 	 */
 	idpf_vc_xn_lock(xn);
 	switch (xn->state) {
@@ -506,15 +507,15 @@ ssize_t idpf_vc_xn_exec(struct idpf_adapter *adapter,
 		goto only_unlock;
 	case IDPF_VC_XN_WAITING:
 		dev_notice_ratelimited(idpf_adapter_to_dev(adapter), "Transaction timed-out (op %d, %dms)\n",
-				       params.vc_op, timeout);
-		retval = -ETIMEDOUT;
+				       params->vc_op, params->timeout_ms);
+		retval = -ETIME;
 		break;
 	case IDPF_VC_XN_COMPLETED_SUCCESS:
 		retval = xn->reply_sz;
 		break;
 	case IDPF_VC_XN_COMPLETED_FAILED:
 		dev_notice_ratelimited(idpf_adapter_to_dev(adapter), "Transaction failed (op %d)\n",
-				       params.vc_op);
+				       params->vc_op);
 		retval = -EIO;
 		break;
 	default:
@@ -525,11 +526,11 @@ ssize_t idpf_vc_xn_exec(struct idpf_adapter *adapter,
 	}
 
 release_and_unlock:
-	idpf_vc_xn_release_bufs(xn);
 	idpf_vc_xn_push_free(&adapter->vcxn_mngr, xn);
 	/* If we receive a VC reply after here, it will be dropped. */
 only_unlock:
 	idpf_vc_xn_unlock(xn);
+
 	return retval;
 }
 
@@ -570,7 +571,6 @@ idpf_vc_xn_forward_async(struct idpf_adapter *adapter, struct idpf_vc_xn *xn,
 	}
 
 release_bufs:
-	idpf_vc_xn_release_bufs(xn);
 	idpf_vc_xn_push_free(&adapter->vcxn_mngr, xn);
 
 	return err;
@@ -616,8 +616,14 @@ idpf_vc_xn_forward_reply(struct idpf_adapter *adapter,
 	case IDPF_VC_XN_IDLE:
 		dev_err_ratelimited(idpf_adapter_to_dev(adapter), "Unexpected or belated VC reply (op %d)\n",
 				    ctlq_msg->cookie.mbx.chnl_opcode);
-		fallthrough;
+		err = -EINVAL;
+		goto out_unlock;
 	case IDPF_VC_XN_SHUTDOWN:
+		/* ENXIO is a bit special here as the recv msg loop uses that
+		 * know if it should stop trying to clean the ring if we lost
+		 * the virtchnl. We need to stop playing with registers and
+		 * yield.
+		 */
 		err = -EINVAL;
 		goto out_unlock;
 	case IDPF_VC_XN_ASYNC:
@@ -781,7 +787,7 @@ static int idpf_wait_for_marker_event(struct idpf_vport *vport,
  */
 static int idpf_send_ver_msg(struct idpf_adapter *adapter)
 {
-	struct idpf_vc_xn_params xn_params = { };
+	struct idpf_vc_xn_params xn_params = {};
 	struct virtchnl2_version_info vvi;
 	ssize_t reply_sz;
 	u32 major, minor;
@@ -801,7 +807,7 @@ static int idpf_send_ver_msg(struct idpf_adapter *adapter)
 	xn_params.recv_buf = xn_params.send_buf;
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 	if (reply_sz < sizeof(vvi))
@@ -913,7 +919,7 @@ static int idpf_send_get_caps_msg(struct idpf_adapter *adapter)
 	xn_params.recv_buf.iov_len = sizeof(struct virtchnl2_get_capabilities);
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 	if (reply_sz < sizeof(struct virtchnl2_get_capabilities))
@@ -921,6 +927,8 @@ static int idpf_send_get_caps_msg(struct idpf_adapter *adapter)
 
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_PTP_1588_CLOCK)
 /**
  * idpf_ptp_get_caps - Send virtchnl get ptp capabilities message
  * @adapter: Driver specific private structure
@@ -959,7 +967,7 @@ int idpf_ptp_get_caps(struct idpf_adapter *adapter)
 	xn_params.recv_buf.iov_len = IDPF_CTLQ_MAX_BUF_LEN;
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0) {
 		err = reply_sz;
 		goto free_recv_buf;
@@ -1033,7 +1041,7 @@ free_recv_buf:
  * Send virtchnl get vport tstamps caps message to receive the set of tstamp
  * capabilities per vport. Returns 0 on success, negative otherwise.
  */
-static int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport)
+int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport)
 {
 	struct virtchnl2_ptp_get_vport_tx_tstamp_caps send_tx_tstamp_caps;
 	struct virtchnl2_ptp_get_vport_tx_tstamp_caps *rcv_tx_tstamp_caps;
@@ -1064,7 +1072,7 @@ static int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport)
 	xn_params.recv_buf.iov_len = IDPF_CTLQ_MAX_BUF_LEN;
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 	if (reply_sz < 0) {
 		err = reply_sz;
 		goto get_tstamp_caps_out;
@@ -1165,7 +1173,7 @@ int idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
 	xn_params.recv_buf.iov_len = sizeof(struct virtchnl2_ptp_get_dev_clk_time);
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 	if (reply_sz < sizeof(struct virtchnl2_ptp_get_dev_clk_time))
@@ -1198,7 +1206,7 @@ int idpf_ptp_get_cross_time(struct idpf_adapter *adapter,
 	xn_params.recv_buf.iov_len = sizeof(struct virtchnl2_ptp_get_cross_time);
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 	if (reply_sz < sizeof(struct virtchnl2_ptp_get_cross_time))
@@ -1233,7 +1241,7 @@ int idpf_ptp_set_dev_clk_time(struct idpf_adapter *adapter, u64 time)
 	xn_params.recv_buf.iov_len = sizeof(set_dev_clk_time_msg);
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 	if (reply_sz < sizeof(set_dev_clk_time_msg))
@@ -1265,7 +1273,7 @@ int idpf_ptp_adj_dev_clk_time(struct idpf_adapter *adapter, s64 delta)
 	xn_params.recv_buf.iov_len = sizeof(adj_dev_clk_time_msg);
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 	if (reply_sz < sizeof(adj_dev_clk_time_msg))
@@ -1297,7 +1305,7 @@ int idpf_ptp_adj_dev_clk_fine(struct idpf_adapter *adapter, u64 incval)
 	xn_params.recv_buf.iov_len = sizeof(adj_dev_clk_fine_msg);
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 	if (reply_sz < sizeof(adj_dev_clk_fine_msg))
@@ -1467,7 +1475,7 @@ int idpf_ptp_get_tx_tstamp_mb(struct idpf_vport *vport)
 	xn_params.async = true;
 	xn_params.async_handler = idpf_ptp_get_tx_tstamp_mb_async_handler;
 
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 	if (reply_sz < 0)
 		err = reply_sz;
 
@@ -1476,6 +1484,7 @@ int idpf_ptp_get_tx_tstamp_mb(struct idpf_vport *vport)
 	return err;
 }
 
+#endif /* CONFIG_PTP_1588_CLOCK */
 /**
  * idpf_vport_alloc_max_qs - Allocate max queues for a vport
  * @adapter: Driver specific private structure
@@ -1813,7 +1822,7 @@ static int idpf_send_get_edt_caps(struct idpf_adapter *adapter)
 	xn_params.recv_buf.iov_len = sizeof(adapter->edt_caps);
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0) {
 		err = reply_sz;
 		goto edt_caps_err;
@@ -1850,18 +1859,14 @@ int idpf_send_create_vport_msg(struct idpf_adapter *adapter,
 	struct virtchnl2_create_vport *vport_msg;
 	struct idpf_vc_xn_params xn_params = { };
 	u16 idx = adapter->next_vport;
-	int err, buf_size;
 	ssize_t reply_sz;
+	int err;
 
-	buf_size = sizeof(struct virtchnl2_create_vport);
-	if (!adapter->vport_params_reqd[idx]) {
-		adapter->vport_params_reqd[idx] = kzalloc(buf_size,
-							  GFP_KERNEL);
-		if (!adapter->vport_params_reqd[idx])
-			return -ENOMEM;
-	}
+	vport_msg = kzalloc_node(sizeof(*vport_msg), GFP_KERNEL,
+				 numa_mem_id());
+	if (!vport_msg)
+		return -ENOMEM;
 
-	vport_msg = adapter->vport_params_reqd[idx];
 	vport_msg->vport_type = cpu_to_le16(VIRTCHNL2_VPORT_TYPE_DEFAULT);
 	vport_msg->vport_index = cpu_to_le16(idx);
 
@@ -1877,35 +1882,41 @@ int idpf_send_create_vport_msg(struct idpf_adapter *adapter,
 
 	idpf_vport_calc_total_qs(adapter, idx, vport_msg, max_q);
 
+	/* Response size of the create vport message is unknown at this moment
+	 * but memory for the receive buffer should be allocated to store the
+	 * response received from the device control plane. So allocate max
+	 * controlq buffer size to accommodate the variable response size.
+	 */
+	adapter->vport_params_recvd[idx] = kzalloc_node(IDPF_CTLQ_MAX_BUF_LEN,
+							GFP_KERNEL,
+							numa_mem_id());
 	if (!adapter->vport_params_recvd[idx]) {
-		adapter->vport_params_recvd[idx] = kzalloc(IDPF_CTLQ_MAX_BUF_LEN,
-							   GFP_KERNEL);
-		if (!adapter->vport_params_recvd[idx]) {
-			err = -ENOMEM;
-			goto create_vport_fail_rel_reqd_params;
-		}
+		err = -ENOMEM;
+		goto rel_vport_msg;
 	}
 
 	xn_params.vc_op = VIRTCHNL2_OP_CREATE_VPORT;
 	xn_params.send_buf.iov_base = vport_msg;
-	xn_params.send_buf.iov_len = buf_size;
+	xn_params.send_buf.iov_len = sizeof(*vport_msg);
 	xn_params.recv_buf.iov_base = adapter->vport_params_recvd[idx];
 	xn_params.recv_buf.iov_len = IDPF_CTLQ_MAX_BUF_LEN;
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0) {
 		err = reply_sz;
 		goto create_vport_fail_rel_recv_params;
 	}
+
+	kfree(vport_msg);
 
 	return 0;
 
 create_vport_fail_rel_recv_params:
 	kfree(adapter->vport_params_recvd[idx]);
 	adapter->vport_params_recvd[idx] = NULL;
-create_vport_fail_rel_reqd_params:
-	kfree(adapter->vport_params_reqd[idx]);
-	adapter->vport_params_reqd[idx] = NULL;
+rel_vport_msg:
+	kfree(vport_msg);
+
 	return err;
 }
 
@@ -1967,7 +1978,7 @@ int idpf_send_destroy_vport_msg(struct idpf_vport *vport)
 	xn_params.send_buf.iov_base = &v_id;
 	xn_params.send_buf.iov_len = sizeof(v_id);
 	xn_params.timeout_ms = IDPF_VC_XN_MIN_TIMEOUT_MSEC;
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 
 	return reply_sz < 0 ? reply_sz : 0;
 }
@@ -1991,7 +2002,7 @@ int idpf_send_enable_vport_msg(struct idpf_vport *vport)
 	xn_params.send_buf.iov_base = &v_id;
 	xn_params.send_buf.iov_len = sizeof(v_id);
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 
 	return reply_sz < 0 ? reply_sz : 0;
 }
@@ -2015,7 +2026,7 @@ int idpf_send_disable_vport_msg(struct idpf_vport *vport)
 	xn_params.send_buf.iov_base = &v_id;
 	xn_params.send_buf.iov_len = sizeof(v_id);
 	xn_params.timeout_ms = IDPF_VC_XN_MIN_TIMEOUT_MSEC;
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 
 	return reply_sz < 0 ? reply_sz : 0;
 }
@@ -2134,7 +2145,7 @@ static int idpf_send_config_tx_queues_msg(struct idpf_vport *vport,
 
 		xn_params.send_buf.iov_base = ctq;
 		xn_params.send_buf.iov_len = buf_sz;
-		reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+		reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 		if (reply_sz < 0) {
 			err = reply_sz;
 			goto mbx_error;
@@ -2300,7 +2311,7 @@ static int idpf_send_config_rx_queues_msg(struct idpf_vport *vport,
 
 		xn_params.send_buf.iov_base = crq;
 		xn_params.send_buf.iov_len = buf_sz;
-		reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+		reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 		if (reply_sz < 0) {
 			err = reply_sz;
 			goto mbx_error;
@@ -2382,7 +2393,7 @@ static int idpf_send_ena_dis_queues_msg(struct idpf_vport *vport,
 
 	xn_params.send_buf.iov_base = eq;
 	xn_params.send_buf.iov_len = buf_sz;
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 	kfree(eq);
 
 	return reply_sz < 0 ? reply_sz : 0;
@@ -2476,7 +2487,7 @@ int idpf_send_map_unmap_queue_vector_msg(struct idpf_vport *vport,
 		vqvm->num_qv_maps = cpu_to_le16(num_chunks);
 		memcpy(vqvm->qv_maps, vqv, chunk_sz * num_chunks);
 
-		reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+		reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 		if (reply_sz < 0) {
 			err = reply_sz;
 			goto mbx_error;
@@ -2579,7 +2590,7 @@ int idpf_send_delete_queues_msg(struct idpf_vport *vport)
 	xn_params.timeout_ms = IDPF_VC_XN_MIN_TIMEOUT_MSEC;
 	xn_params.send_buf.iov_base = eq;
 	xn_params.send_buf.iov_len = buf_size;
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 
 	kfree(eq);
 	return reply_sz < 0 ? reply_sz : 0;
@@ -2646,7 +2657,7 @@ int idpf_send_add_queues_msg(struct idpf_vport *vport, u16 num_tx_q,
 	xn_params.send_buf.iov_len = sizeof(aq);
 	xn_params.recv_buf.iov_base = vc_msg;
 	xn_params.recv_buf.iov_len = IDPF_CTLQ_MAX_BUF_LEN;
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 	if (reply_sz < 0) {
 		err = reply_sz;
 		goto error;
@@ -2707,7 +2718,7 @@ int idpf_send_alloc_vectors_msg(struct idpf_adapter *adapter, u16 num_vectors)
 	xn_params.recv_buf.iov_base = rcvd_vec;
 	xn_params.recv_buf.iov_len = IDPF_CTLQ_MAX_BUF_LEN;
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0) {
 		err = reply_sz;
 		goto alloc_vectors_fail;
@@ -2765,7 +2776,7 @@ int idpf_send_dealloc_vectors_msg(struct idpf_adapter *adapter)
 	xn_params.send_buf.iov_base = vcs;
 	xn_params.send_buf.iov_len = buf_size;
 	xn_params.timeout_ms = IDPF_VC_XN_MIN_TIMEOUT_MSEC;
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 
@@ -2804,7 +2815,7 @@ int idpf_send_set_sriov_vfs_msg(struct idpf_adapter *adapter, u16 num_vfs)
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 	xn_params.send_buf.iov_base = &svi;
 	xn_params.send_buf.iov_len = sizeof(svi);
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 
 	return reply_sz < 0 ? reply_sz : 0;
 }
@@ -2835,7 +2846,7 @@ int idpf_send_get_stats_msg(struct idpf_vport *vport)
 	xn_params.recv_buf = xn_params.send_buf;
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(np->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(np->adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 	if (reply_sz < sizeof(stats_msg))
@@ -2897,7 +2908,7 @@ int idpf_send_get_set_rss_hash_msg(struct idpf_vport *vport, bool get)
 	}
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 	if (!get)
@@ -2954,7 +2965,7 @@ int idpf_send_get_set_rss_lut_msg(struct idpf_vport *vport,
 
 		xn_params.vc_op = VIRTCHNL2_OP_SET_RSS_LUT;
 	}
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 	kfree(rl);
 	if (reply_sz < 0)
 		return reply_sz;
@@ -3033,7 +3044,7 @@ int idpf_send_get_set_rss_key_msg(struct idpf_vport *vport,
 		xn_params.vc_op = VIRTCHNL2_OP_SET_RSS_KEY;
 	}
 
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 	kfree(rk);
 	if (reply_sz < 0) {
 		kfree(recv_rk);
@@ -3163,7 +3174,7 @@ int idpf_send_get_rx_ptype_msg(struct idpf_vport *vport)
 			get_ptype_info->num_ptypes =
 				cpu_to_le16(IDPF_RX_MAX_PTYPES_PER_BUF);
 
-		reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+		reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 		if (reply_sz < 0) {
 			err = -EINVAL;
 			goto ptype_rel;
@@ -3349,7 +3360,7 @@ int idpf_send_ena_dis_loopback_msg(struct idpf_vport *vport)
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 	xn_params.send_buf.iov_base = &loopback;
 	xn_params.send_buf.iov_len = sizeof(loopback);
-	reply_sz = idpf_vc_xn_exec(vport->adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(vport->adapter, &xn_params);
 
 	return reply_sz < 0 ? reply_sz : 0;
 }
@@ -3383,7 +3394,7 @@ int idpf_send_create_adi_msg(struct idpf_adapter *adapter,
 	xn_params.send_buf.iov_len = iov_len;
 	xn_params.recv_buf.iov_base = vchnl_adi;
 	xn_params.recv_buf.iov_len = IDPF_CTLQ_MAX_BUF_LEN;
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
 		return reply_sz;
 	if (reply_sz < sizeof(*vchnl_adi))
@@ -3410,7 +3421,7 @@ int idpf_send_destroy_adi_msg(struct idpf_adapter *adapter,
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 	xn_params.send_buf.iov_base = vchnl_adi;
 	xn_params.send_buf.iov_len = sizeof(*vchnl_adi);
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 
 	return reply_sz < 0 ? reply_sz : 0;
 }
@@ -3506,8 +3517,6 @@ static void idpf_vport_params_buf_rel(struct idpf_adapter *adapter)
 {
 	kfree(adapter->vport_params_recvd);
 	adapter->vport_params_recvd = NULL;
-	kfree(adapter->vport_params_reqd);
-	adapter->vport_params_reqd = NULL;
 	kfree(adapter->vport_ids);
 	adapter->vport_ids = NULL;
 }
@@ -3522,17 +3531,11 @@ static int idpf_vport_params_buf_alloc(struct idpf_adapter *adapter)
 {
 	u16 num_max_vports = idpf_get_max_vports(adapter);
 
-	adapter->vport_params_reqd = kcalloc(num_max_vports,
-					     sizeof(*adapter->vport_params_reqd),
-					     GFP_KERNEL);
-	if (!adapter->vport_params_reqd)
-		return -ENOMEM;
-
 	adapter->vport_params_recvd = kcalloc(num_max_vports,
 					      sizeof(*adapter->vport_params_recvd),
 					      GFP_KERNEL);
 	if (!adapter->vport_params_recvd)
-		goto err_mem;
+		return -ENOMEM;
 
 	adapter->vport_ids = kcalloc(num_max_vports, sizeof(u32), GFP_KERNEL);
 	if (!adapter->vport_ids)
@@ -3647,7 +3650,7 @@ restart:
 
 	err = idpf_ptp_init(adapter);
 	if (err)
-		dev_err(idpf_adapter_to_dev(adapter), "failed to initialize PTP\n");
+		dev_err(idpf_adapter_to_dev(adapter), "PTP init failed with err=%pe\n", ERR_PTR(err));
 	else if (idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS,
 				 VIRTCHNL2_CAP_TX_CMPL_TSTMP))
 		adapter->tx_compl_tstamp_gran_s =
@@ -3664,10 +3667,11 @@ restart:
 			   msecs_to_jiffies(5 * (adapter->pdev->devfn & 0x07)));
 	adapter->mb_wait_count = 0;
 
+	set_bit(IDPF_VC_CORE_INIT, adapter->flags);
+
 	return 0;
 
 err_intr_req:
-	cancel_delayed_work_sync(&adapter->serv_task);
 	idpf_vport_params_buf_rel(adapter);
 err_netdev_alloc:
 	/* We're intentionally not freeing netdevs here because we want them
@@ -3697,7 +3701,6 @@ init_failed:
 	 * the mailbox again
 	 */
 	adapter->state = __IDPF_VER_CHECK;
-	idpf_deinit_dflt_mbx(adapter);
 	set_bit(IDPF_HR_DRV_LOAD, adapter->flags);
 	queue_delayed_work(adapter->vc_event_wq, &adapter->vc_event_task,
 			   msecs_to_jiffies(task_delay));
@@ -3711,6 +3714,9 @@ init_failed:
  */
 void idpf_vc_core_deinit(struct idpf_adapter *adapter)
 {
+	if (!test_bit(IDPF_VC_CORE_INIT, adapter->flags))
+		return;
+
 	idpf_ptp_release(adapter);
 	idpf_deinit_task(adapter);
 	idpf_intr_rel(adapter);
@@ -3722,6 +3728,8 @@ void idpf_vc_core_deinit(struct idpf_adapter *adapter)
 
 	kfree(adapter->vports);
 	adapter->vports = NULL;
+
+	clear_bit(IDPF_VC_CORE_INIT, adapter->flags);
 }
 
 /**
@@ -3909,6 +3917,8 @@ int idpf_vport_init(struct idpf_vport *vport, struct idpf_vport_max_q *max_q)
 	vport->crc_enable = adapter->crc_enable;
 
 	idpf_vport_edt_init(vport);
+	INIT_WORK(&vport->finish_reset_task, idpf_finish_soft_reset);
+
 	if (le16_to_cpu(vport_msg->vport_flags) & VIRTCHNL2_VPORT_UPLINK_PORT) {
 		err = idpf_ptp_get_vport_tstamps_caps(vport);
 		switch (err) {
@@ -3929,6 +3939,7 @@ int idpf_vport_init(struct idpf_vport *vport, struct idpf_vport_max_q *max_q)
 
 		INIT_WORK(&vport->tstamp_task, idpf_tstamp_task);
 	}
+
 	return err;
 }
 
@@ -4405,7 +4416,7 @@ int idpf_add_del_mac_filters(struct idpf_vport *vport,
 
 		xn_params.send_buf.iov_base = ma_list;
 		xn_params.send_buf.iov_len = buf_size;
-		reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+		reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 		if (reply_sz < 0) {
 			err = reply_sz;
 			goto mbx_error;
@@ -4459,7 +4470,7 @@ int idpf_set_promiscuous(struct idpf_adapter *adapter,
 	xn_params.send_buf.iov_len = sizeof(vpi);
 	/* setting promiscuous is only ever done asynchronously */
 	xn_params.async = true;
-	reply_sz = idpf_vc_xn_exec(adapter, xn_params);
+	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 
 	return reply_sz < 0 ? reply_sz : 0;
 }
