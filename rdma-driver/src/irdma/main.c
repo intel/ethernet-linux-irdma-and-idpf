@@ -858,8 +858,7 @@ static int irdma_fill_device_info(struct irdma_device *iwdev, struct iidc_core_d
 	iwdev->roce_ackcreds = IRDMA_ROCE_ACKCREDS_DEFAULT;
 	iwdev->rcv_wnd = IRDMA_CM_DEFAULT_RCV_WND_SCALED;
 	iwdev->rcv_wscale = IRDMA_CM_DEFAULT_RCV_WND_SCALE;
-	iwdev->push_mode = iwdev->rf->rdma_ver <= IRDMA_GEN_2 ? false :
-			   FIELD_GET(IRDMA_PUSH_ENA_BIT, rf->sc_dev.vc_caps.feature_cap);
+	iwdev->push_mode = false;
 #if IS_ENABLED(CONFIG_CONFIGFS_FS)
 	iwdev->iwarp_ecn_en = iwdev->rf->rdma_ver == IRDMA_GEN_2 ? true : false;
 	iwdev->iwarp_rtomin = 5;

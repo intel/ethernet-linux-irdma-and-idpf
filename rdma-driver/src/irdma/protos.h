@@ -21,6 +21,7 @@ int irdma_sc_mr_fast_register(struct irdma_sc_qp *qp,
 			      bool post_sq);
 void irdma_init_config_check(struct irdma_config_check *cc,
 			     u8 traffic_class,
+			     u8 prio,
 			     u16 qs_handle);
 /* HMC/FPM functions */
 int irdma_sc_init_iw_hmc(struct irdma_sc_dev *dev, u16 hmc_fn_id);

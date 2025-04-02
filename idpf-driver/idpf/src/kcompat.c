@@ -1956,122 +1956,7 @@ void __kc_skb_complete_tx_timestamp(struct sk_buff *skb,
 
 	sock_put(sk);
 }
-#endif
-
-/* include headers needed for get_headlen function */
-#if defined(CONFIG_FCOE) || defined(CONFIG_FCOE_MODULE)
-#include <scsi/fc/fc_fcoe.h>
-#endif
-#ifdef HAVE_SCTP
-#include <linux/sctp.h>
-#endif
-
-u32 __kc_eth_get_headlen(const struct net_device __always_unused *dev,
-			 unsigned char *data, unsigned int max_len)
-{
-	union {
-		unsigned char *network;
-		/* l2 headers */
-		struct ethhdr *eth;
-		struct vlan_hdr *vlan;
-		/* l3 headers */
-		struct iphdr *ipv4;
-		struct ipv6hdr *ipv6;
-	} hdr;
-	__be16 proto;
-	u8 nexthdr = 0;	/* default to not TCP */
-	u8 hlen;
-
-	/* this should never happen, but better safe than sorry */
-	if (max_len < ETH_HLEN)
-		return max_len;
-
-	/* initialize network frame pointer */
-	hdr.network = data;
-
-	/* set first protocol and move network header forward */
-	proto = hdr.eth->h_proto;
-	hdr.network += ETH_HLEN;
-
-again:
-	switch (proto) {
-	/* handle any vlan tag if present */
-	case __constant_htons(ETH_P_8021AD):
-	case __constant_htons(ETH_P_8021Q):
-		if ((hdr.network - data) > (max_len - VLAN_HLEN))
-			return max_len;
-
-		proto = hdr.vlan->h_vlan_encapsulated_proto;
-		hdr.network += VLAN_HLEN;
-		goto again;
-	/* handle L3 protocols */
-	case __constant_htons(ETH_P_IP):
-		if ((hdr.network - data) > (max_len - sizeof(struct iphdr)))
-			return max_len;
-
-		/* access ihl as a u8 to avoid unaligned access on ia64 */
-		hlen = (hdr.network[0] & 0x0F) << 2;
-
-		/* verify hlen meets minimum size requirements */
-		if (hlen < sizeof(struct iphdr))
-			return hdr.network - data;
-
-		/* record next protocol if header is present */
-		if (!(hdr.ipv4->frag_off & htons(IP_OFFSET)))
-			nexthdr = hdr.ipv4->protocol;
-
-		hdr.network += hlen;
-		break;
-#ifdef NETIF_F_TSO6
-	case __constant_htons(ETH_P_IPV6):
-		if ((hdr.network - data) > (max_len - sizeof(struct ipv6hdr)))
-			return max_len;
-
-		/* record next protocol */
-		nexthdr = hdr.ipv6->nexthdr;
-		hdr.network += sizeof(struct ipv6hdr);
-		break;
-#endif /* NETIF_F_TSO6 */
-#if defined(CONFIG_FCOE) || defined(CONFIG_FCOE_MODULE)
-	case __constant_htons(ETH_P_FCOE):
-		hdr.network += FCOE_HEADER_LEN;
-		break;
-#endif
-	default:
-		return hdr.network - data;
-	}
-
-	/* finally sort out L4 */
-	switch (nexthdr) {
-	case IPPROTO_TCP:
-		if ((hdr.network - data) > (max_len - sizeof(struct tcphdr)))
-			return max_len;
-
-		/* access doff as a u8 to avoid unaligned access on ia64 */
-		hdr.network += max_t(u8, sizeof(struct tcphdr),
-				     (hdr.network[12] & 0xF0) >> 2);
-
-		break;
-	case IPPROTO_UDP:
-	case IPPROTO_UDPLITE:
-		hdr.network += sizeof(struct udphdr);
-		break;
-#ifdef HAVE_SCTP
-	case IPPROTO_SCTP:
-		hdr.network += sizeof(struct sctphdr);
-		break;
-#endif
-	}
-
-	/*
-	 * If everything has gone correctly hdr.network should be the
-	 * data section of the packet and will be the end of the header.
-	 * If not then it probably represents the end of the last recognized
-	 * header.
-	 */
-	return min_t(unsigned int, hdr.network - data, max_len);
-}
-
+#endif /* NO_PTP_SUPPORT */
 #endif /* < 3.18.0 */
 
 /******************************************************************************/
@@ -2832,3 +2717,42 @@ void keee_to_eee(struct ethtool_eee *eee,
 		pr_warn("Ethtool ioctl interface doesn't support passing EEE linkmodes beyond bit 32\n");
 }
 #endif /* !HAVE_ETHTOOL_KEEE */
+
+#ifdef NEED_PCI_DISABLE_PTM
+#if defined(HAVE_STRUCT_PCI_DEV_PTM_ENABLED) && defined(CONFIG_PCIE_PTM)
+static void __pci_disable_ptm(struct pci_dev *dev)
+{
+#if defined(HAVE_STRUCT_PCI_DEV_PTM_CAP)
+	u16 ptm = dev->ptm_cap;
+	u32 ctrl;
+
+	if (!ptm)
+		return;
+
+	pci_read_config_dword(dev, ptm + PCI_PTM_CTRL, &ctrl);
+	ctrl &= ~(PCI_PTM_CTRL_ENABLE | PCI_PTM_CTRL_ROOT);
+	pci_write_config_dword(dev, ptm + PCI_PTM_CTRL, ctrl);
+#else
+	return;
+#endif /* HAVE_STRUCT_PCI_DEV_PTM_CAP */
+}
+#endif /* HAVE_STRUCT_PCI_DEV_PTM_ENABLED && CONFIG_PCIE_PTM */
+
+/**
+ * pci_disable_ptm() - Disable Precision Time Measurement
+ * @dev: PCI device
+ *
+ * Disable Precision Time Measurement for @dev.
+ */
+void pci_disable_ptm(struct pci_dev *dev)
+{
+#if defined(HAVE_STRUCT_PCI_DEV_PTM_ENABLED) && defined(CONFIG_PCIE_PTM)
+	if (dev->ptm_enabled) {
+		__pci_disable_ptm(dev);
+		dev->ptm_enabled = 0;
+	}
+#else
+	return;
+#endif /* HAVE_STRUCT_PCI_DEV_PTM_ENABLED && CONFIG_PCIE_PTM */
+}
+#endif /* NEED_PCI_DISABLE_PTM */

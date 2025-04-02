@@ -145,10 +145,19 @@ ssize_t idpf_vdcm_dev_policy_idx_store(struct idpf_vdcm *ivdm, const char *buf,
 /* Below definitions are used by idpf_adi.c */
 
 /* ADI vectors */
-#define IDPF_MAX_ADI_Q_COUNT	64
-#define IDPF_DEFAULT_ADI_VEC	8
-#define IDPF_MAX_ADI_NUM	30 /* max number of ADIs we support */
+#define IDPF_MAX_ADI_Q_COUNT		64
+#define IDPF_MBX_VECS_PER_ADI		1
+#define IDPF_PAGES_FOR_MBX_REGS		1
+#define IDPF_DEFAULT_ADI_VEC		8
+/* Max number of ADIs supported */
+#define IDPF_MAX_ADI_NUM		30
 
+/**
+ * struct idpf_adi_vec_info - ADI vector information
+ * @num_vectors: Number of vectors assigned to this ADI. Includes Data queue vectors and MBX vectors
+ * @vec_indexes: Vector indexes includes MBX vector
+ * @mbx_vec_id: MSIX entry from first value in array of vec_indexes
+ */
 struct idpf_adi_vec_info {
 	u16	num_vectors;
 	u16	*vec_indexes;

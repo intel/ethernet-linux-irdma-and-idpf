@@ -627,6 +627,7 @@ struct idpf_intr_reg {
  * struct idpf_q_vector
  * @vport: Vport back pointer
  * @affinity_mask: CPU affinity mask
+ * @affinity_notify: IRQ notifier callback
  * @napi: napi handler
  * @v_idx: Vector index
  * @intr_reg: See struct idpf_intr_reg
@@ -651,6 +652,7 @@ struct idpf_intr_reg {
 struct idpf_q_vector {
 	struct idpf_vport *vport;
 	cpumask_t affinity_mask;
+	struct irq_affinity_notify affinity_notify;
 	struct napi_struct napi;
 	u16 v_idx;
 	struct idpf_intr_reg intr_reg;
@@ -766,8 +768,9 @@ struct idpf_sw_queue {
  * @rx.refillqs: Array of refill queues
  * @rx.num_refillq: Number of refill queues associated with the each RX/bufferq
  * @rx.rxq_idx: Index of the RX queue mapped to the buffer queue
- * @rx_cached_time: Cached PHC time for the Rx queue
- * @ptp_rx: Indicates whether the Rx timestamping is enabled for the queue
+ * @cached_phc_time: Pointer to the cached PHC time for Tx/Rx timestamp
+ *		     extension
+ * @tstmp_en: Indicates whether the Rx timestamping is enabled for the queue
  * @idx: For buffer queue, it is used as group id, either 0 or 1. On clean,
  *	 buffer queue uses this index to determine which group of refill queues
  *	 to clean.
@@ -867,6 +870,7 @@ struct idpf_queue {
 			struct idpf_tx_buf *bufs;
 			u32 rel_qid;
 			u16 num_txq;
+			u16 last_re;
 			u8 cmpl_tstamp_ns_s;
 		} tx;
 		struct {
@@ -889,7 +893,7 @@ struct idpf_queue {
 		} rx;
 	};
 
-	u64 cached_phctime;
+	u64 *cached_phc_time;
 	bool tstmp_en;
 	u16 idx;
 	void __iomem *tail;

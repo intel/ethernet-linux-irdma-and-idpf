@@ -83,6 +83,7 @@ struct irdma_ah {
 	struct hlist_node list;
 	refcount_t refcnt;
 	struct irdma_ah *parent_ah;	/* AH from cached list */
+	bool sleep;
 };
 
 struct irdma_hmc_pble {

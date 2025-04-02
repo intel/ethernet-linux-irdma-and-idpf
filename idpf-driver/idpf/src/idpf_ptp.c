@@ -250,8 +250,8 @@ static int idpf_ptp_get_crosststamp(struct ptp_clock_info *info,
  */
 static int idpf_ptp_update_cached_phctime(struct idpf_adapter *adapter)
 {
-	int i, j, err;
 	u64 systime;
+	int err;
 
 	err = idpf_ptp_read_src_clk_reg(adapter, &systime, NULL);
 	if (err)
@@ -260,31 +260,6 @@ static int idpf_ptp_update_cached_phctime(struct idpf_adapter *adapter)
 	/* Update the cached PHC time stored in the adapter structure */
 	WRITE_ONCE(adapter->ptp.cached_phc_time, systime);
 	WRITE_ONCE(adapter->ptp.cached_phc_jiffies, jiffies);
-
-	idpf_for_each_vport(adapter, i) {
-		struct idpf_vport *vport = adapter->vports[i];
-		struct idpf_queue *rxq, *txq;
-		struct idpf_q_grp *q_grp;
-
-		if (!vport)
-			continue;
-
-		q_grp = &vport->dflt_grp.q_grp;
-
-		if (vport->dflt_grp.q_grp.rxqs) {
-			for (j = 0; j < q_grp->num_rxq; j++) {
-				rxq = q_grp->rxqs[j];
-				WRITE_ONCE(rxq->cached_phctime, systime);
-			}
-		}
-
-		if (vport->dflt_grp.q_grp.txqs) {
-			for (j = 0; j < q_grp->num_txq; j++) {
-				txq = q_grp->txqs[j];
-				WRITE_ONCE(txq->cached_phctime, systime);
-			}
-		}
-	}
 
 	return 0;
 }
@@ -548,7 +523,7 @@ static int idpf_ptp_gpio_enable(struct ptp_clock_info *info,
 }
 
 /**
- * idpf_ptp_extend_40b_ts - Convert a 40b timestamp to 64b nanoseconds
+ * idpf_ptp_extend_tstamp - Convert a 40b timestamp to 64b nanoseconds
  * @adapter: Driver specific private structure
  * @in_tstamp: Ingress/egress timestamp value
  *
@@ -559,7 +534,7 @@ static int idpf_ptp_gpio_enable(struct ptp_clock_info *info,
  * time stored in the device private PTP structure as the basis for timestamp
  * extension.
  */
-u64 idpf_ptp_extend_ts(struct idpf_adapter *adapter, u64 in_tstamp)
+u64 idpf_ptp_extend_tstamp(struct idpf_adapter *adapter, u64 in_tstamp)
 {
 	unsigned long discard_time;
 	u32 tstamp;
@@ -576,7 +551,7 @@ u64 idpf_ptp_extend_ts(struct idpf_adapter *adapter, u64 in_tstamp)
 }
 
 /**
- * idpf_ptp_request_ts - Request an available Tx timestamp index
+ * idpf_ptp_request_tstamp_idx - Request an available Tx timestamp index
  * @vport: Virtual port structure
  * @skb: The SKB to associate with this timestamp request
  *
@@ -586,7 +561,7 @@ u64 idpf_ptp_extend_ts(struct idpf_adapter *adapter, u64 in_tstamp)
  * Return -1 in case of no available indexes, otherwise return the index
  * that can be provided to Tx descriptor
  */
-s8 idpf_ptp_request_ts(struct idpf_vport *vport, struct sk_buff *skb)
+s8 idpf_ptp_request_tstamp_idx(struct idpf_vport *vport, struct sk_buff *skb)
 {
 	struct idpf_ptp_tx_tstamp *ptp_tx_tstamp;
 	struct list_head *head;
@@ -683,7 +658,7 @@ int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport)
 	tstamp_ns_lo_bit = tx_tstamp_caps->tstamp_ns_lo_bit;
 	tstamp >>= tstamp_ns_lo_bit + 1;
 
-	extended_tstamp = idpf_ptp_extend_ts(vport->adapter, tstamp);
+	extended_tstamp = idpf_ptp_extend_tstamp(vport->adapter, tstamp);
 
 	shhwtstamps.hwtstamp = ns_to_ktime(extended_tstamp);
 	skb_tstamp_tx(ptp_tx_tstamp->skb, &shhwtstamps);
@@ -699,7 +674,7 @@ int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport)
 }
 
 /**
- * idpf_set_rx_tstamp - Enable or disable Rx timestamping
+ * idpf_ptp_set_rx_tstamp - Enable or disable Rx timestamping
  * @vport: Virtual port structure
  * @on: bool value for whether timestamps are enabled or disabled
  */
@@ -768,13 +743,13 @@ static int idpf_ptp_set_timestamp_mode(struct idpf_vport *vport,
 }
 
 /**
- * idpf_ptp_set_ts_config - ioctl interface to control the timestamping
+ * idpf_ptp_set_tstamp_config - ioctl interface to control the timestamping
  * @vport: Virtual port structure
  * @ifr: ioctl data
  *
  * Get the user config and store it
  */
-int idpf_ptp_set_ts_config(struct idpf_vport *vport, struct ifreq *ifr)
+int idpf_ptp_set_tstamp_config(struct idpf_vport *vport, struct ifreq *ifr)
 {
 	struct hwtstamp_config config;
 	int err;
@@ -793,13 +768,13 @@ int idpf_ptp_set_ts_config(struct idpf_vport *vport, struct ifreq *ifr)
 }
 
 /**
- * idpf_ptp_get_ts_config - ioctl interface to read the timestamping config
+ * idpf_ptp_get_tstamp_config - ioctl interface to read the timestamping config
  * @vport: Virtual port structure
  * @ifr: ioctl data
  *
  * Copy the timestamping config to user buffer
  */
-int idpf_ptp_get_ts_config(struct idpf_vport *vport, struct ifreq *ifr)
+int idpf_ptp_get_tstamp_config(struct idpf_vport *vport, struct ifreq *ifr)
 {
 	struct hwtstamp_config *config;
 
@@ -833,7 +808,7 @@ static long idpf_ptp_do_aux_work(struct ptp_clock_info *info)
  * idpf_ptp_periodic_work - Do PTP periodic work
  * @work: PTP work
  */
-static void idpf_periodic_work(struct kthread_work *work)
+static void idpf_ptp_periodic_work(struct kthread_work *work)
 {
 	struct idpf_ptp *ptp = container_of(work, struct idpf_ptp, work.work);
 
@@ -852,7 +827,7 @@ static int idpf_ptp_init_work(struct idpf_adapter *adapter)
 	struct idpf_ptp *ptp = &adapter->ptp;
 	struct kthread_worker *kworker;
 
-	kthread_init_delayed_work(&ptp->work, idpf_periodic_work);
+	kthread_init_delayed_work(&ptp->work, idpf_ptp_periodic_work);
 
 	kworker = kthread_create_worker(0, "idpf-ptp-%s",
 					dev_name(idpf_adapter_to_dev(adapter)));

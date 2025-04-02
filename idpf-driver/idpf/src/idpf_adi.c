@@ -196,13 +196,12 @@ static int idpf_adi_prep_vec_chunks(struct idpf_adi *adi,
 		vc_cadi->vchunks.vchunks[j].start_vector_id =
 			cpu_to_le16(phys_vec);
 
-		/* Set the relative EVVID to be used by VDEV.  It is set to 1
-		 * as the mailbox is starting at zero.
-		 */
-		if (!j)
-			vc_cadi->vchunks.vchunks[j].start_evv_id =
-				cpu_to_le16(1);
+		vc_cadi->vchunks.vchunks[j].start_evv_id =
+				cpu_to_le16(vecid_filled + 1);
 		priv->vec_info.data_q_vec_ids[i] = phys_vec;
+		/* increment for storing next data_q_vec_ids */
+		i++;
+		/* Loop for building out each chunk */
 		while (1) {
 			phys_vec++;
 			vecid_filled++;
@@ -213,8 +212,8 @@ static int idpf_adi_prep_vec_chunks(struct idpf_adi *adi,
 			if (vecid_filled != num_vecs &&
 			    phys_vec == next_phys_vec) {
 				each_chunk_vectors++;
-				i++;
 				priv->vec_info.data_q_vec_ids[i] = phys_vec;
+				i++;
 				continue;
 			}
 			break;
@@ -577,7 +576,10 @@ static int idpf_adi_set_num_of_vectors(struct idpf_adi *adi, u16 vector_count)
 {
 	struct idpf_adi_priv *priv = idpf_get_adi_priv(adi);
 
-	if (vector_count > IDPF_MAX_ADI_Q_COUNT)
+	/* Factoring in at max of one vector per queue and mailbox vector
+	 * as well per ADI
+	 */
+	if (vector_count > IDPF_MAX_ADI_Q_COUNT + IDPF_MBX_VECS_PER_ADI)
 		return -EINVAL;
 
 	priv->vec_info.num_vectors = vector_count;
@@ -684,7 +686,7 @@ static struct idpf_adi *idpf_adi_init_resources(struct idpf_adapter *adapter)
 	priv->qinfo.bufq = priv->qinfo.complq + IDPF_MAX_ADI_Q_COUNT;
 	priv->adapter = adapter;
 	priv->adi_index = 0;
-	priv->vec_info.num_vectors = IDPF_DEFAULT_ADI_VEC;
+	priv->vec_info.num_vectors = IDPF_DEFAULT_ADI_VEC + IDPF_MBX_VECS_PER_ADI;
 
 	return &priv->adi;
 }
@@ -701,7 +703,7 @@ static int idpf_adi_get_sparse_mmap_num(struct idpf_adi *adi)
 
 	return priv->qinfo.num_txqs + priv->qinfo.num_rxqs +
 	       priv->qinfo.num_bufqs + priv->vec_info.num_vectors +
-	       IDPF_MBX_Q_VEC;
+	       IDPF_PAGES_FOR_MBX_REGS;
 }
 
 /**
@@ -753,8 +755,8 @@ idpf_adi_get_sparse_mmap_area(struct idpf_adi *adi, u64 index,
 
 	i = IDPF_ADI_SPARSE_DYN_CTL01;
 	pattern[i].start = pattern[i - 1].end;
-	if (priv->vec_info.num_vectors >= IDPF_MBX_Q_VEC)
-		pattern[i].cnt = IDPF_MBX_Q_VEC;
+	if (priv->vec_info.num_vectors >= IDPF_MBX_VECS_PER_ADI)
+		pattern[i].cnt = IDPF_MBX_VECS_PER_ADI;
 	else
 		pattern[i].cnt = 0;
 	pattern[i].end = pattern[i].start + pattern[i].cnt;
@@ -762,8 +764,9 @@ idpf_adi_get_sparse_mmap_area(struct idpf_adi *adi, u64 index,
 
 	i = IDPF_ADI_SPARSE_DYN_CTL;
 	pattern[i].start = pattern[i - 1].end;
-	if (priv->vec_info.num_vectors > IDPF_MBX_Q_VEC)
-		pattern[i].cnt = priv->vec_info.num_vectors - IDPF_MBX_Q_VEC;
+	if (priv->vec_info.num_vectors > IDPF_MBX_VECS_PER_ADI)
+		pattern[i].cnt = priv->vec_info.num_vectors -
+					IDPF_MBX_VECS_PER_ADI;
 	else
 		pattern[i].cnt = 0;
 	pattern[i].end = pattern[i].start + pattern[i].cnt;
@@ -842,10 +845,10 @@ idpf_adi_get_sparse_mmap_hpa(struct idpf_adi *adi, u32 index, u64 vm_pgoff,
 					(PHYS_PFN(IDPF_VDCM_BAR0_SIZE) - 1):
 		/* INT DYN CTL, ITR0/1/2
 		 * the first several vectors in q_vectors[] is for mailbox,
-		 * mailbox vector's number is defined with IDPF_MBX_Q_VEC
+		 * mailbox vector's number is defined with IDPF_MBX_VECS_PER_ADI
 		 */
 		idx = vm_pgoff - PHYS_PFN(VDEV_INT_DYN_CTL(0));
-		if (idx + IDPF_MBX_Q_VEC >= priv->vec_info.num_vectors)
+		if (idx + IDPF_MBX_VECS_PER_ADI >= priv->vec_info.num_vectors)
 			return -EINVAL;
 		reg_off = PF_GLINT_DYN_CTL(priv->vec_info.data_q_vec_ids[idx]);
 		break;

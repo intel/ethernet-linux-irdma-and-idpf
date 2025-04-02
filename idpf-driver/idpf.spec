@@ -1,6 +1,6 @@
 Name: idpf
 Summary: Infrastructure Data Path Function Linux Driver
-Version: 0.0.652
+Version: 0.0.653
 Release: 1
 Source: %{name}-%{version}.tar.gz
 Vendor: Intel Corporation
@@ -23,7 +23,7 @@ Requires: kernel, findutils, gawk, bash
 
 %if 0%{?BUILD_KERNEL:1}
 %define kernel_ver %{BUILD_KERNEL}
-%define check_aux_args_kernel -b %{BUILD_KERNEL} 
+%define check_aux_args_kernel -b %{BUILD_KERNEL}
 %else
 %define kernel_ver %(uname -r)
 %endif
@@ -40,7 +40,7 @@ Requires: kernel, findutils, gawk, bash
 %define kernel_module_package_buildreqs kernel-devel
 %endif
 
-%define kernel_module_package_buildreqs_fixed %(/bin/bash -fc 'if [[ %{kernel_ver} == *uek* ]]; 
+%define kernel_module_package_buildreqs_fixed %(/bin/bash -fc 'if [[ %{kernel_ver} == *uek* ]];
 	then echo %kernel_module_package_buildreqs | sed 's/kernel-devel/kernel-uek-devel/g' ; else echo %kernel_module_package_buildreqs ; fi')
 
 BuildRequires: %kernel_module_package_buildreqs_fixed
@@ -53,7 +53,7 @@ This package contains the Infrastructure Data Path Function Linux Driver.
 
 %build
 make clean
-make 
+make
 
 %install
 make INSTALL_MOD_PATH=%{buildroot} install

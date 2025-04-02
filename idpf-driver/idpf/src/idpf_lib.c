@@ -1087,12 +1087,12 @@ static int idpf_stop(struct net_device *netdev)
 	if (test_bit(IDPF_REMOVE_IN_PROG, adapter->flags))
 		return 0;
 
-	idpf_vport_ctrl_lock(adapter);
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	idpf_vport_stop(vport);
 
-	idpf_vport_ctrl_unlock(adapter);
+	idpf_vport_cfg_unlock(adapter);
 
 	return 0;
 }
@@ -1104,13 +1104,16 @@ static int idpf_stop(struct net_device *netdev)
 static void idpf_decfg_netdev(struct idpf_vport *vport)
 {
 	struct idpf_adapter *adapter = vport->adapter;
+	u16 idx = vport->idx;
 
-	unregister_netdev(vport->netdev);
-	clear_bit(IDPF_VPORT_REG_NETDEV, adapter->vport_config[vport->idx]->flags);
-	free_netdev(vport->netdev);
+	if (test_and_clear_bit(IDPF_VPORT_REG_NETDEV,
+			       adapter->vport_config[idx]->flags)) {
+		unregister_netdev(vport->netdev);
+		free_netdev(vport->netdev);
+	}
 	vport->netdev = NULL;
 
-	adapter->netdevs[vport->idx] = NULL;
+	adapter->netdevs[idx] = NULL;
 }
 
 /**
@@ -1177,8 +1180,9 @@ static void idpf_rx_init_buf_tail(struct idpf_q_grp *q_grp)
 		struct idpf_queue *q = is_splitq ?
 			&q_grp->bufqs[i] :
 			q_grp->rxqs[i];
+		u16 val = q->next_to_alloc;
 
-		writel(q->next_to_alloc, q->tail);
+		writel(val, q->tail);
 	}
 }
 
@@ -1199,9 +1203,9 @@ static void idpf_vport_dealloc(struct idpf_vport *vport)
 
 	idpf_deinit_mac_addr(vport);
 
-	idpf_vport_ctrl_lock(adapter);
+	idpf_vport_cfg_lock(adapter);
 	idpf_vport_stop(vport);
-	idpf_vport_ctrl_unlock(adapter);
+	idpf_vport_cfg_unlock(adapter);
 
 	if (!vport->idx)
 		idpf_idc_deinit(adapter);
@@ -1385,10 +1389,10 @@ void idpf_statistics_task(struct work_struct *work)
 }
 
 /**
- * init_tstamp_task - Delayed task to handle Tx tstamps
+ * idpf_ptp_tstamp_task - Delayed task to handle Tx tstamps
  * @work: work_struct handle
  */
-void idpf_tstamp_task(struct work_struct *work)
+void idpf_ptp_tstamp_task(struct work_struct *work)
 {
 	struct idpf_vport *vport;
 
@@ -1763,9 +1767,9 @@ void idpf_init_task(struct work_struct *work)
 	}
 
 	if (test_and_clear_bit(IDPF_VPORT_UP_REQUESTED, vport_config->flags)) {
-		idpf_vport_ctrl_lock(adapter);
+		idpf_vport_cfg_lock(adapter);
 		idpf_vport_open(vport, true);
-		idpf_vport_ctrl_unlock(adapter);
+		idpf_vport_cfg_unlock(adapter);
 	}
 
 	/* Spawn and return 'idpf_init_task' work queue until all the
@@ -1779,12 +1783,22 @@ void idpf_init_task(struct work_struct *work)
 	}
 
 	for (index = 0; index < adapter->max_vports; index++) {
-		if (adapter->netdevs[index]) {
-			if (!test_and_set_bit(IDPF_VPORT_REG_NETDEV,
-					      adapter->vport_config[index]->flags))
-				register_netdev(adapter->netdevs[index]);
-			else
-				netif_device_attach(adapter->netdevs[index]);
+		struct idpf_vport_config *vport_config = adapter->vport_config[index];
+		struct net_device *netdev = adapter->netdevs[index];
+
+		if (!netdev)
+			continue;
+
+		if (!test_bit(IDPF_VPORT_REG_NETDEV, vport_config->flags)) {
+			err = register_netdev(netdev);
+			if (err) {
+				dev_err(&pdev->dev, "failed to register netdev for vport %d: %pe\n",
+					index, ERR_PTR(err));
+				continue;
+			}
+			set_bit(IDPF_VPORT_REG_NETDEV, vport_config->flags);
+		} else {
+			netif_device_attach(netdev);
 		}
 	}
 
@@ -1853,7 +1867,7 @@ int idpf_sriov_config_vfs(struct pci_dev *pdev, int num_vfs)
 {
 	struct idpf_adapter *adapter = pci_get_drvdata(pdev);
 
-	lockdep_assert_held(&adapter->init_ctrl_lock);
+	lockdep_assert_held(&adapter->vport_init_lock);
 
 	if (!idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS, VIRTCHNL2_CAP_SRIOV)) {
 		dev_info(&pdev->dev, "SR-IOV is not supported on this device\n");
@@ -1889,9 +1903,9 @@ int idpf_sriov_configure(struct pci_dev *pdev, int num_vfs)
 	struct idpf_adapter *adapter = pci_get_drvdata(pdev);
 	int ret;
 
-	idpf_init_ctrl_lock(adapter);
+	idpf_vport_init_lock(adapter);
 	ret = idpf_sriov_config_vfs(pdev, num_vfs);
-	idpf_init_ctrl_unlock(adapter);
+	idpf_vport_init_unlock(adapter);
 
 	return ret;
 }
@@ -1906,8 +1920,6 @@ int idpf_sriov_configure(struct pci_dev *pdev, int num_vfs)
 void idpf_deinit_task(struct idpf_adapter *adapter)
 {
 	unsigned int i;
-
-	idpf_netdev_stop_all(adapter);
 
 	/* Wait until the init_task is done else this thread might release
 	 * the resources first and the other thread might end up in a bad state
@@ -2042,12 +2054,14 @@ int idpf_init_hard_reset(struct idpf_adapter *adapter)
 	struct device *dev = idpf_adapter_to_dev(adapter);
 	int err;
 
+	idpf_vport_init_lock(adapter);
+
+	dev_info(dev, "Device HW Reset initiated\n");
+
+	/* Avoid TX hangs on reset */
 	idpf_netdev_stop_all(adapter);
 	idpf_device_detach(adapter);
 
-	idpf_init_ctrl_lock(adapter);
-
-	dev_info(dev, "Device HW Reset initiated\n");
 	/* Prepare for reset */
 	if (test_and_clear_bit(IDPF_HR_DRV_LOAD, adapter->flags)) {
 		reg_ops->trigger_reset(adapter, IDPF_HR_DRV_LOAD);
@@ -2088,10 +2102,10 @@ int idpf_init_hard_reset(struct idpf_adapter *adapter)
 	clear_bit(IDPF_HR_FUNC_RESET, adapter->flags);
 
 	/* Reset is complete and so start building the driver resources again */
-	idpf_reset_recover(adapter);
+	 err = idpf_reset_recover(adapter);
 
 unlock_mutex:
-	idpf_init_ctrl_unlock(adapter);
+	idpf_vport_init_unlock(adapter);
 
 	return err;
 }
@@ -2476,7 +2490,7 @@ static int idpf_set_features(struct net_device *netdev,
 	struct idpf_vport *vport;
 	int err = 0;
 
-	idpf_vport_ctrl_lock(adapter);
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	if (idpf_is_reset_in_prog(adapter)) {
@@ -2508,7 +2522,7 @@ static int idpf_set_features(struct net_device *netdev,
 	}
 
 unlock_mutex:
-	idpf_vport_ctrl_unlock(adapter);
+	idpf_vport_cfg_unlock(adapter);
 
 	return err;
 }
@@ -2547,7 +2561,7 @@ static int idpf_open(struct net_device *netdev)
 	if (test_bit(IDPF_REMOVE_IN_PROG, adapter->flags))
 		return 0;
 
-	idpf_vport_ctrl_lock(adapter);
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	err = idpf_vport_open(vport, true);
@@ -2557,7 +2571,7 @@ static int idpf_open(struct net_device *netdev)
 	err = idpf_set_real_num_queues(vport);
 
 unlock:
-	idpf_vport_ctrl_unlock(adapter);
+	idpf_vport_cfg_unlock(adapter);
 
 	return err;
 }
@@ -2575,7 +2589,7 @@ static int idpf_change_mtu(struct net_device *netdev, int new_mtu)
 	struct idpf_vport *vport;
 	int err = 0;
 
-	idpf_vport_ctrl_lock(adapter);
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 #ifdef HAVE_NETDEVICE_MIN_MAX_MTU
@@ -2632,7 +2646,7 @@ static int idpf_change_mtu(struct net_device *netdev, int new_mtu)
 		err = idpf_initiate_soft_reset(vport, IDPF_SR_MTU_CHANGE);
 
 unlock_mutex:
-	idpf_vport_ctrl_unlock(adapter);
+	idpf_vport_cfg_unlock(adapter);
 
 	return err;
 }
@@ -2723,7 +2737,7 @@ static int idpf_change_tx_sch_mode(struct idpf_vport *vport,
  * @vport: virtual port data structure
  * @qopt: input parameters for ETF offload
  *
- * Caller is expected to hold vport_ctrl_lock.
+ * Caller is expected to hold vport_cfg_lock.
  *
  * Return 0 on success, error on failure.
  */
@@ -2777,7 +2791,7 @@ static int idpf_setup_tc(struct net_device *netdev, enum tc_setup_type type,
 	struct idpf_vport *vport;
 	int err = 0;
 
-	idpf_vport_ctrl_lock(adapter);
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	switch (type) {
@@ -2798,7 +2812,7 @@ static int idpf_setup_tc(struct net_device *netdev, enum tc_setup_type type,
 #ifdef HAVE_ETF_SUPPORT
 vport_ctrl_unlock:
 #endif /* HAVE_ETF_SUPPORT */
-	idpf_vport_ctrl_unlock(adapter);
+	idpf_vport_cfg_unlock(adapter);
 
 	return err;
 }
@@ -2957,7 +2971,7 @@ static int idpf_xdp(struct net_device *netdev, struct netdev_xdp *xdp)
 #endif /* HAVE_XDP_QUERY_PROG */
 	int err = 0;
 
-	idpf_vport_ctrl_lock(adapter);
+	idpf_vport_cfg_lock(adapter);
 
 	switch (xdp->command) {
 	case XDP_SETUP_PROG:
@@ -2986,7 +3000,7 @@ static int idpf_xdp(struct net_device *netdev, struct netdev_xdp *xdp)
 		break;
 	}
 
-	idpf_vport_ctrl_unlock(adapter);
+	idpf_vport_cfg_unlock(adapter);
 
 	return err;
 }
@@ -3008,7 +3022,7 @@ static int idpf_set_mac(struct net_device *netdev, void *p)
 	struct idpf_vport *vport;
 	int err = 0;
 
-	idpf_vport_ctrl_lock(adapter);
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	if (!idpf_is_cap_ena(vport->adapter, IDPF_OTHER_CAPS,
@@ -3042,7 +3056,7 @@ static int idpf_set_mac(struct net_device *netdev, void *p)
 	eth_hw_addr_set(netdev, addr->sa_data);
 
 unlock_mutex:
-	idpf_vport_ctrl_unlock(adapter);
+	idpf_vport_cfg_unlock(adapter);
 
 	return err;
 }
@@ -3061,7 +3075,7 @@ static int idpf_eth_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 	struct idpf_vport *vport;
 	int err;
 
-	idpf_vport_ctrl_lock(adapter);
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	access = vport->adapter->ptp.tx_tstamp_access;
@@ -3073,11 +3087,11 @@ static int idpf_eth_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 	switch (cmd) {
 #ifdef SIOCGHWTSTAMP
 	case SIOCGHWTSTAMP:
-		err = idpf_ptp_get_ts_config(vport, ifr);
+		err = idpf_ptp_get_tstamp_config(vport, ifr);
 		break;
 #endif /* SIOCGHWTSTAMP */
 	case SIOCSHWTSTAMP:
-		err = idpf_ptp_set_ts_config(vport, ifr);
+		err = idpf_ptp_set_tstamp_config(vport, ifr);
 		break;
 	default:
 		err = -EOPNOTSUPP;
@@ -3085,7 +3099,7 @@ static int idpf_eth_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 	}
 
 free_vport:
-	idpf_vport_ctrl_unlock(adapter);
+	idpf_vport_cfg_unlock(adapter);
 
 	return err;
 }

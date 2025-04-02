@@ -108,6 +108,7 @@ enum icrdma_device_caps_const {
 void icrdma_init_hw(struct irdma_sc_dev *dev);
 void irdma_init_config_check(struct irdma_config_check *cc,
 			     u8 traffic_class,
+			     u8 prio,
 			     u16 qs_handle);
 bool irdma_is_config_ok(struct irdma_config_check *cc, struct irdma_sc_vsi *vsi);
 void irdma_check_fc_for_tc_update(struct irdma_sc_vsi *vsi,
