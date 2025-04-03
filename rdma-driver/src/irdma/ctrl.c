@@ -205,7 +205,7 @@ static void irdma_set_qos_info(struct irdma_sc_vsi  *vsi, struct irdma_l2params 
 				l2p->qs_handle_list[i];
 		if (vsi->dev->hw_attrs.uk_attrs.hw_rev == IRDMA_GEN_2)
 			irdma_init_config_check(&vsi->cfg_check[i],
-						l2p->up2tc[i],
+						l2p->up2tc[i], i,
 						l2p->qs_handle_list[i]);
 		vsi->qos[i].traffic_class = l2p->up2tc[i];
 		vsi->qos[i].rel_bw =
@@ -4592,6 +4592,9 @@ int irdma_sc_cqp_destroy(struct irdma_sc_cqp *cqp, bool free_hwcqp)
 	dma_free_coherent(cqp->dev->hw->device, cqp->sdbuf.size,
 			  cqp->sdbuf.va, cqp->sdbuf.pa);
 	cqp->sdbuf.va = NULL;
+	irdma_rca_rq_posted = false;
+	if (irdma_rca_ena && cqp->dev->is_pf)
+		irdma_iounmap_db(cqp->dev);
 	return ret_code;
 }
 

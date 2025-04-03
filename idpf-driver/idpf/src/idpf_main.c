@@ -135,11 +135,11 @@ static void idpf_remove(struct pci_dev *pdev)
 	idpf_devlink_deinit(adapter);
 #endif /* DEVLINK_ENABLED */
 
-	idpf_init_ctrl_lock(adapter);
+	idpf_vport_init_lock(adapter);
 	if (adapter->num_vfs)
 		idpf_sriov_config_vfs(pdev, 0);
 	idpf_vc_core_deinit(adapter);
-	idpf_init_ctrl_unlock(adapter);
+	idpf_vport_init_unlock(adapter);
 
 	/* Shut down the per-adapter virtchnl transactions */
 	idpf_vc_xn_shutdown(&adapter->vcxn_mngr);
@@ -181,11 +181,14 @@ destroy_wqs:
 	kfree(adapter->netdevs);
 	adapter->netdevs = NULL;
 
-	mutex_destroy(&adapter->init_ctrl_lock);
-	mutex_destroy(&adapter->vport_ctrl_lock);
+	mutex_destroy(&adapter->vport_init_lock);
+	mutex_destroy(&adapter->vport_cfg_lock);
 	mutex_destroy(&adapter->vector_lock);
 	mutex_destroy(&adapter->queue_lock);
 
+#if IS_ENABLED(CONFIG_PCIE_PTM)
+	pci_disable_ptm(pdev);
+#endif /* CONFIG_PCIE_PTM */
 #ifdef HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING
 	pci_disable_pcie_error_reporting(pdev);
 #endif /* HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING */
@@ -263,7 +266,7 @@ store_hw_info:
 	return 0;
 }
 
-static struct lock_class_key idpf_pf_init_ctrl_lock_key;
+static struct lock_class_key idpf_pf_vport_init_lock_key;
 static struct lock_class_key idpf_pf_work_lock_key;
 
 /**
@@ -315,8 +318,8 @@ static int idpf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	adapter->req_tx_splitq = true;
 	adapter->req_rx_splitq = true;
 
-	mutex_init(&adapter->init_ctrl_lock);
-	mutex_init(&adapter->vport_ctrl_lock);
+	mutex_init(&adapter->vport_init_lock);
+	mutex_init(&adapter->vport_cfg_lock);
 	mutex_init(&adapter->vector_lock);
 	mutex_init(&adapter->queue_lock);
 
@@ -329,8 +332,8 @@ static int idpf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	switch (ent->device) {
 	case IDPF_DEV_ID_PF:
 		idpf_dev_ops_init(adapter);
-		lockdep_set_class(&adapter->init_ctrl_lock,
-				  &idpf_pf_init_ctrl_lock_key);
+		lockdep_set_class(&adapter->vport_init_lock,
+				  &idpf_pf_vport_init_lock_key);
 		lockdep_init_map(&adapter->vc_event_task.work.lockdep_map,
 				 "idpf-PF-vc-work", &idpf_pf_work_lock_key, 0);
 		break;
@@ -483,6 +486,9 @@ err_serv_wq_alloc:
 err_wq_alloc:
 	pci_disable_pcie_error_reporting(pdev);
 #endif /* HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING */
+#if IS_ENABLED(CONFIG_PCIE_PTM)
+	pci_disable_ptm(pdev);
+#endif /* CONFIG_PCIE_PTM */
 err_free:
 #ifdef DEVLINK_ENABLED
 	devlink_free(priv_to_devlink(adapter));
@@ -498,7 +504,7 @@ err_free:
  *
  * Returns 0 on success, negative on failure
  */
-void idpf_reset_recover(struct idpf_adapter *adapter)
+int idpf_reset_recover(struct idpf_adapter *adapter)
 {
 	int err;
 
@@ -507,7 +513,8 @@ void idpf_reset_recover(struct idpf_adapter *adapter)
 	if (err) {
 		dev_err(idpf_adapter_to_dev(adapter),
 			"Failed to initialize default mailbox: %d\n", err);
-		return;
+
+		return err;
 	}
 
 	if (!adapter->vcxn_mngr.active)
@@ -530,12 +537,14 @@ void idpf_reset_recover(struct idpf_adapter *adapter)
 	while (test_bit(IDPF_HR_RESET_IN_PROG, adapter->flags))
 		msleep(100);
 
-	return;
+	return 0;
 
 init_err:
 	cancel_delayed_work_sync(&adapter->mbx_task);
 	cancel_delayed_work_sync(&adapter->serv_task);
 	idpf_deinit_dflt_mbx(adapter);
+
+	return err;
 }
 
 /**
@@ -568,7 +577,7 @@ bool idpf_is_reset_detected(struct idpf_adapter *adapter)
  */
 static void idpf_reset_prepare(struct idpf_adapter *adapter)
 {
-	idpf_init_ctrl_lock(adapter);
+	idpf_vport_init_lock(adapter);
 	set_bit(IDPF_HR_RESET_IN_PROG, adapter->flags);
 	dev_info(idpf_adapter_to_dev(adapter), "Device FLR Reset initiated\n");
 
@@ -582,7 +591,7 @@ static void idpf_reset_prepare(struct idpf_adapter *adapter)
 	idpf_vc_core_deinit(adapter);
 	idpf_deinit_dflt_mbx(adapter);
 
-	idpf_init_ctrl_unlock(adapter);
+	idpf_vport_init_unlock(adapter);
 }
 
 /**
@@ -657,19 +666,21 @@ static void idpf_pci_err_resume(struct pci_dev *pdev)
 		return;
 	}
 
-	idpf_init_ctrl_lock(adapter);
+	idpf_vport_init_lock(adapter);
 
 	err = idpf_check_reset_complete(adapter);
 	if (err) {
 		dev_err(&adapter->pdev->dev, "The driver was unable to contact the device's firmware.  Check that the FW is running. Driver state=%u\n",
 			adapter->state);
-		idpf_init_ctrl_unlock(adapter);
+		idpf_vport_init_unlock(adapter);
 		return;
 	}
 
-	idpf_reset_recover(adapter);
+	err = idpf_reset_recover(adapter);
+	if (err)
+		dev_err(&adapter->pdev->dev, "Failed to recover after PCI reset\n");
 
-	idpf_init_ctrl_unlock(adapter);
+	idpf_vport_init_unlock(adapter);
 
 	/* Wait for all init_task WQs to complete */
 	do {

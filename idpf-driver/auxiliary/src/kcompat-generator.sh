@@ -123,11 +123,19 @@ function gen-devlink() {
 	gen HAVE_DEVL_PORT_REG_WITH_OPS_AND_UNREG if fun devl_port_register_with_ops in "$dh"
 	gen NEED_DEVLINK_FLASH_UPDATE_STATUS_NOTIFY if fun devlink_flash_update_status_notify absent in "$dh"
 	gen NEED_DEVLINK_FLASH_UPDATE_TIMEOUT_NOTIFY if fun devlink_flash_update_timeout_notify absent in "$dh"
+	gen NEED_DEVLINK_FMSG_DUMP_SKB if fun devlink_fmsg_dump_skb absent in "$dh"
+	gen NEED_DEVLINK_FMSG_PUT if macro devlink_fmsg_put absent in "$dh"
 	gen NEED_DEVLINK_HEALTH_DEFAULT_AUTO_RECOVER if fun devlink_health_reporter_create matches auto_recover in "$dh"
 	gen NEED_DEVLINK_REGION_CREATE_OPS if fun devlink_region_create lacks 'struct devlink_region_ops \\*ops' in "$dh"
 	gen NEED_DEVLINK_RESOURCES_UNREGISTER_NO_RESOURCE if fun devlink_resources_unregister matches 'struct devlink_resource \\*' in "$dh"
 	gen NEED_DEVLINK_TO_DEV if fun devlink_to_dev absent in "$dh"
 	gen NEED_DEVLINK_UNLOCKED_RESOURCE if fun devl_resource_size_get absent in "$dh"
+	gen NEED_DEVL_HEALTH_REPORTER_CREATE if fun devl_health_reporter_create absent in "$dh"
+	gen NEED_DEVL_LOCK if fun devl_lock absent in "$dh"
+	gen NEED_DEVL_PARAMS_REGISTER if fun devl_params_register absent in "$dh"
+	gen NEED_DEVL_PORT_REGISTER if fun devl_port_register absent in "$dh"
+	gen NEED_DEVL_REGION_CREATE if fun devl_region_create absent in "$dh"
+	gen NEED_DEVL_REGISTER if fun devl_register absent in "$dh"
 	gen NEED_DEVL_RESOURCE_REGISTER if fun devl_resource_register absent in "$dh"
 
 	gen HAVE_DEVLINK_PORT_FLAVOUR_PCI_SF if enum devlink_port_flavour matches DEVLINK_PORT_FLAVOUR_PCI_SF in include/uapi/linux/devlink.h
@@ -272,6 +280,7 @@ function gen-netdevice() {
 	gen HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV if method '(ndo_setup_tc|ndo_setup_tc_rh)' of '(net_device_ops|netdevice_ops_extended)' matches 'void \\*type_data' in "$ndh"
 	gen HAVE_NDO_UDP_TUNNEL_CALLBACK if method ndo_udp_tunnel_add of net_device_ops in "$ndh"
 	gen HAVE_NETDEV_EXTENDED_MIN_MAX_MTU if struct net_device_extended matches min_mtu in "$ndh"
+	gen HAVE_NETDEV_FCOE_MTU if struct net_device matches fcoe_mtu in "$ndh"
 	gen HAVE_NETDEV_MIN_MAX_MTU if struct net_device matches min_mtu in "$ndh"
 	gen HAVE_NETIF_SET_TSO_MAX if fun netif_set_tso_max_size in "$ndh"
 	gen HAVE_RHEL7_NETDEV_OPS_EXT_NDO_SETUP_TC if method ndo_setup_tc_rh of net_device_ops_extended in "$ndh"
@@ -282,16 +291,27 @@ function gen-netdevice() {
 	gen NEED_XDP_FEATURES if enum netdev_xdp_act absent in include/uapi/linux/netdev.h
 }
 
+function gen-packing() {
+	lph='include/linux/packing.h'
+	HAVE_PACK_FIELDS=0
+	if config_has CONFIG_PACKING && check macro pack_fields in "$lph" ; then
+		HAVE_PACK_FIELDS=1
+	fi
+	gen HAVE_PACK_FIELDS if string "$HAVE_PACK_FIELDS" equals 1
+}
+
 function gen-pci() {
 	pcih='include/linux/pci.h'
 	gen HAVE_PCI_MSIX_ALLOC_IRQ_AT if fun pci_msix_alloc_irq_at in "$pcih"
 	gen HAVE_PCI_MSIX_CAN_ALLOC_DYN if fun pci_msix_can_alloc_dyn in "$pcih"
 	gen HAVE_PCI_MSIX_FREE_IRQ if fun pci_msix_free_irq in "$pcih"
 	gen HAVE_PER_VF_MSIX_SYSFS if method sriov_set_msix_vec_count of pci_driver in "$pcih"
+	gen HAVE_STRUCT_PCI_DEV_PTM_CAP if struct pci_dev matches ptm_cap in "$pcih"
 	gen HAVE_STRUCT_PCI_DEV_PTM_ENABLED if struct pci_dev matches ptm_enabled in "$pcih"
 	gen NEED_PCIE_FLR if fun pcie_flr absent in "$pcih"
 	gen NEED_PCIE_FLR_RETVAL if fun pcie_flr lacks 'int pcie_flr' in "$pcih"
 	gen NEED_PCIE_PTM_ENABLED if fun pcie_ptm_enabled absent in "$pcih"
+	gen NEED_PCI_DISABLE_PTM if fun pci_disable_ptm absent in "$pcih"
 	gen NEED_PCI_ENABLE_PTM if fun pci_enable_ptm absent in "$pcih"
 }
 
@@ -365,6 +385,7 @@ function gen-other() {
 	gen NEED_DEBUGFS_LOOKUP if fun debugfs_lookup absent in include/linux/debugfs.h
 	gen NEED_DEBUGFS_LOOKUP_AND_REMOVE if fun debugfs_lookup_and_remove absent in include/linux/debugfs.h
 	gen NEED_DIM_END_SAMPLE_BY_POINTER if fun net_dim matches 'struct dim_sample end_sample' in include/linux/dim.h
+	gen NEED_ETH_GET_HEADLEN if fun eth_get_headlen absent in include/linux/etherdevice.h
 	gen NEED_ETH_GET_HEADLEN_NET_DEVICE_ARG if fun eth_get_headlen lacks 'struct net_device \\*' in include/linux/etherdevice.h
 	gen NEED_ETH_HW_ADDR_SET if fun eth_hw_addr_set absent in include/linux/etherdevice.h
 	gen NEED_FIND_NEXT_BIT_WRAP if fun find_next_bit_wrap absent in include/linux/find.h
@@ -413,6 +434,9 @@ function gen-other() {
 	gen NEED_SKB_FRAG_OFF_ADD if fun skb_frag_off_add absent in include/linux/skbuff.h
 	gen NEED_KREALLOC_ARRAY if fun krealloc_array absent in include/linux/slab.h
 	gen NEED_SYSFS_MATCH_STRING if macro sysfs_match_string absent in include/linux/string.h
+	gen HAVE_STRING_CHOICES_H if fun str_enabled_disabled in include/linux/string_choices.h
+	gen NEED_STR_ENABLED_DISABLED if fun str_enabled_disabled absent in include/linux/string_choices.h include/linux/string_helpers.h
+	gen HAVE_STRING_HELPERS_H if enum string_size_units in include/linux/string_helpers.h
 	gen NEED_SYSFS_EMIT if fun sysfs_emit absent in include/linux/sysfs.h
 	gen HAVE_TRACE_ENABLED_SUPPORT if implementation of macro __DECLARE_TRACE matches 'trace_##name##_enabled' in include/linux/tracepoint.h
 	gen HAVE_TTY_OP_WRITE_SIZE_T if method write of tty_operations matches size_t in include/linux/tty_driver.h
@@ -433,6 +457,12 @@ function gen-other() {
 		HAVE_LINUX_UNALIGNED=1
 	fi
 	gen HAVE_LINUX_UNALIGNED_HEADER if string "${HAVE_LINUX_UNALIGNED}" equals 1
+
+	HAVE_LINUX_BITS=0
+	if [ -n "$(filter-out-bad-files include/linux/bits.h)" ]; then
+		HAVE_LINUX_BITS=1
+	fi
+	gen HAVE_LINUX_BITS_HEADER if string "${HAVE_LINUX_BITS}" equals 1
 }
 
 # all the generations, extracted from main() to keep normal code and various
@@ -457,6 +487,7 @@ function gen-all() {
 	gen-gnss
 	gen-mdev
 	gen-mdio
+	gen-packing
 	gen-pci
 	gen-ptp
 	gen-stddef

@@ -130,6 +130,12 @@ static const struct vfio_device_ops idpf_vdcm_vdev_ops = {
 	.write			= idpf_vdcm_vdev_write,
 	.ioctl			= idpf_vdcm_vdev_ioctl,
 	.mmap			= idpf_vdcm_vdev_mmap,
+#if IS_ENABLED(CONFIG_IOMMUFD)
+	.bind_iommufd           = vfio_iommufd_emulated_bind,
+	.unbind_iommufd         = vfio_iommufd_emulated_unbind,
+	.attach_ioas            = vfio_iommufd_emulated_attach_ioas,
+	.detach_ioas            = vfio_iommufd_emulated_detach_ioas,
+#endif /* CONFIG_IOMMUFD */
 };
 
 /**

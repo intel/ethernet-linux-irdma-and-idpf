@@ -880,6 +880,12 @@ static void dump_stats_cmd(struct irdma_device *iwdev)
 		      iwdev->ah_list_cnt);
 	dbg_vsnprintf("AH list cnt HWM                  %d\n",
 		      iwdev->ah_list_hwm);
+	dbg_vsnprintf("AH Reused Count(Kernel)            %lld\n",
+		      iwdev->ah_kernel_reused);
+	dbg_vsnprintf("AH Current List Count(Kernel)      %d\n",
+		      iwdev->ah_kernel_list_cnt);
+	dbg_vsnprintf("AH list cnt HWM(Kernel)            %d\n",
+		      iwdev->ah_kernel_list_hwm);
 
 #if IS_ENABLED(CONFIG_CONFIGFS_FS)
 	if  (iwdev->roce_mode) {

@@ -688,6 +688,7 @@ struct irdma_config_check {
 	bool lfc_set:1;
 	bool pfc_set:1;
 	u8 traffic_class;
+	u8 prio;
 	u16 qs_handle;
 };
 
@@ -795,7 +796,7 @@ struct irdma_sc_dev {
 	u32 vchnl_ver;
 	u16 num_vfs;
 	u16 hmc_fn_id;
-	u8 vf_id;
+	u16 vf_id;
 	bool privileged:1;
 	bool vchnl_up:1;
 	bool ceq_valid:1;

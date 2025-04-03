@@ -52,7 +52,7 @@ struct idpf_rss_data;
 #endif /* CONFIG_IOMMU_BYPASS */
 
 #define IDPF_DRV_NAME "idpf"
-#define IDPF_DRV_VER "0.0.652"
+#define IDPF_DRV_VER "0.0.653"
 
 #define IDPF_M(m, s)	((m) << (s))
 
@@ -587,7 +587,7 @@ struct idpf_vgrp {
  * @link_up: True if link is up
  * @sw_marker_wq: Workqueue for marker packets
  * @tstamp_config: The Tx tstamp config
- * @tx_tstamps_caps: The capabilities negotiated for Tx timestamping
+ * @tx_tstamp_caps: The capabilities negotiated for Tx timestamping
  * @tstamp_task: Tx timestamping task
  * @finish_reset_task: finish vport's soft reset task
  */
@@ -863,7 +863,7 @@ struct idpf_iommu_bypass {
  * @req_rx_splitq: RX split or single queue model to request
  * @crc_enable: Enable CRC insertion offload
  * @init_ctrl_lock: Lock to protect init, re-init, and deinit flow
- * @vport_ctrl_lock: Lock to protect access to vports during alloc/dealloc/reset
+ * @vport_cfg_lock: Lock to protect access to vports during alloc/dealloc/reset
  * @vector_lock: Lock to protect vector distribution
  * @queue_lock: Lock to protect queue distribution
 #ifdef DEVLINK_ENABLED
@@ -874,6 +874,8 @@ struct idpf_iommu_bypass {
  * @sf_cnt: Count of active subfunctions
 #endif
  * @ptp: PTP structure
+ * @tx_compl_tstamp_gran_s: Number of left bit shifts to convert Tx completion
+ *			    descriptor timestamp in nanoseconds.
  * @corer_done: Used to track the completion of CORER
  */
 struct idpf_adapter {
@@ -935,8 +937,8 @@ struct idpf_adapter {
 	bool req_tx_splitq;
 	bool req_rx_splitq;
 	bool crc_enable;
-	struct mutex init_ctrl_lock;
-	struct mutex vport_ctrl_lock;
+	struct mutex vport_init_lock;
+	struct mutex vport_cfg_lock;
 	struct mutex vector_lock;
 	struct mutex queue_lock;
 #ifdef DEVLINK_ENABLED
@@ -1246,53 +1248,53 @@ idpf_txq_from_rel_qid(struct idpf_q_grp *q_grp, struct idpf_queue *complq,
 }
 
 /**
- * idpf_init_ctrl_lock -Acquire the init/deinit control lock. It
+ * idpf_vport_init_lock -Acquire the init/deinit control lock. It
  * controls and protect initialization, re-initialization and
  * deinitialization code flow and its resources.
  * @adapter: private data struct
  *
  * This lock is only used by non-datapath code to protect.
  */
-static inline void idpf_init_ctrl_lock(struct idpf_adapter *adapter)
+static inline void idpf_vport_init_lock(struct idpf_adapter *adapter)
 {
-	mutex_lock(&adapter->init_ctrl_lock);
+	mutex_lock(&adapter->vport_init_lock);
 }
 
 /**
- * idpf_init_ctrl_unlock - Release the init/deinit control lock
+ * idpf_vport_init_unlock - Release the init/deinit control lock
  * @adapter: private data struct
  */
-static inline void idpf_init_ctrl_unlock(struct idpf_adapter *adapter)
+static inline void idpf_vport_init_unlock(struct idpf_adapter *adapter)
 {
-	mutex_unlock(&adapter->init_ctrl_lock);
+	mutex_unlock(&adapter->vport_init_lock);
 }
 
 /**
- * idpf_vport_ctrl_lock -Acquire the vport control lock
+ * idpf_vport_cfg_lock -Acquire the vport control lock
  * @adapter: private data struct
  *
  * This lock should be used by non-datapath code to protect against vport
  * destruction.
  */
-static inline void idpf_vport_ctrl_lock(struct idpf_adapter *adapter)
+static inline void idpf_vport_cfg_lock(struct idpf_adapter *adapter)
 {
-	mutex_lock(&adapter->vport_ctrl_lock);
+	mutex_lock(&adapter->vport_cfg_lock);
 }
 
 /**
- * idpf_vport_ctrl_unlock - Release the vport control lock
+ * idpf_vport_cfg_unlock - Release the vport control lock
  * @adapter: private data struct
  */
-static inline void idpf_vport_ctrl_unlock(struct idpf_adapter *adapter)
+static inline void idpf_vport_cfg_unlock(struct idpf_adapter *adapter)
 {
-	mutex_unlock(&adapter->vport_ctrl_lock);
+	mutex_unlock(&adapter->vport_cfg_lock);
 }
 
 void idpf_statistics_task(struct work_struct *work);
 void idpf_init_task(struct work_struct *work);
 void idpf_service_task(struct work_struct *work);
 void idpf_mbx_task(struct work_struct *work);
-void idpf_tstamp_task(struct work_struct *work);
+void idpf_ptp_tstamp_task(struct work_struct *work);
 void idpf_finish_soft_reset(struct work_struct *work);
 void idpf_vc_event_task(struct work_struct *work);
 void idpf_dev_ops_init(struct idpf_adapter *adapter);
@@ -1374,7 +1376,7 @@ void idpf_netdev_stop_all(struct idpf_adapter *adapter);
 void idpf_device_detach(struct idpf_adapter *adapter);
 int idpf_check_reset_complete(struct idpf_adapter *adapter);
 int idpf_init_hard_reset(struct idpf_adapter *adapter);
-void idpf_reset_recover(struct idpf_adapter *adapter);
+int idpf_reset_recover(struct idpf_adapter *adapter);
 bool idpf_is_reset_detected(struct idpf_adapter *adapter);
 int idpf_vport_queue_ids_init(struct idpf_q_grp *q_grp,
 			      struct virtchnl2_queue_reg_chunks *chunks);

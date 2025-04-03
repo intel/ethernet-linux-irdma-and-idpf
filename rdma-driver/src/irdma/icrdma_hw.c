@@ -235,11 +235,12 @@ void icrdma_init_hw(struct irdma_sc_dev *dev)
 						IRDMA_FEATURE_CQ_RESIZE;
 }
 
-void irdma_init_config_check(struct irdma_config_check *cc, u8 traffic_class, u16 qs_handle)
+void irdma_init_config_check(struct irdma_config_check *cc, u8 traffic_class, u8 prio, u16 qs_handle)
 {
 	cc->config_ok = false;
 	cc->traffic_class = traffic_class;
 	cc->qs_handle = qs_handle;
+	cc->prio = prio;
 	cc->lfc_set = 0;
 	cc->pfc_set = 0;
 }
@@ -300,9 +301,9 @@ static bool irdma_is_pfc_set(struct irdma_config_check *cc, struct irdma_sc_vsi 
 	}
 
 	pause = (rd32(vsi->dev->hw, rx_pause_enable + 4 * fn_id) >>
-		      cc->traffic_class) & BIT(0);
+		      cc->prio) & BIT(0);
 	pause &= (rd32(vsi->dev->hw, tx_pause_enable + 4 * fn_id) >>
-		       cc->traffic_class) & BIT(0);
+		       cc->prio) & BIT(0);
 
 	return irdma_check_tc_has_pfc(vsi, GLDCB_TC2PFC, cc->traffic_class) &&
 	       pause;
@@ -402,7 +403,7 @@ void irdma_check_fc_for_qp(struct irdma_sc_vsi *vsi, struct irdma_sc_qp *sc_qp)
 		struct irdma_config_check *cfg_chk = &vsi->cfg_check[i];
 
 		irdma_init_config_check(cfg_chk,
-					vsi->qos[i].traffic_class,
+					vsi->qos[i].traffic_class, i,
 					vsi->qos[i].qs_handle[sc_qp->qs_idx]);
 		if (sc_qp->qs_handle == cfg_chk->qs_handle)
 			irdma_check_flow_ctrl(vsi, i, cfg_chk->traffic_class);

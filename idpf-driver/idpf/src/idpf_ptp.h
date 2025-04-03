@@ -182,10 +182,10 @@ int idpf_ptp_adj_dev_clk_fine(struct idpf_adapter *adapter, u64 incval);
 int idpf_ptp_adj_dev_clk_time(struct idpf_adapter *adapter, s64 delta);
 int idpf_ptp_get_tx_tstamp_mb(struct idpf_vport *vport);
 int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport);
-int idpf_ptp_get_ts_config(struct idpf_vport *vport, struct ifreq *ifr);
-int idpf_ptp_set_ts_config(struct idpf_vport *vport, struct ifreq *ifr);
-s8 idpf_ptp_request_ts(struct idpf_vport *vport, struct sk_buff *skb);
-u64 idpf_ptp_extend_ts(struct idpf_adapter *adapter, u64 in_tstamp);
+int idpf_ptp_get_tstamp_config(struct idpf_vport *vport, struct ifreq *ifr);
+int idpf_ptp_set_tstamp_config(struct idpf_vport *vport, struct ifreq *ifr);
+s8 idpf_ptp_request_tstamp_idx(struct idpf_vport *vport, struct sk_buff *skb);
+u64 idpf_ptp_extend_tstamp(struct idpf_adapter *adapter, u64 in_tstamp);
 
 /**
  * idpf_ptp_tstamp_extend_32b_to_64b - Convert a sub-32b nanoseconds Tx timestamp
@@ -280,26 +280,26 @@ static inline int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport)
 	return -EOPNOTSUPP;
 }
 
-static inline int idpf_ptp_get_ts_config(struct idpf_vport *vport,
-					 struct ifreq *ifr)
+static inline int idpf_ptp_get_tstamp_config(struct idpf_vport *vport,
+					     struct ifreq *ifr)
 {
 	return -EOPNOTSUPP;
 }
 
-static inline int idpf_ptp_set_ts_config(struct idpf_vport *vport,
-					 struct ifreq *ifr)
+static inline int idpf_ptp_set_tstamp_config(struct idpf_vport *vport,
+					     struct ifreq *ifr)
 {
 	return -EOPNOTSUPP;
 }
 
-static inline s8 idpf_ptp_request_ts(struct idpf_vport *vport,
-				     struct sk_buff *skb)
+static inline s8 idpf_ptp_request_tstamp_idx(struct idpf_vport *vport,
+					     struct sk_buff *skb)
 {
 	return -1;
 }
 
-static inline u64 idpf_ptp_extend_ts(struct idpf_adapter *adapter,
-				     u64 in_tstamp)
+static inline u64 idpf_ptp_extend_tstamp(struct idpf_adapter *adapter,
+					 u64 in_tstamp)
 {
 	return 0;
 }

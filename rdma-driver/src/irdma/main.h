@@ -84,9 +84,10 @@ extern struct auxiliary_driver i40iw_auxiliary_drv;
 #define IRDMA_MACIP_ADD		1
 #define IRDMA_MACIP_DELETE	2
 
-#define IW_CCQ_SIZE	(IRDMA_CQP_SW_SQSIZE_2048 + 2)
-#define IW_CEQ_SIZE	2048
-#define IW_AEQ_SIZE	2048
+#define IW_CCQ_SIZE		(IRDMA_CQP_SW_SQSIZE_2048 + 2)
+#define IW_GEN_3_CCQ_SIZE	(2*IRDMA_CQP_SW_SQSIZE_2048 + 2)
+#define IW_CEQ_SIZE		2048
+#define IW_AEQ_SIZE		2048
 
 #define RX_BUF_SIZE	(1536 + 8)
 #define IW_REG0_SIZE	(4 * 1024)
@@ -325,6 +326,7 @@ struct irdma_pci_f {
 	u32 max_mcg;
 	u32 next_mcg;
 	u32 max_pd;
+	u32 next_qp;
 	u32 next_cq;
 	u32 next_pd;
 	u32 max_mr_size;
@@ -417,12 +419,17 @@ struct irdma_device {
 	struct irdma_cm_core cm_core;
 	struct irdma_ae_info ae_info;
 	DECLARE_HASHTABLE(ah_hash_tbl, 8);
+	DECLARE_HASHTABLE(ah_kernel_hash_tbl, 8);
 	struct mutex ah_tbl_lock;
+	spinlock_t ah_kernel_tbl_lock;
 #ifdef CONFIG_DEBUG_FS
 	u64 ah_reused;
+	u64 ah_kernel_reused;
 #endif
 	u32 ah_list_cnt;
 	u32 ah_list_hwm;
+	u32 ah_kernel_list_cnt;
+	u32 ah_kernel_list_hwm;
 	u32 roce_cwnd;
 	u32 roce_ackcreds;
 	u32 vendor_id;

@@ -1627,8 +1627,8 @@ void irdma_get_vlan_mac_ipv6(u32 *addr, u16 *vlan_id, u8 *mac)
  */
 u16 irdma_get_vlan_ipv4(u32 *addr)
 {
-	struct net_device *netdev;
 	u16 vlan_id = 0xFFFF;
+	struct net_device *netdev;
 
 	netdev = ip_dev_find(&init_net, htonl(addr[0]));
 	if (netdev) {

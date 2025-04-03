@@ -749,6 +749,33 @@ static void idpf_fast_path_txq_deinit(struct idpf_vport *vport)
 }
 
 /**
+ * idpf_init_cached_phc_time - Initialize cached PHC time used to extend Tx/Rx
+ *			       timestamp value
+ * @vport: Vport structure
+ * @q_grp: Queue resources
+ *
+ * Initialize cached PHC time, updated periodically in ptp structure, in Tx and
+ * Rx queue to provide a quick and efficient access to these values when the
+ * Tx/Rx timestamp are extended to 64 bit.
+ */
+static void idpf_init_cached_phc_time(struct idpf_vport *vport,
+				      struct idpf_q_grp *q_grp)
+{
+	struct idpf_adapter *adapter = vport->adapter;
+	struct idpf_ptp *ptp = &adapter->ptp;
+	u16 i;
+
+	if (ptp->get_dev_clk_time_access == IDPF_PTP_NONE)
+		return;
+
+	for (i = 0; i < q_grp->num_rxq; i++)
+		q_grp->rxqs[i]->cached_phc_time = &ptp->cached_phc_time;
+
+	for (i = 0; i < q_grp->num_txq; i++)
+		q_grp->txqs[i]->cached_phc_time = &ptp->cached_phc_time;
+}
+
+/**
  * idpf_rx_buf_alloc_all - Allocate memory for all buffer resources
  * @q_grp: Queue resources
  *
@@ -1228,6 +1255,7 @@ static int idpf_txq_alloc(struct idpf_vport *vport, struct idpf_q_grp *q_grp)
 		if (!txq)
 			return -ENOMEM;
 
+		u64_stats_init(&txq->stats_sync);
 		q_grp->txqs[i] = txq;
 		txq->vport = vport;
 #ifdef CONFIG_IOMMU_BYPASS
@@ -1269,6 +1297,7 @@ static int idpf_txq_alloc(struct idpf_vport *vport, struct idpf_q_grp *q_grp)
 		struct idpf_queue *complq = &q_grp->complqs[i];
 		int j;
 
+		u64_stats_init(&complq->stats_sync);
 #ifdef CONFIG_IOMMU_BYPASS
 #ifdef CONFIG_ARM64
 		if (adapter->iommu_byp.ddev)
@@ -1375,6 +1404,7 @@ static void __idpf_rxq_init(struct idpf_vport *vport, struct idpf_queue *q)
 	struct idpf_vport_user_config_data *config_data;
 	struct idpf_adapter *adapter = vport->adapter;
 
+	u64_stats_init(&q->stats_sync);
 	config_data = &adapter->vport_config[vport->idx]->user_config;
 
 #ifdef CONFIG_IOMMU_BYPASS
@@ -1673,6 +1703,8 @@ int idpf_vport_queue_alloc_all(struct idpf_vport *vport,
 			goto err_out;
 	}
 
+	idpf_init_cached_phc_time(vport, q_grp);
+
 #ifdef HAVE_ETF_SUPPORT
 	config_data = &vport->adapter->vport_config[vport->idx]->user_config;
 	/* Initialize flow scheduling for queues that were requested
@@ -1806,7 +1838,8 @@ static void idpf_tx_hw_tstamp(struct idpf_queue *txq, struct sk_buff *skb,
 	tstamp = tstamp << txq->tx.cmpl_tstamp_ns_s;
 
 	ext_tstamp =
-		idpf_ptp_tstamp_extend_32b_to_64b(txq->cached_phctime, tstamp);
+		idpf_ptp_tstamp_extend_32b_to_64b(*txq->cached_phc_time,
+						  tstamp);
 	hwtstamps.hwtstamp = ns_to_ktime(ext_tstamp);
 
 	skb_tstamp_tx(skb, &hwtstamps);
@@ -2705,85 +2738,54 @@ void idpf_tx_splitq_build_flow_desc(union idpf_tx_flex_desc *desc,
 }
 
 /**
- * __idpf_tx_maybe_stop_common - 2nd level check for common Tx stop conditions
- * @tx_q: the queue to be checked
- * @size: the size buffer we want to assure is available
+ * idpf_tx_splitq_has_room - check if enough Tx splitq resources are available
+ * @txq: the queue to be checked
+ * @desc_count: number of descriptors required for this packet
  *
  * Returns -EBUSY if a stop is needed, else 0
  */
-static int __idpf_tx_maybe_stop_common(struct idpf_queue *tx_q,
-				       unsigned int size)
+static bool idpf_tx_splitq_has_room(struct idpf_queue *txq,
+				    unsigned int desc_count)
 {
-	netif_stop_subqueue(tx_q->vport->netdev, tx_q->idx);
+	if (IDPF_DESC_UNUSED(txq) < desc_count ||
+	    IDPF_TX_COMPLQ_PENDING(txq->tx.complq) >
+	    IDPF_TX_COMPLQ_OVERFLOW_THRESH(txq->tx.complq) ||
+	    IDPF_TX_BUF_RSV_LOW(txq))
+		return false;
+
+	return true;
+}
+
+/**
+ * idpf_tx_maybe_stop_splitq - check for Tx splitq stop conditions
+ * @txq: the queue to be checked
+ * @desc_count: number of descriptors required for this packet
+ *
+ * Returns 0 if stop is not needed
+ */
+static int idpf_tx_maybe_stop_splitq(struct idpf_queue *txq,
+				     unsigned int desc_count)
+{
+	if (likely(idpf_tx_splitq_has_room(txq, desc_count)))
+		return 0;
+
+	u64_stats_update_begin(&txq->stats_sync);
+	u64_stats_inc(&txq->q_stats.tx.q_busy);
+	u64_stats_update_end(&txq->stats_sync);
+
+	netif_stop_subqueue(txq->vport->netdev, txq->idx);
 
 	/* Memory barrier before checking head and tail */
 	smp_mb();
 
 	/* Check again in a case another CPU has just made room available. */
-	if (likely(IDPF_DESC_UNUSED(tx_q) < size))
+	if (likely(!idpf_tx_splitq_has_room(txq, desc_count)))
 		return -EBUSY;
 
 	/* A reprieve! - use start_subqueue because it doesn't call schedule */
-	netif_start_subqueue(tx_q->vport->netdev, tx_q->idx);
+	netif_start_subqueue(txq->vport->netdev, txq->idx);
 
 	return 0;
-}
-
-/**
- * idpf_tx_maybe_stop_common - 1st level check for common Tx stop conditions
- * @tx_q: the queue to be checked
- * @size: number of descriptors we want to assure is available
- *
- * Returns 0 if stop is not needed
- */
-int idpf_tx_maybe_stop_common(struct idpf_queue *tx_q, unsigned int size)
-{
-	if (likely(IDPF_DESC_UNUSED(tx_q) >= size))
-		return 0;
-
-	u64_stats_update_begin(&tx_q->stats_sync);
-	u64_stats_inc(&tx_q->q_stats.tx.q_busy);
-	u64_stats_update_end(&tx_q->stats_sync);
-
-	return __idpf_tx_maybe_stop_common(tx_q, size);
-}
-
-/**
- * idpf_tx_maybe_stop_splitq - 1st level check for Tx splitq stop conditions
- * @tx_q: the queue to be checked
- * @descs_needed: number of descriptors required for this packet
- *
- * Returns 0 if stop is not needed
- */
-static int idpf_tx_maybe_stop_splitq(struct idpf_queue *tx_q,
-				     unsigned int descs_needed)
-{
-	if (idpf_tx_maybe_stop_common(tx_q, descs_needed))
-		return -EBUSY;
-
-	/* If there are too many outstanding completions expected on the
-	 * completion queue, stop the TX queue to give the device some time to
-	 * catch up
-	 */
-	if (unlikely(IDPF_TX_COMPLQ_PENDING(tx_q->tx.complq) >
-		     IDPF_TX_COMPLQ_OVERFLOW_THRESH(tx_q->tx.complq)))
-		goto splitq_stop;
-
-	/* Also check for available book keeping buffers; if we are low, stop
-	 * the queue to wait for more completions
-	 */
-	if (unlikely(IDPF_TX_BUF_RSV_LOW(tx_q)))
-		goto splitq_stop;
-
-	return 0;
-
-splitq_stop:
-	u64_stats_update_begin(&tx_q->stats_sync);
-	u64_stats_inc(&tx_q->q_stats.tx.q_busy);
-	u64_stats_update_end(&tx_q->stats_sync);
-	netif_stop_subqueue(tx_q->vport->netdev, tx_q->idx);
-
-	return -EBUSY;
 }
 
 /**
@@ -2803,8 +2805,6 @@ void idpf_tx_buf_hw_update(struct idpf_queue *tx_q, u32 val,
 
 	nq = netdev_get_tx_queue(tx_q->vport->netdev, tx_q->idx);
 	tx_q->next_to_use = val;
-
-	idpf_tx_maybe_stop_common(tx_q, IDPF_TX_DESC_NEEDED);
 
 	/* Force memory writes to complete before letting h/w
 	 * know there are new descriptors to fetch.  (Only
@@ -3487,7 +3487,7 @@ static bool idpf_tx_tstamp(struct idpf_queue *tx_q, u8 *index,
 		return false;
 
 	/* Grab an open timestamp slot */
-	idx = idpf_ptp_request_ts(tx_q->vport, skb);
+	idx = idpf_ptp_request_tstamp_idx(tx_q->vport, skb);
 	if (idx < 0)
 		return false;
 
@@ -3495,6 +3495,21 @@ static bool idpf_tx_tstamp(struct idpf_queue *tx_q, u8 *index,
 	*index = idx;
 
 	return true;
+}
+
+/**
+ * idpf_tx_splitq_need_re - check whether RE bit needs to be set
+ * @tx_q: the tx ring to verify
+ *
+ * Return: true if RE bit needs to be set, false otherwise
+ */
+static inline bool idpf_tx_splitq_need_re(struct idpf_queue *tx_q)
+{
+	int gap = tx_q->next_to_use - tx_q->tx.last_re;
+
+	gap += (gap < 0) ? tx_q->desc_count : 0;
+
+	return gap >= IDPF_TX_SPLITQ_RE_MIN_GAP;
 }
 
 /**
@@ -3595,10 +3610,11 @@ static netdev_tx_t idpf_tx_splitq_frame(struct sk_buff *skb,
 		 * MIN_RING size to ensure it will be set at least once each
 		 * time around the ring.
 		 */
-		if (!(tx_q->next_to_use % IDPF_TX_SPLITQ_RE_MIN_GAP)) {
+		if (idpf_tx_splitq_need_re(tx_q)) {
 			struct idpf_queue *complq = tx_q->tx.complq;
 
 			tx_params.eop_cmd |= IDPF_TXD_FLEX_FLOW_CMD_RE;
+			tx_q->tx.last_re = tx_q->next_to_use;
 			complq->tx.num_compl_pend++;
 		}
 
@@ -3963,7 +3979,7 @@ static void idpf_rx_hwtstamp(struct idpf_queue *rxq,
 	u64 cached_time, ts_ns;
 	u32 ts_high;
 
-	cached_time = READ_ONCE(rxq->cached_phctime);
+	cached_time = READ_ONCE(*rxq->cached_phc_time);
 
 	if (rx_desc->ts_low & VIRTCHNL2_RX_FLEX_TSTAMP_VALID) {
 		ts_high = le32_to_cpu(rx_desc->ts_high);
@@ -5048,7 +5064,7 @@ static void idpf_vport_intr_rel_irq(struct idpf_vport *vport,
 		irq_num = adapter->msix_entries[vidx].vector;
 
 		/* clear the affinity_mask in the IRQ descriptor */
-		irq_set_affinity_hint(irq_num, NULL);
+		irq_set_affinity_notifier(irq_num, NULL);
 		free_irq(irq_num, q_vector);
 		kfree(q_vector->name);
 		q_vector->name = NULL;
@@ -5212,6 +5228,33 @@ void idpf_vport_intr_update_itr_ena_irq(struct idpf_q_vector *q_vector)
 }
 
 /**
+ * idpf_irq_affinity_notify - Callback for affinity changes
+ * @notify: context as to what irq was changed
+ * @mask: the new affinity mask
+ *
+ * Callback function registered via irq_set_affinity_notifier function
+ * so that river can receive changes to the irq affinity masks.
+ */
+static void
+idpf_irq_affinity_notify(struct irq_affinity_notify *notify,
+			 const cpumask_t *mask)
+{
+	struct idpf_q_vector *q_vector =
+		container_of(notify, struct idpf_q_vector, affinity_notify);
+
+	cpumask_copy(&q_vector->affinity_mask, mask);
+}
+
+/**
+ * idpf_irq_affinity_release - Callback for affinity notifier release
+ * @ref: internal core kernel usage
+ *
+ * Callback function registered via irq_set_affinity_notifier function to
+ * inform the driver that it will no longer receive notifications.
+ */
+static void idpf_irq_affinity_release(struct kref __always_unused *ref) {}
+
+/**
  * idpf_vport_intr_req_irq - get MSI-X vectors from the OS for the vport
  * @vport: main vport structure
  * @intr_grp: Interrupt resources
@@ -5222,6 +5265,7 @@ static int idpf_vport_intr_req_irq(struct idpf_vport *vport,
 				   char *basename)
 {
 	struct idpf_adapter *adapter = vport->adapter;
+	struct irq_affinity_notify *affinity_notify;
 	int vector, err, irq_num, vidx;
 	const char *vec_name;
 
@@ -5250,8 +5294,12 @@ static int idpf_vport_intr_req_irq(struct idpf_vport *vport,
 				   "Request_irq failed, error: %d\n", err);
 			goto free_q_irqs;
 		}
+
 		/* assign the mask for this irq */
-		irq_set_affinity_hint(irq_num, &q_vector->affinity_mask);
+		affinity_notify = &q_vector->affinity_notify;
+		affinity_notify->notify = idpf_irq_affinity_notify;
+		affinity_notify->release = idpf_irq_affinity_release;
+		irq_set_affinity_notifier(irq_num, affinity_notify);
 	}
 
 	return 0;

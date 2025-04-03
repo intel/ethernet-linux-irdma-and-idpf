@@ -368,6 +368,38 @@ idpf_tx_singleq_build_ctx_desc(struct idpf_queue *txq,
 }
 
 /**
+ * idpf_tx_maybe_stop_singleq - check for singleq Tx stop conditions
+ * @txq: the queue to be checked
+ * @desc_count: number of descriptors needed for this packet
+ *
+ * Returns 0 if stop is not needed
+ */
+static int idpf_tx_maybe_stop_singleq(struct idpf_queue *txq,
+				      unsigned int desc_count)
+{
+	if (likely(IDPF_DESC_UNUSED(txq) > desc_count))
+		return 0;
+
+	u64_stats_update_begin(&txq->stats_sync);
+	u64_stats_inc(&txq->q_stats.tx.q_busy);
+	u64_stats_update_end(&txq->stats_sync);
+
+	netif_stop_subqueue(txq->vport->netdev, txq->idx);
+
+	/* Memory barrier before checking head and tail */
+	smp_mb();
+
+	/* Check again in a case another CPU has just made room available. */
+	if (likely(IDPF_DESC_UNUSED(txq) < desc_count))
+		return -EBUSY;
+
+	/* A reprieve! - use start_subqueue because it doesn't call schedule */
+	netif_start_subqueue(txq->vport->netdev, txq->idx);
+
+	return 0;
+}
+
+/**
  * idpf_tx_singleq_frame - Sends buffer on Tx ring using base descriptors
  * @skb: send buffer
  * @tx_q: queue to send buffer on
@@ -387,9 +419,9 @@ static netdev_tx_t idpf_tx_singleq_frame(struct sk_buff *skb,
 	if (unlikely(!count))
 		return idpf_tx_drop_skb(tx_q, skb);
 
-	if (idpf_tx_maybe_stop_common(tx_q,
-				      count + IDPF_TX_DESCS_PER_CACHE_LINE +
-				      IDPF_TX_DESCS_FOR_CTX)) {
+	if (idpf_tx_maybe_stop_singleq(tx_q,
+				       count + IDPF_TX_DESCS_PER_CACHE_LINE +
+				       IDPF_TX_DESCS_FOR_CTX)) {
 		idpf_tx_buf_hw_update(tx_q, tx_q->next_to_use, false);
 		return NETDEV_TX_BUSY;
 	}

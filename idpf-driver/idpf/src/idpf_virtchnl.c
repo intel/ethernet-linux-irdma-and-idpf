@@ -1315,7 +1315,7 @@ int idpf_ptp_adj_dev_clk_fine(struct idpf_adapter *adapter, u64 incval)
 }
 
 /**
- * idpf_ptp_get_tx_tstamp_async_handler - Async callback for getting tx tstamps
+ * idpf_ptp_get_tx_tstamp_mb_async_handler - Async callback for getting tx tstamps
  * @adapter: Driver specific private structure
  * @xn: transaction for message
  * @ctlq_msg: received message
@@ -1390,7 +1390,8 @@ static int idpf_ptp_get_tx_tstamp_mb_async_handler(struct idpf_adapter *adapter,
 		ptp_tx_tstamp->tstamp = le64_to_cpu(recv_tx_tstamp_latches_msg->tstamp_latches[i].tstamp);
 		ptp_tx_tstamp->tstamp >>= tstamp_ns_lo_bit;
 
-		tstamp = idpf_ptp_extend_ts(vport->adapter, ptp_tx_tstamp->tstamp);
+		tstamp = idpf_ptp_extend_tstamp(vport->adapter,
+						ptp_tx_tstamp->tstamp);
 
 		for (id = 0; id < tx_tstamp_caps->num_entries; id++) {
 			if (ptp_tx_tstamp->skb == tx_tstamp_caps->tx_tstamp_status[id].skb &&
@@ -1420,7 +1421,7 @@ static int idpf_ptp_get_tx_tstamp_mb_async_handler(struct idpf_adapter *adapter,
 }
 
 /**
- * idpf_ptp_get_tx_tstamp - Send virtchnl get tx timestamp latches message
+ * idpf_ptp_get_tx_tstamp_mb - Send virtchnl get tx timestamp latches message
  * @vport: Virtual port structure
  *
  * Send virtchnl get tx tstamp message to read the value of the HW timestamp.
@@ -3937,7 +3938,7 @@ int idpf_vport_init(struct idpf_vport *vport, struct idpf_vport_max_q *max_q)
 			return err;
 		};
 
-		INIT_WORK(&vport->tstamp_task, idpf_tstamp_task);
+		INIT_WORK(&vport->tstamp_task, idpf_ptp_tstamp_task);
 	}
 
 	return err;

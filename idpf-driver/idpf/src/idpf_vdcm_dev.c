@@ -1299,9 +1299,9 @@ int idpf_vdcm_dev_open(struct idpf_vdcm *ivdm)
 		if (ret)
 			goto err_config_adi;
 	}
+	ivdm->refcnt++;
 
 	mutex_unlock(&ivdm->ref_lock);
-	ivdm->refcnt++;
 
 	return 0;
 

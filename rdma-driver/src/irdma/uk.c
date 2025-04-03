@@ -1307,6 +1307,7 @@ int irdma_uk_cq_poll_cmpl(struct irdma_cq_uk *cq,
 	u8 polarity;
 	bool ext_valid;
 	__le64 *ext_cqe;
+	unsigned long flags;
 
 	if (cq->avoid_mem_cflct)
 		cqe = IRDMA_GET_CURRENT_EXTENDED_CQ_ELEM(cq);
@@ -1446,7 +1447,9 @@ int irdma_uk_cq_poll_cmpl(struct irdma_cq_uk *cq,
 		} else {
 			info->stag_invalid_set = false;
 		}
+		spin_lock_irqsave(srq->lock, flags);
 		IRDMA_RING_MOVE_TAIL(srq->srq_ring);
+		spin_unlock_irqrestore(srq->lock, flags);
 		pring = &srq->srq_ring;
 	} else if (info->q_type == IRDMA_CQE_QTYPE_RQ && !is_srq) {
 		u32 array_idx;
@@ -1463,8 +1466,6 @@ int irdma_uk_cq_poll_cmpl(struct irdma_cq_uk *cq,
 
 		if (info->comp_status == IRDMA_COMPL_STATUS_FLUSHED ||
 		    info->comp_status == IRDMA_COMPL_STATUS_UNKNOWN) {
-			unsigned long flags;
-
 			spin_lock_irqsave(qp->lock, flags);
 			if (!IRDMA_RING_MORE_WORK(qp->rq_ring)) {
 				ret_code = -ENOENT;
@@ -1511,8 +1512,6 @@ int irdma_uk_cq_poll_cmpl(struct irdma_cq_uk *cq,
 			IRDMA_RING_SET_TAIL(qp->sq_ring,
 					    wqe_idx + qp->sq_wrtrk_array[wqe_idx].quanta);
 		} else {
-			unsigned long flags;
-
 			spin_lock_irqsave(qp->lock, flags);
 			if (!IRDMA_RING_MORE_WORK(qp->sq_ring)) {
 				spin_unlock_irqrestore(qp->lock, flags);
