@@ -2,6 +2,7 @@
 /* Copyright (C) 2019-2025 Intel Corporation */
 
 #include "idpf.h"
+#include "idpf_virtchnl.h"
 
 static const struct net_device_ops idpf_netdev_ops_splitq;
 static const struct net_device_ops idpf_netdev_ops_singleq;
@@ -80,19 +81,13 @@ static void idpf_mb_intr_rel_irq(struct idpf_adapter *adapter)
  */
 void idpf_intr_rel(struct idpf_adapter *adapter)
 {
-	int err;
-
 	if (!adapter->msix_entries)
 		return;
 
 	idpf_mb_intr_rel_irq(adapter);
 	pci_free_irq_vectors(adapter->pdev);
 
-	err = idpf_send_dealloc_vectors_msg(adapter);
-	if (err && err != -EBUSY)
-		dev_err(idpf_adapter_to_dev(adapter),
-			"Failed to deallocate vectors: %d\n", err);
-
+	idpf_send_dealloc_vectors_msg(adapter);
 	idpf_deinit_vector_stack(adapter);
 	kfree(adapter->msix_entries);
 	adapter->msix_entries = NULL;
@@ -792,8 +787,10 @@ static int idpf_cfg_netdev(struct idpf_vport *vport)
 {
 	struct idpf_adapter *adapter = vport->adapter;
 	struct idpf_vport_config *vport_config;
+	netdev_features_t other_offloads = 0;
+	netdev_features_t csum_offloads = 0;
+	netdev_features_t tso_offloads = 0;
 	netdev_features_t dflt_features;
-	netdev_features_t offloads = 0;
 	struct idpf_netdev_priv *np;
 	struct net_device *netdev;
 	u16 idx = vport->idx;
@@ -876,74 +873,32 @@ static int idpf_cfg_netdev(struct idpf_vport *vport)
 
 	if (idpf_is_cap_ena_all(adapter, IDPF_RSS_CAPS, IDPF_CAP_RSS))
 		dflt_features |= NETIF_F_RXHASH;
-	if (idpf_is_cap_ena_all(adapter, IDPF_CSUM_CAPS, IDPF_CAP_RX_CSUM_L4V4))
-		dflt_features |= NETIF_F_IP_CSUM;
-	if (idpf_is_cap_ena_all(adapter, IDPF_CSUM_CAPS, IDPF_CAP_RX_CSUM_L4V6))
-		dflt_features |= NETIF_F_IPV6_CSUM;
+	if (idpf_is_cap_ena_all(adapter, IDPF_CSUM_CAPS, IDPF_CAP_TX_CSUM_L4V4))
+		csum_offloads |= NETIF_F_IP_CSUM;
+	if (idpf_is_cap_ena_all(adapter, IDPF_CSUM_CAPS, IDPF_CAP_TX_CSUM_L4V6))
+		csum_offloads |= NETIF_F_IPV6_CSUM;
 	if (idpf_is_cap_ena(adapter, IDPF_CSUM_CAPS, IDPF_CAP_RX_CSUM))
-		dflt_features |= NETIF_F_RXCSUM;
-	if (idpf_is_cap_ena_all(adapter, IDPF_CSUM_CAPS, IDPF_CAP_SCTP_CSUM))
-		dflt_features |= NETIF_F_SCTP_CRC;
+		csum_offloads |= NETIF_F_RXCSUM;
+	if (idpf_is_cap_ena_all(adapter, IDPF_CSUM_CAPS, IDPF_CAP_TX_SCTP_CSUM))
+		csum_offloads |= NETIF_F_SCTP_CRC;
 	if (idpf_is_cap_ena(adapter, IDPF_SEG_CAPS, VIRTCHNL2_CAP_SEG_IPV4_TCP))
-		dflt_features |= NETIF_F_TSO;
+		tso_offloads |= NETIF_F_TSO;
 	if (idpf_is_cap_ena(adapter, IDPF_SEG_CAPS, VIRTCHNL2_CAP_SEG_IPV6_TCP))
-		dflt_features |= NETIF_F_TSO6;
+		tso_offloads |= NETIF_F_TSO6;
 	if (idpf_is_cap_ena_all(adapter, IDPF_SEG_CAPS,
 				VIRTCHNL2_CAP_SEG_IPV4_UDP |
 				VIRTCHNL2_CAP_SEG_IPV6_UDP))
-		dflt_features |= NETIF_F_GSO_UDP_L4;
+		tso_offloads |= NETIF_F_GSO_UDP_L4;
 	if (idpf_is_cap_ena_all(adapter, IDPF_RSC_CAPS, IDPF_CAP_RSC))
-		offloads |= NETIF_F_GRO_HW;
-#ifdef HAVE_ENCAP_CSUM_OFFLOAD
-	/* advertise to stack only if offloads for encapsulated packets is
-	 * supported
-	 */
-	if (idpf_is_cap_ena(vport->adapter, IDPF_SEG_CAPS,
-			    VIRTCHNL2_CAP_SEG_TX_SINGLE_TUNNEL)) {
-#ifdef HAVE_ENCAP_TSO_OFFLOAD
-		offloads |= NETIF_F_GSO_UDP_TUNNEL	|
-#ifdef HAVE_GRE_ENCAP_OFFLOAD
-			    NETIF_F_GSO_GRE		|
-#ifdef NETIF_F_GSO_PARTIAL
-			    NETIF_F_GSO_GRE_CSUM	|
-			    NETIF_F_GSO_PARTIAL		|
-#endif
-			    NETIF_F_GSO_UDP_TUNNEL_CSUM	|
-#ifdef NETIF_F_GSO_IPXIP4
-			    NETIF_F_GSO_IPXIP4		|
-#ifdef NETIF_F_GSO_IPXIP6
-			    NETIF_F_GSO_IPXIP6		|
-#endif
-#else /* NETIF_F_GSO_IPXIP4 */
-#ifdef NETIF_F_GSO_IPIP
-			    NETIF_F_GSO_IPIP		|
-#endif
-#ifdef NETIF_F_GSO_SIT
-			    NETIF_F_GSO_SIT		|
-#endif
-#endif /* NETIF_F_GSO_IPXIP4 */
-#endif /* NETIF_F_GRE_ENCAP_OFFLOAD */
-			    0;
-
-		if (!idpf_is_cap_ena_all(vport->adapter, IDPF_CSUM_CAPS,
-					 IDPF_CAP_TUNNEL_TX_CSUM))
-#ifndef NETIF_F_GSO_PARTIAL
-			offloads ^= NETIF_F_GSO_UDP_TUNNEL_CSUM;
-#else
-			netdev->gso_partial_features |=
-				NETIF_F_GSO_UDP_TUNNEL_CSUM;
-
-		netdev->gso_partial_features |= NETIF_F_GSO_GRE_CSUM;
-		offloads |= NETIF_F_TSO_MANGLEID;
-#endif /* !NETIF_F_GSO_PARTIAL */
-#endif /* HAVE_ENCAP_TSO_OFFLOAD */
-	}
-#endif /* HAVE_ENCAP_CSUM_OFFLOAD */
+		other_offloads |= NETIF_F_GRO_HW;
 	if (idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS, VIRTCHNL2_CAP_LOOPBACK))
-		offloads |= NETIF_F_LOOPBACK;
-	netdev->features |= dflt_features;
-	netdev->hw_features |= dflt_features | offloads;
-	netdev->hw_enc_features |= dflt_features | offloads;
+		other_offloads |= NETIF_F_LOOPBACK;
+
+	netdev->features |= dflt_features | csum_offloads | tso_offloads;
+	netdev->hw_features |=  netdev->features | other_offloads;
+	netdev->vlan_features |= netdev->features | other_offloads;
+	netdev->hw_enc_features |= dflt_features | other_offloads;
+
 #ifdef HAVE_XDP_SUPPORT
 
 	xdp_set_features_flag(netdev, NETDEV_XDP_ACT_BASIC              |
@@ -954,6 +909,9 @@ static int idpf_cfg_netdev(struct idpf_vport *vport)
 #endif /* HAVE_XDP_SUPPORT */
 
 	idpf_set_ethtool_ops(netdev);
+#ifdef HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS
+	netif_set_affinity_auto(netdev);
+#endif /* HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
 	SET_NETDEV_DEV(netdev, idpf_adapter_to_dev(adapter));
 
 	/* carrier off on init to avoid Tx hangs */
@@ -1064,8 +1022,8 @@ static void idpf_vport_stop(struct idpf_vport *vport)
 	idpf_remove_features(vport);
 
 	idpf_vport_intr_deinit(vport, &vgrp->intr_grp);
-	idpf_vport_intr_rel(vgrp);
 	idpf_vport_queue_rel_all(vport, &vgrp->q_grp);
+	idpf_vport_intr_rel(vgrp);
 	np->active = false;
 }
 
@@ -1260,10 +1218,14 @@ void idpf_vport_set_hsplit(struct idpf_vport *vport, bool ena)
 static struct idpf_vport *idpf_vport_alloc(struct idpf_adapter *adapter,
 					   struct idpf_vport_max_q *max_q)
 {
+	struct idpf_vport_config *vport_config = NULL;
 	struct idpf_rss_data *rss_data;
 	struct idpf_intr_grp *intr_grp;
 	u16 idx = adapter->next_vport;
 	struct idpf_vport *vport;
+#ifndef HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS
+	unsigned int i, numa;
+#endif /* !HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
 	u16 num_max_q;
 
 	if (idx == IDPF_NO_FREE_SLOT)
@@ -1274,7 +1236,6 @@ static struct idpf_vport *idpf_vport_alloc(struct idpf_adapter *adapter,
 		return vport;
 
 	if (!adapter->vport_config[idx]) {
-		struct idpf_vport_config *vport_config;
 
 		vport_config = kzalloc(sizeof(*vport_config), GFP_KERNEL);
 		if (!vport_config) {
@@ -1284,6 +1245,21 @@ static struct idpf_vport *idpf_vport_alloc(struct idpf_adapter *adapter,
 		}
 
 		adapter->vport_config[idx] = vport_config;
+#ifndef HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS
+
+		vport_config->affinity_config = kzalloc(MAX_NUM_VEC_AFFINTY * sizeof(*vport_config->affinity_config),
+							GFP_KERNEL);
+		if (!vport_config->affinity_config) {
+			kfree(vport_config);
+			kfree(vport);
+			return NULL;
+		}
+
+		numa = dev_to_node(&adapter->pdev->dev);
+		for (i = 0 ; i < MAX_NUM_VEC_AFFINTY ; i++)
+			cpumask_set_cpu(cpumask_local_spread(i, numa),
+					&vport_config->affinity_config[i].affinity_mask);
+#endif /* !HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
 	}
 
 	vport->idx = idx;
@@ -1560,9 +1536,8 @@ exit_xdp_init:
 /**
  * idpf_vport_open - Bring up a vport
  * @vport: vport to bring up
- * @alloc_res: allocate queue resources
  */
-static int idpf_vport_open(struct idpf_vport *vport, bool alloc_res)
+static int idpf_vport_open(struct idpf_vport *vport)
 {
 	struct idpf_netdev_priv *np = netdev_priv(vport->netdev);
 	struct idpf_q_grp *q_grp = &vport->dflt_grp.q_grp;
@@ -1578,32 +1553,30 @@ static int idpf_vport_open(struct idpf_vport *vport, bool alloc_res)
 	/* we do not allow interface up just yet */
 	netif_carrier_off(vport->netdev);
 
-	if (alloc_res) {
-		err = idpf_vport_queue_alloc_all(vport, q_grp);
-		if (err)
-			return err;
-	}
-
 	err = idpf_vport_intr_alloc(vport, vgrp);
 	if (err) {
 		dev_err(idpf_adapter_to_dev(adapter), "Failed to allocate interrupts for vport %u: %d\n",
 			vport->vport_id, err);
-		goto queues_rel;
+		return err;
 	}
+
+	err = idpf_vport_queue_alloc_all(vport, q_grp);
+	if (err)
+		goto intr_rel;
 
 	chunks = idpf_get_queue_reg_chunks(vport);
 	err = idpf_vport_queue_ids_init(q_grp, chunks);
 	if (err) {
 		dev_err(idpf_adapter_to_dev(adapter), "Failed to initialize queue ids for vport %u: %d\n",
 			vport->vport_id, err);
-		goto intr_rel;
+		goto queues_rel;
 	}
 
 	err = idpf_queue_reg_init(vport, q_grp, chunks);
 	if (err) {
 		dev_err(idpf_adapter_to_dev(adapter), "Failed to initialize queue registers for vport %u: %d\n",
 			vport->vport_id, err);
-		goto intr_rel;
+		goto queues_rel;
 	}
 
 	idpf_rx_init_buf_tail(q_grp);
@@ -1612,7 +1585,7 @@ static int idpf_vport_open(struct idpf_vport *vport, bool alloc_res)
 	if (err) {
 		dev_err(idpf_adapter_to_dev(adapter), "Failed to initialize interrupts for vport %u: %d\n",
 			vport->vport_id, err);
-		goto intr_rel;
+		goto queues_rel;
 	}
 
 #ifdef HAVE_XDP_SUPPORT
@@ -1682,11 +1655,10 @@ unmap_queue_vectors:
 	idpf_send_map_unmap_queue_vector_msg(vport, vgrp, false);
 intr_deinit:
 	idpf_vport_intr_deinit(vport, &vgrp->intr_grp);
+queues_rel:
+	idpf_vport_queue_rel_all(vport, q_grp);
 intr_rel:
 	idpf_vport_intr_rel(vgrp);
-queues_rel:
-	if (alloc_res)
-		idpf_vport_queue_rel_all(vport, q_grp);
 
 	return err;
 }
@@ -1768,7 +1740,7 @@ void idpf_init_task(struct work_struct *work)
 
 	if (test_and_clear_bit(IDPF_VPORT_UP_REQUESTED, vport_config->flags)) {
 		idpf_vport_cfg_lock(adapter);
-		idpf_vport_open(vport, true);
+		idpf_vport_open(vport);
 		idpf_vport_cfg_unlock(adapter);
 	}
 
@@ -2175,7 +2147,7 @@ int idpf_initiate_soft_reset(struct idpf_vport *vport,
 	struct idpf_q_grp *new_q_grp;
 	struct idpf_q_grp *q_grp;
 	bool vport_is_up;
-	int err, i;
+	int err;
 
 	vport_is_up = np->active;
 
@@ -2226,9 +2198,6 @@ int idpf_initiate_soft_reset(struct idpf_vport *vport,
 		goto free_vport;
 	}
 
-	err = idpf_vport_queue_alloc_all(new_vport, new_q_grp);
-	if (err)
-		goto free_vport;
 	if (!vport_is_up) {
 		idpf_send_delete_queues_msg(vport);
 	} else {
@@ -2273,40 +2242,15 @@ int idpf_initiate_soft_reset(struct idpf_vport *vport,
 	 */
 	memcpy(vport, new_vport, offsetof(struct idpf_vport, sw_marker_wq));
 
-	/* Since idpf_vport_queue_alloc_all was called with new_port, the queue
-	 * back pointers are currently pointing to the local new_vport. Reset
-	 * the backpointers to the original vport here
-	 */
-	q_grp = &vport->dflt_grp.q_grp;
-	for (i = 0; i < q_grp->num_txq; i++)
-		q_grp->txqs[i]->vport = vport;
-	if (idpf_is_queue_model_split(q_grp->txq_model))
-		for (i = 0; i < q_grp->num_complq; i++)
-			q_grp->complqs[i].vport = vport;
-
-	for (i = 0; i < q_grp->num_rxq; i++)
-		q_grp->rxqs[i]->vport = vport;
-	if (idpf_is_queue_model_split(q_grp->rxq_model))
-		for (i = 0; i < q_grp->num_bufq; i++)
-			q_grp->bufqs[i].vport = vport;
-
 	if (alloc_vec_indexes)
 		idpf_vport_alloc_vec_indexes(vport, &vport->dflt_grp);
 
 	err = idpf_set_real_num_queues(vport);
 	if (err)
-		goto err_reset;
+		goto err_open;
 
 	if (vport_is_up)
-		err = idpf_vport_open(vport, false);
-	else
-		/* When the vport is down it shouldn't have allocated queues,
-		 * so release the queues allocated during the soft_reset for
-		 * configuration reasons.
-		 * Queues will be allocated in 'idpf_vport_open()' after
-		 * .ndo_open() callback will be called.
-		 */
-		idpf_vport_queue_rel_all(vport, q_grp);
+		err = idpf_vport_open(vport);
 
 	if (!err && !vport->idx && reset_cause == IDPF_SR_MTU_CHANGE) {
 		set_bit(IDPF_VPORT_MTU_CHANGED, vport->flags);
@@ -2318,7 +2262,13 @@ int idpf_initiate_soft_reset(struct idpf_vport *vport,
 	return err;
 
 err_reset:
-	idpf_vport_queue_rel_all(vport, new_q_grp);
+	q_grp = &vport->dflt_grp.q_grp;
+	idpf_send_add_queues_msg(vport, q_grp->num_txq, q_grp->num_complq,
+				 q_grp->num_rxq, q_grp->num_bufq);
+
+err_open:
+	if (vport_is_up)
+		idpf_vport_open(vport);
 free_vport:
 	kfree(new_vport);
 	return err;
@@ -2564,7 +2514,7 @@ static int idpf_open(struct net_device *netdev)
 	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
-	err = idpf_vport_open(vport, true);
+	err = idpf_vport_open(vport);
 	if (err)
 		goto unlock;
 
@@ -2640,7 +2590,7 @@ static int idpf_change_mtu(struct net_device *netdev, int new_mtu)
 		goto unlock_mutex;
 	}
 #endif /* HAVE_XDP_SUPPORT */
-	netdev->mtu = new_mtu;
+	WRITE_ONCE(netdev->mtu, new_mtu);
 
 	if (netif_running(netdev))
 		err = idpf_initiate_soft_reset(vport, IDPF_SR_MTU_CHANGE);
@@ -2934,7 +2884,7 @@ idpf_xdp_setup_prog(struct idpf_netdev_priv *np, struct bpf_prog *prog,
 	idpf_vport_alloc_vec_indexes(vport, &vport->dflt_grp);
 
 	if (vport_is_up) {
-		err = idpf_vport_open(vport, false);
+		err = idpf_vport_open(vport);
 		if (err) {
 			netdev_err(vport->netdev,
 				   "Could not re-open the vport after XDP setup\n");

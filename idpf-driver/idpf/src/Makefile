@@ -23,6 +23,7 @@ idpf-y := \
 	idpf_main.o \
 	idpf_dev.o \
 	idpf_vf_dev.o
+idpf-$(CONFIG_PTP_1588_CLOCK:m=y) += idpf_ptp.o
 idpf-y += kcompat.o
 # Use kcompat DIMLIB if kernel doesn't provide it
 ifndef CONFIG_DIMLIB
@@ -35,7 +36,6 @@ ifneq (${ENABLE_DEVLINK_SUPPORT},)
 idpf-$(CONFIG_NET_DEVLINK:m=y) += idpf_devlink.o
 override ccflags-$(CONFIG_NET_DEVLINK:m=y) += -DDEVLINK_ENABLED
 endif
-idpf-$(CONFIG_PTP_1588_CLOCK:m=y) += idpf_ptp.o
 else	# ifneq($(KERNELRELEASE),)
 # normal makefile
 

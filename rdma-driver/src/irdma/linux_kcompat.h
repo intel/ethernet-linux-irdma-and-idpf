@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2020 - 2024 Intel Corporation */
+/* Copyright (c) 2020 - 2025 Intel Corporation */
 #ifndef LINUX_KCOMPAT_H
 #define LINUX_KCOMPAT_H
 
@@ -11,6 +11,10 @@
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 #define IP_ROUTE_OUTPUT_VER_2
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 91)
+#define HAVE_TIMER_DELETE
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)

@@ -2,6 +2,7 @@
 /* Copyright (C) 2019-2025 Intel Corporation */
 
 #include "idpf.h"
+#include "idpf_virtchnl.h"
 #include "idpf_lan_pf_regs.h"
 #include "idpf_lan_vf_regs.h"
 
@@ -174,56 +175,63 @@ static int idpf_adi_qid_reg_init(struct idpf_adi *adi,
  * Prepare vector chunks which will be sent as part of Create ADI
  * Returns 0 on success, negative if all the vectors are not initialized.
  */
-static int idpf_adi_prep_vec_chunks(struct idpf_adi *adi,
-				    struct virtchnl2_non_flex_create_adi
-				    *vc_cadi)
+static int
+idpf_adi_prep_vec_chunks(struct idpf_adi *adi,
+			 struct virtchnl2_non_flex_create_adi *vc_cadi)
 {
 	struct idpf_adi_priv *priv = idpf_get_adi_priv(adi);
+	u16 *vec_indexes = priv->vec_info.vec_indexes;
 	int num_vecs = priv->vec_info.num_vectors;
-	int vecid_filled = 0, vec_index = 0;
-	int i = 0, j = 0;
+	struct msix_entry *msix_entries;
+	int vchunk_index = 0;
+	int evv_index = 0;
+	int i;
 
-	/* Take out vector_index and num_vecs for mailbox in ADI */
-	vec_index++;
-	num_vecs--;
-	while (vecid_filled < num_vecs) {
-		int index, each_chunk_vectors = 1;
-		int next_phys_vec, phys_vec;
+	msix_entries = priv->adapter->msix_entries;
+	/* Take out 1st evv for mailbox in ADI */
+	evv_index++;
 
-		/* Start for data queues */
-		index = priv->vec_info.vec_indexes[vec_index + vecid_filled];
-		phys_vec = priv->adapter->msix_entries[index].entry;
-		vc_cadi->vchunks.vchunks[j].start_vector_id =
-			cpu_to_le16(phys_vec);
-
-		vc_cadi->vchunks.vchunks[j].start_evv_id =
-				cpu_to_le16(vecid_filled + 1);
-		priv->vec_info.data_q_vec_ids[i] = phys_vec;
-		/* increment for storing next data_q_vec_ids */
-		i++;
-		/* Loop for building out each chunk */
-		while (1) {
-			phys_vec++;
-			vecid_filled++;
-			index = priv->vec_info.vec_indexes[vec_index +
-							   vecid_filled];
-			next_phys_vec =
-				priv->adapter->msix_entries[index].entry;
-			if (vecid_filled != num_vecs &&
-			    phys_vec == next_phys_vec) {
-				each_chunk_vectors++;
-				priv->vec_info.data_q_vec_ids[i] = phys_vec;
-				i++;
-				continue;
-			}
-			break;
-		}
-		vc_cadi->vchunks.vchunks[j].num_vectors =
-			cpu_to_le16(each_chunk_vectors);
-		if (vecid_filled < num_vecs)
-			j++;
+	if (num_vecs - evv_index <= 0 ||
+	    num_vecs - evv_index >= IDPF_MAX_ADI_Q_COUNT) {
+		dev_err(idpf_adapter_to_dev(priv->adapter),
+			"Invalid vector number %d", num_vecs);
+		return -EINVAL;
 	}
-	vc_cadi->vchunks.num_vchunks = cpu_to_le16(++j);
+
+	for (i = evv_index; i < num_vecs; i++) {
+		int phys_vec = msix_entries[vec_indexes[i]].entry;
+		/* data_q_vec_ids starts with index 0 */
+		int data_q_vec_index = i - evv_index;
+
+		priv->vec_info.data_q_vec_ids[data_q_vec_index] = phys_vec;
+	}
+
+	while (evv_index < num_vecs) {
+		int l, r;
+
+		/* Search for continous physical vectors */
+		l = evv_index;
+		r = evv_index;
+		while ((r + 1) < num_vecs &&
+		       (msix_entries[vec_indexes[r]].entry + 1 ==
+				msix_entries[vec_indexes[r + 1]].entry))
+			r++;
+
+		/* Fill virtchnl payload */
+		vc_cadi->vchunks.vchunks[vchunk_index].start_vector_id =
+				cpu_to_le16(msix_entries[vec_indexes[l]].entry);
+		vc_cadi->vchunks.vchunks[vchunk_index].start_evv_id =
+				cpu_to_le16(l);
+		vc_cadi->vchunks.vchunks[vchunk_index].num_vectors =
+				cpu_to_le16(r - l + 1);
+
+		dev_dbg(idpf_adapter_to_dev(priv->adapter),
+			"vchunks[%d] start_vector_id: 0x%x, start_evv_id: 0x%x, num_vectors: 0x%x",
+			vchunk_index, msix_entries[vec_indexes[l]].entry, l, r - l + 1);
+		vchunk_index++;
+		evv_index = r + 1;
+	}
+	vc_cadi->vchunks.num_vchunks = cpu_to_le16(vchunk_index);
 
 	return 0;
 }
@@ -336,7 +344,11 @@ static int idpf_adi_create(struct idpf_adi *adi, u32 pasid)
 	vchnl_adi->mbx_id = cpu_to_le16(USE_HW_MBX_ID);
 	vchnl_adi->pasid = cpu_to_le32(pasid);
 	vchnl_adi->adi_index = cpu_to_le16(priv->adi_index);
-	idpf_adi_prep_vec_chunks(adi, vchnl_adi);
+	err = idpf_adi_prep_vec_chunks(adi, vchnl_adi);
+	if (err) {
+		dev_err(dev, "Prepare for adi vector chunks failed: %d\n", err);
+		goto dealloc_vec;
+	}
 
 	err = idpf_send_create_adi_msg(adapter, vchnl_adi);
 	if (err) {

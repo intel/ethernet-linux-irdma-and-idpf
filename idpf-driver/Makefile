@@ -143,5 +143,6 @@ uninstall:
 .PHONY: clean
 clean:
 	@${MAKE} -C ${KSRC} M=$$PWD clean
+	@rm -f kcompat_generated_defs.h
 
 endif # ifneq (${KERNELRELEASE},)

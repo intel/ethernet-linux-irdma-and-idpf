@@ -43,101 +43,6 @@ static int idpf_tx_singleq_csum(struct sk_buff *skb,
 	l2_len = ip.hdr - skb->data;
 	offset = FIELD_PREP(0x3F << IDPF_TX_DESC_LEN_MACLEN_S, l2_len / 2);
 	is_tso = off->tx_flags & IDPF_TX_FLAGS_TSO;
-#ifdef HAVE_ENCAP_CSUM_OFFLOAD
-	if (skb->encapsulation) {
-		u32 tunnel = 0;
-
-		/* define outer network header type */
-		if (off->tx_flags & IDPF_TX_FLAGS_IPV4) {
-			/* The stack computes the IP header already, the only
-			 * time we need the hardware to recompute it is in the
-			 * case of TSO.
-			 */
-			tunnel |= is_tso ?
-				  IDPF_TX_CTX_EXT_IP_IPV4 :
-				  IDPF_TX_CTX_EXT_IP_IPV4_NO_CSUM;
-
-			l4_proto = ip.v4->protocol;
-		} else if (off->tx_flags & IDPF_TX_FLAGS_IPV6) {
-			tunnel |= IDPF_TX_CTX_EXT_IP_IPV6;
-
-			l4_proto = ip.v6->nexthdr;
-			if (ipv6_ext_hdr(l4_proto))
-				ipv6_skip_exthdr(skb, skb_network_offset(skb) +
-						 sizeof(*ip.v6),
-						 &l4_proto, &frag_off);
-		}
-
-		/* define outer transport */
-		switch (l4_proto) {
-		case IPPROTO_UDP:
-			tunnel |= IDPF_TXD_CTX_UDP_TUNNELING;
-			break;
-#ifdef HAVE_GRE_ENCAP_OFFLOAD
-		case IPPROTO_GRE:
-			tunnel |= IDPF_TXD_CTX_GRE_TUNNELING;
-			/* There was a long-standing issue in GRE where GSO
-			 * was not setting the outer transport header unless
-			 * a GRE checksum was requested. This was fixed in
-			 * the 4.6 version of the kernel.  In the 4.7 kernel
-			 * support for GRE over IPv6 was added to GSO.  So we
-			 * can assume this workaround for all IPv4 headers
-			 * without impacting later versions of the GRE.
-			 */
-			if (ip.v4->version == 4)
-				l4.hdr = ip.hdr + (ip.v4->ihl * 4);
-			break;
-		case IPPROTO_IPIP:
-		case IPPROTO_IPV6:
-			l4.hdr = skb_inner_network_header(skb);
-			break;
-#endif
-		default:
-			if (is_tso)
-				return -1;
-
-			skb_checksum_help(skb);
-			return 0;
-		}
-		off->tx_flags |= IDPF_TX_FLAGS_TUNNEL;
-
-		/* compute outer L3 header size */
-		tunnel |= FIELD_PREP(IDPF_TXD_CTX_QW0_TUNN_EXT_IPLEN_M,
-				     (l4.hdr - ip.hdr) / 4);
-
-		/* switch IP header pointer from outer to inner header */
-		ip.hdr = skb_inner_network_header(skb);
-
-		/* compute tunnel header size */
-		tunnel |= FIELD_PREP(IDPF_TXD_CTX_QW0_TUNN_NATLEN_M,
-				     (ip.hdr - l4.hdr) / 2);
-
-		/* indicate if we need to offload outer UDP header */
-#ifdef NETIF_F_GSO_PARTIAL
-		if (is_tso &&
-		    !(skb_shinfo(skb)->gso_type & SKB_GSO_PARTIAL) &&
-		    (skb_shinfo(skb)->gso_type & SKB_GSO_UDP_TUNNEL_CSUM))
-#else
-		if (is_tso &&
-		    (skb_shinfo(skb)->gso_type & SKB_GSO_UDP_TUNNEL_CSUM))
-#endif
-			tunnel |= IDPF_TXD_CTX_QW0_TUNN_L4T_CS_M;
-
-		/* record tunnel offload values */
-		off->cd_tunneling |= tunnel;
-
-		/* switch L4 header pointer from outer to inner */
-		l4.hdr = skb_inner_transport_header(skb);
-		l4_proto = 0;
-
-		/* reset type as we transition from outer to inner headers */
-		off->tx_flags &= ~(IDPF_TX_FLAGS_IPV4 | IDPF_TX_FLAGS_IPV6);
-		if (ip.v4->version == 4)
-			off->tx_flags |= IDPF_TX_FLAGS_IPV4;
-		if (ip.v6->version == 6)
-			off->tx_flags |= IDPF_TX_FLAGS_IPV6;
-	}
-#endif /* HAVE_ENCAP_CSUM_OFFLOAD */
 
 	/* Enable IP checksum offloads */
 	if (off->tx_flags & IDPF_TX_FLAGS_IPV4) {
@@ -350,10 +255,9 @@ idpf_tx_singleq_build_ctx_desc(struct idpf_queue *txq,
 
 	if (offload->tso_segs) {
 		qw1 |= IDPF_TX_CTX_DESC_TSO << IDPF_TXD_CTX_QW1_CMD_S;
-		qw1 |= ((u64)offload->tso_len << IDPF_TXD_CTX_QW1_TSO_LEN_S) &
-			IDPF_TXD_CTX_QW1_TSO_LEN_M;
-		qw1 |= ((u64)offload->mss << IDPF_TXD_CTX_QW1_MSS_S) &
-			IDPF_TXD_CTX_QW1_MSS_M;
+		qw1 |= FIELD_PREP(IDPF_TXD_CTX_QW1_TSO_LEN_M,
+				  offload->tso_len);
+		qw1 |= FIELD_PREP(IDPF_TXD_CTX_QW1_MSS_M, offload->mss);
 
 		u64_stats_update_begin(&txq->stats_sync);
 		u64_stats_inc(&txq->q_stats.tx.lso_pkts);

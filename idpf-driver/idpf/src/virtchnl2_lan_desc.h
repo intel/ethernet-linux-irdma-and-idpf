@@ -33,10 +33,7 @@ enum virtchnl2_tx_desc_ids {
 	VIRTCHNL2_TXDID_DESC_DONE			= BIT(15),
 };
 
-/**
- * VIRTCHNL2_RX_DESC_IDS
- * Receive descriptor IDs (range from 0 to 63)
- */
+/* Receive descriptor IDs */
 enum virtchnl2_rx_desc_ids {
 	VIRTCHNL2_RXDID_0_16B_BASE,
 	VIRTCHNL2_RXDID_1_32B_BASE,
@@ -62,10 +59,7 @@ enum virtchnl2_rx_desc_ids {
 	/* 22 through 63 are reserved */
 };
 
-/**
- * VIRTCHNL2_RX_DESC_ID_BITMASKS
- * Receive descriptor ID bitmasks
- */
+/* Receive descriptor ID bitmasks */
 #define VIRTCHNL2_RXDID_M(bit)			BIT_ULL(VIRTCHNL2_RXDID_##bit)
 
 enum virtchnl2_rx_desc_id_bitmasks {
@@ -95,7 +89,9 @@ enum virtchnl2_rx_desc_id_bitmasks {
 #define VIRTCHNL2_RX_FLEX_DESC_ADV_UMBCAST_M		GENMASK(7, 6)
 #define VIRTCHNL2_RX_FLEX_DESC_ADV_PTYPE_S		0
 #define VIRTCHNL2_RX_FLEX_DESC_ADV_PTYPE_M		GENMASK(9, 0)
-#define VIRTCHNL2_RX_FLEX_DESC_ADV_FF0_S		12
+#define VIRTCHNL2_RX_FLEX_DESC_ADV_RAW_CSUM_INV_S	12
+#define VIRTCHNL2_RX_FLEX_DESC_ADV_RAW_CSUM_INV_M       \
+	BIT_ULL(VIRTCHNL2_RX_FLEX_DESC_ADV_RAW_CSUM_INV_S)
 #define VIRTCHNL2_RX_FLEX_DESC_ADV_FF0_M		GENMASK(15, 13)
 #define VIRTCHNL2_RX_FLEX_DESC_ADV_LEN_PBUF_S		0
 #define VIRTCHNL2_RX_FLEX_DESC_ADV_LEN_PBUF_M		GENMASK(13, 0)
@@ -119,11 +115,7 @@ enum virtchnl2_rx_desc_id_bitmasks {
 #define VIRTCHNL2_RX_FLEX_DESC_ADV_MISS_M		\
 	BIT_ULL(VIRTCHNL2_RX_FLEX_DESC_ADV_MISS_S)
 
-/**
- * VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS_ERROR_0_QW1_BITS
- * For splitq virtchnl2_rx_flex_desc_adv
- * Note: These are predefined bit offsets
- */
+/* Bitmasks for splitq virtchnl2_rx_flex_desc_adv_nic_3 */
 enum virtchl2_rx_flex_desc_adv_status_error_0_qw1_bits {
 	VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_DD_S,
 	VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_EOF_S,
@@ -135,11 +127,7 @@ enum virtchl2_rx_flex_desc_adv_status_error_0_qw1_bits {
 	VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_XSUM_EUDPE_S,
 };
 
-/**
- * VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS_ERROR_0_QW0_BITS
- * For splitq virtchnl2_rx_flex_desc_adv
- * Note: These are predefined bit offsets
- */
+/* Bitmasks for splitq virtchnl2_rx_flex_desc_adv_nic_3 */
 enum virtchnl2_rx_flex_desc_adv_status_error_0_qw0_bits {
 	VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_LPBK_S,
 	VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_IPV6EXADD_S,
@@ -153,11 +141,7 @@ enum virtchnl2_rx_flex_desc_adv_status_error_0_qw0_bits {
 	VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_LAST,
 };
 
-/**
- * VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS_ERROR_1_BITS
- * For splitq virtchnl2_rx_flex_desc_adv
- * Note: These are predefined bit offsets
- */
+/* Bitmasks for splitq virtchnl2_rx_flex_desc_adv_nic_3 */
 enum virtchnl2_rx_flex_desc_adv_status_error_1_bits {
 	VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS1_RSVD_S		= 0,
 	/* 2 bits */
@@ -171,8 +155,8 @@ enum virtchnl2_rx_flex_desc_adv_status_error_1_bits {
 	VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS1_LAST			= 8,
 };
 
-/* for singleq (flex) virtchnl2_rx_flex_desc fields
- * for virtchnl2_rx_flex_desc.ptype_flex_flags0 member
+/* For singleq (flex) virtchnl2_rx_flex_desc fields
+ * For virtchnl2_rx_flex_desc.ptype_flex_flags0 member
  */
 #define VIRTCHNL2_RX_FLEX_DESC_PTYPE_S			0
 #define VIRTCHNL2_RX_FLEX_DESC_PTYPE_M			GENMASK(9, 0)
@@ -181,11 +165,7 @@ enum virtchnl2_rx_flex_desc_adv_status_error_1_bits {
 #define VIRTCHNL2_RX_FLEX_DESC_PKT_LEN_S		0
 #define VIRTCHNL2_RX_FLEX_DESC_PKT_LEN_M		GENMASK(13, 0)
 
-/**
- * VIRTCHNL2_RX_FLEX_DESC_STATUS_ERROR_0_BITS
- * For singleq (flex) virtchnl2_rx_flex_desc
- * Note: These are predefined bit offsets
- */
+/* Bitmasks for singleq (flex) virtchnl2_rx_flex_desc */
 enum virtchnl2_rx_flex_desc_status_error_0_bits {
 	VIRTCHNL2_RX_FLEX_DESC_STATUS0_DD_S,
 	VIRTCHNL2_RX_FLEX_DESC_STATUS0_EOF_S,
@@ -207,11 +187,7 @@ enum virtchnl2_rx_flex_desc_status_error_0_bits {
 	VIRTCHNL2_RX_FLEX_DESC_STATUS0_LAST,
 };
 
-/**
- * VIRTCHNL2_RX_FLEX_DESC_STATUS_ERROR_1_BITS
- * For singleq (flex) virtchnl2_rx_flex_desc
- * Note: These are predefined bit offsets
- */
+/* Bitmasks for singleq (flex) virtchnl2_rx_flex_desc */
 enum virtchnl2_rx_flex_desc_status_error_1_bits {
 	VIRTCHNL2_RX_FLEX_DESC_STATUS1_CPM_S			= 0,
 	/* 4 bits */
@@ -245,11 +221,7 @@ enum virtchnl2_rx_flex_desc_status_error_1_bits {
 #define VIRTCHNL2_RX_BASE_DESC_QW1_STATUS_S	0
 #define VIRTCHNL2_RX_BASE_DESC_QW1_STATUS_M	GENMASK_ULL(18, 0)
 
-/**
- * VIRTCHNL2_RX_BASE_DESC_STATUS_BITS
- * For singleq (base) virtchnl2_rx_base_desc
- * Note: These are predefined bit offsets
- */
+/* Bitmasks for singleq (base) virtchnl2_rx_base_desc */
 enum virtchnl2_rx_base_desc_status_bits {
 	VIRTCHNL2_RX_BASE_DESC_STATUS_DD_S		= 0,
 	VIRTCHNL2_RX_BASE_DESC_STATUS_EOF_S		= 1,
@@ -277,11 +249,8 @@ enum virtcnl2_rx_base_desc_status_bits {
 	VIRTCHNL2_RX_BASE_DESC_EXT_STATUS_L2TAG2P_S,
 };
 
-/**
- * VIRTCHNL2_RX_BASE_DESC_ERROR_BITS
- * For singleq (base) virtchnl2_rx_base_desc
- * Note: These are predefined bit offsets
- */
+ /* Bitmasks for singleq (base) virtchnl2_rx_base_desc */
+
 enum virtchnl2_rx_base_desc_error_bits {
 	VIRTCHNL2_RX_BASE_DESC_ERROR_RXE_S		= 0,
 	VIRTCHNL2_RX_BASE_DESC_ERROR_ATRAEFAIL_S	= 1,
@@ -294,11 +263,8 @@ enum virtchnl2_rx_base_desc_error_bits {
 	VIRTCHNL2_RX_BASE_DESC_ERROR_PPRS_S		= 7,
 };
 
-/**
- * VIRTCHNL2_RX_BASE_DESC_FLTSTAT_VALUES
- * For singleq (base) virtchnl2_rx_base_desc
- * Note: These are predefined bit offsets
- */
+ /* Bitmasks for singleq (base) virtchnl2_rx_base_desc */
+
 enum virtchnl2_rx_base_desc_flstat_values {
 	VIRTCHNL2_RX_BASE_DESC_FLTSTAT_NO_DATA,
 	VIRTCHNL2_RX_BASE_DESC_FLTSTAT_FD_ID,
@@ -334,13 +300,13 @@ struct virtchnl2_splitq_16byte_rx_buf_desc {
 
 /**
  * struct virtchnl2_splitq_rx_buf_desc - SplitQ RX buffer descriptor format
- * @qword0: RX buffer struct
- * @qword0.buf_id: Buffer identifier
- * @qword0.rsvd0: Reserved
- * @qword0.rsvd1: Reserved
- * @pkt_addr: Packet buffer address
- * @hdr_addr: Header buffer address
- * @rsvd2: Reserved
+ * @qword0: RX buffer struct.
+ * @qword0.buf_id: Buffer identifier.
+ * @qword0.rsvd0: Reserved.
+ * @qword0.rsvd1: Reserved.
+ * @pkt_addr: Packet buffer address.
+ * @hdr_addr: Header buffer address.
+ * @rsvd2: Rerserved.
  *
  * Receive Descriptors
  * SplitQ buffer
@@ -368,11 +334,11 @@ struct virtchnl2_splitq_rx_buf_desc {
 };
 
 /**
- * struct virtchnl2_singleq_rx_buf_desc - SingleQ RX buffer descriptor format
- * @pkt_addr: Packet buffer address
- * @hdr_addr: Header buffer address
- * @rsvd1: Reserved
- * @rsvd2: Reserved
+ * struct virtchnl2_singleq_rx_buf_desc - SingleQ RX buffer descriptor format.
+ * @pkt_addr: Packet buffer address.
+ * @hdr_addr: Header buffer address.
+ * @rsvd1: Reserved.
+ * @rsvd2: Reserved.
  *
  * SingleQ buffer
  * |                                                             0|
@@ -406,26 +372,26 @@ union virtchnl2_rx_buf_desc {
 };
 
 /**
- * struct virtchnl2_singleq_base_rx_desc - RX descriptor writeback format
- * @qword0: First quad word struct
- * @qword0.lo_dword: Lower dual word struct
- * @qword0.lo_dword.mirroring_status: Mirrored packet status
- * @qword0.lo_dword.l2tag1: Stripped L2 tag from the received packet
- * @qword0.hi_dword: High dual word union
- * @qword0.hi_dword.rss: RSS hash
- * @qword0.hi_dword.fd_id: Flow director filter id
- * @qword1: Second quad word struct
- * @qword1.status_error_ptype_len: Status/error/PTYPE/length
- * @qword2: Third quad word struct
- * @qword2.ext_status: Extended status
- * @qword2.rsvd: Reserved
- * @qword2.l2tag2_1: Extracted L2 tag 2 from the packet
- * @qword2.l2tag2_2: Reserved
- * @qword3: Fourth quad word struct
- * @qword3.reserved: Reserved
- * @qword3.fd_id: Flow director filter id
+ * struct virtchnl2_singleq_base_rx_desc - RX descriptor writeback format.
+ * @qword0: First quad word struct.
+ * @qword0.lo_dword: Lower dual word struct.
+ * @qword0.lo_dword.mirroring_status: Mirrored packet status.
+ * @qword0.lo_dword.l2tag1: Stripped L2 tag from the received packet.
+ * @qword0.hi_dword: High dual word union.
+ * @qword0.hi_dword.rss: RSS hash.
+ * @qword0.hi_dword.fd_id: Flow director filter id.
+ * @qword1: Second quad word struct.
+ * @qword1.status_error_ptype_len: Status/error/PTYPE/length.
+ * @qword2: Third quad word struct.
+ * @qword2.ext_status: Extended status.
+ * @qword2.rsvd: Reserved.
+ * @qword2.l2tag2_1: Extracted L2 tag 2 from the packet.
+ * @qword2.l2tag2_2: Reserved.
+ * @qword3: Fourth quad word struct.
+ * @qword3.reserved: Reserved.
+ * @qword3.fd_id: Flow director filter id.
  *
- * Profile ID 0x1, SingleQ, base writeback format.
+ * Profile ID 0x1, SingleQ, base writeback format
  */
 struct virtchnl2_singleq_base_rx_desc {
 	struct {
@@ -509,27 +475,27 @@ struct virtchnl2_rx_flex_desc {
 };
 
 /**
- * struct virtchnl2_rx_flex_desc_nic - RX descriptor writeback format
- * @rxdid: Descriptor builder profile id
+ * struct virtchnl2_rx_flex_desc_nic - RX descriptor writeback format.
+ * @rxdid: Descriptor builder profile id.
  * @mir_id_umb_cast: umb_cast=[7:6], mirror=[5:0]
  * @ptype_flex_flags0: ff0=[15:10], ptype=[9:0]
- * @pkt_len: Packet length, [15:14] are reserved
- * @hdr_len_sph_flex_flags1: ff1/ext=[15:12], sph=[11], header=[10:0]
- * @status_error0: Status/Error section 0
+ * @pkt_len: Packet length, [15:14] are reserved.
+ * @hdr_len_sph_flex_flags1: ff1/ext=[15:12], sph=[11], header=[10:0].
+ * @status_error0: Status/Error section 0.
  * @l2tag1: Stripped L2 tag from the received packet
- * @rss_hash: RSS hash
- * @status_error1: Status/Error section 1
- * @flexi_flags2: Flexible flags section 2
- * @ts_low: Lower word of timestamp value
- * @l2tag2_1st: First L2TAG2
- * @l2tag2_2nd: Second L2TAG2
- * @flow_id: Flow id
- * @flex_ts: Timestamp and flexible flow id union
- * @flex_ts.flex.rsvd: Reserved
- * @flex_ts.flex.flow_id_ipv6: IPv6 flow id
- * @flex_ts.ts_high: Timestamp higher word of the timestamp value
+ * @rss_hash: RSS hash.
+ * @status_error1: Status/Error section 1.
+ * @flexi_flags2: Flexible flags section 2.
+ * @ts_low: Lower word of timestamp value.
+ * @l2tag2_1st: First L2TAG2.
+ * @l2tag2_2nd: Second L2TAG2.
+ * @flow_id: Flow id.
+ * @flex_ts: Timestamp and flexible flow id union.
+ * @flex_ts.ts_high: Timestamp higher word of the timestamp value.
+ * @flex_ts.flex.rsvd: Reserved.
+ * @flex_ts.flex.flow_id_ipv6: IPv6 flow id.
  *
- * Profile ID 0x2, SingleQ, flex writeback format.
+ * Profile ID 0x2, SingleQ, flex writeback format
  */
 struct virtchnl2_rx_flex_desc_nic {
 	/* Qword 0 */
@@ -722,38 +688,38 @@ struct virtchnl2_rx_flex_desc_adv {
 };
 
 /**
- * struct virtchnl2_rx_flex_desc_adv_nic_3 - RX descriptor writeback format
- * @rxdid_ucast: ucast=[7:6], rsvd=[5:4], profile_id=[3:0]
- * @status_err0_qw0: Status/Error section 0 in quad word 0
+ * struct virtchnl2_rx_flex_desc_adv_nic_3 - RX descriptor writeback format.
+ * @rxdid_ucast: ucast=[7:6], rsvd=[5:4], profile_id=[3:0].
+ * @status_err0_qw0: Status/Error section 0 in quad word 0.
  * @ptype_err_fflags0: ff0=[15:12], udp_len_err=[11], ip_hdr_err=[10],
- *		       ptype=[9:0]
+ *		       ptype=[9:0].
  * @pktlen_gen_bufq_id: bufq_id=[15] only in splitq, gen=[14] only in splitq,
- *			plen=[13:0]
+ *			plen=[13:0].
  * @hdrlen_flags: miss_prepend=[15], trunc_mirr=[14], int_udp_0=[13],
  *		  ext_udp0=[12], sph=[11] only in splitq, rsc=[10]
- *		  only in splitq, header=[9:0]
- * @status_err0_qw1: Status/Error section 0 in quad word 1
- * @status_err1: Status/Error section 1
- * @fflags1: Flexible flags section 1
- * @ts_low: Lower word of timestamp value
+ *		  only in splitq, header=[9:0].
+ * @status_err0_qw1: Status/Error section 0 in quad word 1.
+ * @status_err1: Status/Error section 1.
+ * @fflags1: Flexible flags section 1.
+ * @ts_low: Lower word of timestamp value.
  * @buf_id: Buffer identifier. Only in splitq mode.
- * @misc: Union
- * @misc.raw_cs: Raw checksum
+ * @misc: Union.
+ * @misc.raw_cs: Raw checksum.
  * @misc.l2tag1: Stripped L2 tag from the received packet
  * @misc.rscseglen: RSC segment length
- * @hash1: Lower 16 bits of Rx hash value, hash[15:0]
- * @ff2_mirrid_hash2: Union
- * @ff2_mirrid_hash2.fflags2: Flexible flags section 2
- * @ff2_mirrid_hash2.mirrorid: Mirror id
+ * @hash1: Lower bits of Rx hash value.
+ * @ff2_mirrid_hash2: Union.
+ * @ff2_mirrid_hash2.fflags2: Flexible flags section 2.
+ * @ff2_mirrid_hash2.mirrorid: Mirror id.
  * @ff2_mirrid_hash2.hash2: 8 bits of Rx hash value, hash[23:16]
- * @hash3: Upper 8 bits of Rx hash value, hash[31:24]
- * @l2tag2: Extracted L2 tag 2 from the packet
- * @fmd4: Flexible metadata container 4
+ * @hash3: Upper bits of Rx hash value.
+ * @l2tag2: Extracted L2 tag 2 from the packet.
+ * @fmd4: Flexible metadata container 4.
  * @l2tag1: Stripped L2 tag from the received packet
- * @fmd6: Flexible metadata container 6
- * @ts_high: Timestamp higher word of the timestamp value
+ * @fmd6: Flexible metadata container 6.
+ * @ts_high: Timestamp higher word of the timestamp value.
  *
- * Profile ID 0x2, SplitQ, flex writeback format.
+ * Profile ID 0x2, SplitQ, flex writeback format
  *
  * Flex-field 0: BufferID
  * Flex-field 1: Raw checksum/L2TAG1/RSC Seg Len (determined by HW)
@@ -797,6 +763,7 @@ struct virtchnl2_rx_flex_desc_adv_nic_3 {
 	__le32 ts_high;
 };
 
+/* Common union for accessing descriptor format structs */
 union virtchnl2_rx_desc {
 	struct virtchnl2_singleq_rx_buf_desc		read;
 	struct virtchnl2_singleq_base_rx_desc		base_wb;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2015 - 2024 Intel Corporation */
+/* Copyright (c) 2015 - 2025 Intel Corporation */
 #include "main.h"
 
 /**
@@ -732,7 +732,6 @@ int irdma_cqp_create_qp_cmd(struct irdma_qp *iwqp)
 
 	cqp_info = &cqp_request->info;
 	qp_info = &cqp_request->info.in.u.qp_create.info;
-	memset(qp_info, 0, sizeof(*qp_info));
 	qp_info->mac_valid = true;
 	qp_info->cq_num_valid = true;
 	qp_info->next_iwarp_state = IRDMA_QP_STATE_IDLE;
@@ -757,7 +756,13 @@ void irdma_roce_fill_and_set_qpctx_info(struct irdma_qp *iwqp,
 	struct irdma_udp_offload_info *udp_info;
 
 	udp_info = &iwqp->udp_info;
-	udp_info->snd_mss = ib_mtu_enum_to_int(ib_mtu_int_to_enum(iwdev->vsi.mtu));
+	udp_info->snd_mss = crt_mtu_enum_to_int(crt_iboe_get_mtu(iwdev->vsi.mtu));
+	if (udp_info->snd_mss >= 8192 &&
+	    iwdev->rf->protocol_used == IRDMA_ROCE_PROTOCOL_ONLY) {
+		udp_info->snd_mss = 4096;
+		ibdev_dbg(&iwdev->ibdev,
+			  "VERBS: changing snd_mss to 4096\n");
+	}
 	udp_info->cwnd = iwdev->roce_cwnd;
 	udp_info->rexmit_thresh = 2;
 	udp_info->rnr_nak_thresh = 2;
@@ -1046,6 +1051,11 @@ int irdma_modify_qp_roce(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 			return -EINVAL;
 	}
 
+	if (udata && udata->inlen >= IRDMA_MODIFY_QP_RCAKEY_REQ_LEN)
+		if (ib_copy_from_udata(&ureq, udata,
+				       min(sizeof(ureq), udata->inlen)))
+			return -EINVAL;
+
 	if (attr_mask & ~IB_QP_ATTR_STANDARD_BITS)
 		return -EOPNOTSUPP;
 
@@ -1062,8 +1072,15 @@ int irdma_modify_qp_roce(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	if (attr_mask & IB_QP_QKEY)
 		roce_info->qkey = attr->qkey;
 
-	if (attr_mask & IB_QP_PATH_MTU)
-		udp_info->snd_mss = ib_mtu_enum_to_int(attr->path_mtu);
+	if (attr_mask & IB_QP_PATH_MTU) {
+		udp_info->snd_mss = crt_mtu_enum_to_int((enum crt_mtu)attr->path_mtu);
+		if (udp_info->snd_mss >= 8192 &&
+		    iwdev->rf->protocol_used == IRDMA_ROCE_PROTOCOL_ONLY) {
+			udp_info->snd_mss = 4096;
+			ibdev_dbg(&iwdev->ibdev,
+				  "VERBS: modify_qp: Changing snd_mss to 4096\n");
+		}
+	}
 
 	if (attr_mask & IB_QP_SQ_PSN) {
 		udp_info->psn_nxt = attr->sq_psn;
@@ -1232,17 +1249,11 @@ int irdma_modify_qp_roce(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 
 			if (iwqp->iwarp_state == IRDMA_QP_STATE_INVALID) {
 				info.next_iwarp_state = IRDMA_QP_STATE_IDLE;
-				if (udata && udata->inlen >= IRDMA_MODIFY_QP_RCAKEY_REQ_LEN
-				    && ureq.rca_key_present) {
-					if (ib_copy_from_udata(&ureq, udata,
-							       min(sizeof(ureq), udata->inlen))) {
-						ret = -EINVAL;
-						goto exit;
+				if (udata && udata->inlen >= IRDMA_MODIFY_QP_RCAKEY_REQ_LEN)
+					if (ureq.rca_key_present) {
+						ctx_info->roce_info->rca_key[0] = ureq.rca_key[0];
+						ctx_info->roce_info->rca_key[1] = ureq.rca_key[1];
 					}
-
-					ctx_info->roce_info->rca_key[0] = ureq.rca_key[0];
-					ctx_info->roce_info->rca_key[1] = ureq.rca_key[1];
-				}
 				issue_modify_qp = 1;
 			}
 			break;
@@ -1762,7 +1773,7 @@ static int irdma_resize_cq(struct ib_cq *ibcq, int entries,
 			entries += 1; /* cq size must be an even number */
 	}
 
-	info.cq_size = max(entries, 4);
+	info.cq_size = max_t(int, entries, 4);
 
 	if (info.cq_size == iwcq->sc_cq.cq_uk.cq_size - 1)
 		return 0;
@@ -2562,7 +2573,6 @@ int irdma_hw_alloc_mw(struct irdma_device *iwdev, struct irdma_mr *iwmr)
 
 	cqp_info = &cqp_request->info;
 	info = &cqp_info->in.u.mw_alloc.info;
-	memset(info, 0, sizeof(*info));
 	if (iwmr->ibmw.type == IB_MW_TYPE_1)
 		info->mw_wide = true;
 
@@ -2601,7 +2611,6 @@ static int irdma_dealloc_mw(struct ib_mw *ibmw)
 
 	cqp_info = &cqp_request->info;
 	info = &cqp_info->in.u.dealloc_stag.info;
-	memset(info, 0, sizeof(*info));
 	info->pd_id = iwpd->sc_pd.pd_id;
 	info->stag_idx = RS_64_1(ibmw->rkey, IRDMA_CQPSQ_STAG_IDX_S);
 	info->mr = false;
@@ -2640,7 +2649,6 @@ int irdma_hw_alloc_stag(struct irdma_device *iwdev,
 
 	cqp_info = &cqp_request->info;
 	info = &cqp_info->in.u.alloc_stag.info;
-	memset(info, 0, sizeof(*info));
 	info->page_size = PAGE_SIZE;
 	info->stag_idx = iwmr->stag >> IRDMA_CQPSQ_STAG_IDX_S;
 	info->pd_id = iwpd->sc_pd.pd_id;
@@ -2734,7 +2742,6 @@ int irdma_hwreg_mr(struct irdma_device *iwdev, struct irdma_mr *iwmr,
 
 	cqp_info = &cqp_request->info;
 	stag_info = &cqp_info->in.u.mr_reg_non_shared.info;
-	memset(stag_info, 0, sizeof(*stag_info));
 	stag_info->va = iwpbl->user_base;
 	stag_info->stag_idx = iwmr->stag >> IRDMA_CQPSQ_STAG_IDX_S;
 	stag_info->stag_key = (u8)iwmr->stag;
@@ -3190,7 +3197,6 @@ int irdma_hwdereg_mr(struct ib_mr *ib_mr)
 
 	cqp_info = &cqp_request->info;
 	info = &cqp_info->in.u.dealloc_stag.info;
-	memset(info, 0, sizeof(*info));
 	info->pd_id = iwpd->sc_pd.pd_id;
 	info->stag_idx = RS_64_1(ib_mr->rkey, IRDMA_CQPSQ_STAG_IDX_S);
 	info->mr = true;
@@ -3547,7 +3553,7 @@ static int irdma_post_send(struct ib_qp *ibqp,
 			break;
 		case IB_WR_LOCAL_INV:
 			info.op_type = IRDMA_OP_TYPE_INV_STAG;
-			info.local_fence = info.read_fence;
+			info.local_fence = true;
 			info.op.inv_local_stag.target_stag = ib_wr->ex.invalidate_rkey;
 			err = irdma_uk_stag_local_invalidate(ukqp, &info, true);
 			break;
@@ -4816,7 +4822,7 @@ int irdma_ib_register_device(struct irdma_device *iwdev)
 #endif /* CONFIG_SUSE_KERNEL */
 #endif /* LINUX_VERSION_CODE */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-	dma_set_max_seg_size(iwdev->rf->hw.device, UINT_MAX);
+	dma_set_max_seg_size(iwdev->rf->hw.device, SZ_2G);
 #endif
 	ret = kc_ib_register_device(&iwdev->ibdev, name, iwdev->rf->hw.device);
 	if (ret)

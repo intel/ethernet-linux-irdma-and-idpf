@@ -626,8 +626,6 @@ struct idpf_intr_reg {
 /**
  * struct idpf_q_vector
  * @vport: Vport back pointer
- * @affinity_mask: CPU affinity mask
- * @affinity_notify: IRQ notifier callback
  * @napi: napi handler
  * @v_idx: Vector index
  * @intr_reg: See struct idpf_intr_reg
@@ -651,8 +649,6 @@ struct idpf_intr_reg {
  */
 struct idpf_q_vector {
 	struct idpf_vport *vport;
-	cpumask_t affinity_mask;
-	struct irq_affinity_notify affinity_notify;
 	struct napi_struct napi;
 	u16 v_idx;
 	struct idpf_intr_reg intr_reg;
@@ -673,6 +669,10 @@ struct idpf_q_vector {
 	struct idpf_queue **bufq;
 	u16 total_events;
 	char *name;
+#ifdef CONFIG_TX_TIMEOUT_VERBOSE
+	u64 sharedrxq_clean_incomplete;
+	u64 complq_clean_incomplete;
+#endif /* CONFIG_TX_TIMEOUT_VERBOSE */
 };
 
 struct idpf_rx_queue_stats {
@@ -693,11 +693,37 @@ struct idpf_tx_queue_stats {
 	u64_stats_t q_busy;
 	u64_stats_t skb_drops;
 	u64_stats_t dma_map_errs;
+#ifdef CONFIG_TX_TIMEOUT_VERBOSE
+	u64_stats_t busy_q_restarts;
+	u64_stats_t busy_low_txq_descs;
+	u64_stats_t busy_low_rsv_bufs;
+	u64_stats_t busy_too_many_pend_compl;
+	u64_stats_t hash_tbl_pkt_cleans;
+	u64_stats_t ring_pkt_cleans;
+	u64_stats_t rs_invalid_first_buf;
+	u64_stats_t re_invalid_first_buf;
+	u64_stats_t re_pkt_stash;
+	u64_stats_t re_pkt_stash_fail;
+	u64_stats_t ooo_compl_stash;
+	u64_stats_t ooo_compl_stash_fail;
+	u64_stats_t complq_clean_incomplete;
+	u64_stats_t sharedrxq_clean_incomplete;
+#endif /* CONFIG_TX_TIMEOUT_VERBOSE */
 };
 
 struct idpf_cleaned_stats {
 	u32 packets;
 	u32 bytes;
+#ifdef CONFIG_TX_TIMEOUT_VERBOSE
+	u16 hash_tbl_pkt_cleans;
+	u16 ring_pkt_cleans;
+	u16 rs_invalid_first_buf;
+	u16 re_invalid_first_buf;
+	u16 re_pkt_stash;
+	u16 re_pkt_stash_fail;
+	u16 ooo_compl_stash;
+	u16 ooo_compl_stash_fail;
+#endif /* CONFIG_TX_TIMEOUT_VERBOSE */
 };
 
 union idpf_queue_stats {

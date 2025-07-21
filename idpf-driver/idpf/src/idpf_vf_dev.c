@@ -2,6 +2,7 @@
 /* Copyright (C) 2019-2025 Intel Corporation */
 
 #include "idpf.h"
+#include "idpf_virtchnl.h"
 #include "idpf_lan_vf_regs.h"
 
 /* LAN driver does not own all the BAR0 address space. This results in 2 BAR0
