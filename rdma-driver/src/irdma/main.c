@@ -602,7 +602,6 @@ static void irdma_lan_unregister_qset(struct irdma_sc_vsi *vsi,
 	if (cdev_info->ops->free_res(cdev_info, &qset))
 		ibdev_dbg(&iwdev->ibdev, "WS: LAN free_res for rdma qset failed.\n");
 }
-
 void irdma_cleanup_dead_qps(struct irdma_sc_vsi *vsi)
 {
 	struct irdma_sc_qp *qp = NULL;
@@ -850,6 +849,7 @@ static int irdma_fill_device_info(struct irdma_device *iwdev, struct iidc_core_d
 	irdma_set_rf_user_cfg_params(rf);
 
 	mutex_init(&iwdev->ah_tbl_lock);
+	spin_lock_init(&iwdev->ah_kernel_tbl_lock);
 
 	iwdev->netdev = cdev_info->netdev;
 	iwdev->vsi_num = cdev_info->vport_id;

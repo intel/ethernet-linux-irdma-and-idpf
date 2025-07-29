@@ -3,6 +3,7 @@
 
 #include "idpf.h"
 #include "idpf_lan_pf_regs.h"
+#include "idpf_virtchnl.h"
 
 /* LAN driver does not own all the BAR0 address space. This results in 2 BAR0
  * regions for PF device and the driver should map each region separately.

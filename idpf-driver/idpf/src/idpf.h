@@ -52,7 +52,7 @@ struct idpf_rss_data;
 #endif /* CONFIG_IOMMU_BYPASS */
 
 #define IDPF_DRV_NAME "idpf"
-#define IDPF_DRV_VER "0.0.653"
+#define IDPF_DRV_VER "0.0.654"
 
 #define IDPF_M(m, s)	((m) << (s))
 
@@ -776,6 +776,13 @@ struct idpf_vector_lifo {
 	u16 *vec_idx;
 };
 
+#ifndef HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS
+struct idpf_vec_affinity_config {
+	cpumask_t affinity_mask;
+	struct irq_affinity_notify affinity_notify;
+};
+#endif /* !HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
+
 /**
  * struct idpf_vport_config - Vport configuration data
  * @user_config: see struct idpf_vport_user_config_data
@@ -787,6 +794,10 @@ struct idpf_vector_lifo {
 struct idpf_vport_config {
 	struct idpf_vport_user_config_data user_config;
 	struct idpf_vport_max_q max_q;
+#ifndef HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS
+#define MAX_NUM_VEC_AFFINTY	64
+	struct idpf_vec_affinity_config *affinity_config;
+#endif /* !HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
 	struct virtchnl2_add_queues *req_qs_chunks;
 	spinlock_t mac_filter_list_lock;
 	DECLARE_BITMAP(flags, IDPF_VPORT_CONFIG_FLAGS_NBITS);
@@ -915,6 +926,7 @@ struct idpf_adapter {
 	struct virtchnl2_create_vport **vport_params_recvd;
 	u32 *vport_ids;
 	struct idpf_vc_xn_manager vcxn_mngr;
+
 	struct idpf_vport_config **vport_config;
 	u16 max_vports;
 	u16 num_alloc_vports;
@@ -1058,13 +1070,13 @@ static inline u16 idpf_get_reserved_rdma_vecs(struct idpf_adapter *adapter)
 	VIRTCHNL2_CAP_RX_HSPLIT_AT_L4V4	|\
 	VIRTCHNL2_CAP_RX_HSPLIT_AT_L4V6)
 
-#define IDPF_CAP_RX_CSUM_L4V4 (\
-	VIRTCHNL2_CAP_RX_CSUM_L4_IPV4_TCP	|\
-	VIRTCHNL2_CAP_RX_CSUM_L4_IPV4_UDP)
+#define IDPF_CAP_TX_CSUM_L4V4 (\
+	VIRTCHNL2_CAP_TX_CSUM_L4_IPV4_TCP	|\
+	VIRTCHNL2_CAP_TX_CSUM_L4_IPV4_UDP)
 
-#define IDPF_CAP_RX_CSUM_L4V6 (\
-	VIRTCHNL2_CAP_RX_CSUM_L4_IPV6_TCP	|\
-	VIRTCHNL2_CAP_RX_CSUM_L4_IPV6_UDP)
+#define IDPF_CAP_TX_CSUM_L4V6 (\
+	VIRTCHNL2_CAP_TX_CSUM_L4_IPV6_TCP	|\
+	VIRTCHNL2_CAP_TX_CSUM_L4_IPV6_UDP)
 
 #define IDPF_CAP_RX_CSUM (\
 	VIRTCHNL2_CAP_RX_CSUM_L3_IPV4		|\
@@ -1073,11 +1085,9 @@ static inline u16 idpf_get_reserved_rdma_vecs(struct idpf_adapter *adapter)
 	VIRTCHNL2_CAP_RX_CSUM_L4_IPV6_TCP	|\
 	VIRTCHNL2_CAP_RX_CSUM_L4_IPV6_UDP)
 
-#define IDPF_CAP_SCTP_CSUM (\
+#define IDPF_CAP_TX_SCTP_CSUM (\
 	VIRTCHNL2_CAP_TX_CSUM_L4_IPV4_SCTP	|\
-	VIRTCHNL2_CAP_TX_CSUM_L4_IPV6_SCTP	|\
-	VIRTCHNL2_CAP_RX_CSUM_L4_IPV4_SCTP	|\
-	VIRTCHNL2_CAP_RX_CSUM_L4_IPV6_SCTP)
+	VIRTCHNL2_CAP_TX_CSUM_L4_IPV6_SCTP)
 
 #define IDPF_CAP_TUNNEL_TX_CSUM (\
 	VIRTCHNL2_CAP_TX_CSUM_L3_SINGLE_TUNNEL	|\
@@ -1303,36 +1313,13 @@ void idpf_init_vc_xn_completion(struct idpf_vc_xn_manager *vcxn_mngr);
 void idpf_vc_xn_init(struct idpf_vc_xn_manager *vcxn_mngr);
 void idpf_vc_xn_shutdown(struct idpf_vc_xn_manager *vcxn_mngr);
 void idpf_vport_adjust_qs(struct idpf_vport *vport);
-int idpf_init_dflt_mbx(struct idpf_adapter *adapter);
-void idpf_deinit_dflt_mbx(struct idpf_adapter *adapter);
-int idpf_vc_core_init(struct idpf_adapter *adapter);
-void idpf_vc_core_deinit(struct idpf_adapter *adapter);
 int idpf_intr_req(struct idpf_adapter *adapter);
 void idpf_intr_rel(struct idpf_adapter *adapter);
-int idpf_get_reg_intr_vecs(struct idpf_vport *vport,
-			   struct idpf_vec_regs *reg_vals);
 #ifdef HAVE_NDO_FEATURES_CHECK
 u16 idpf_get_max_tx_hdr_size(struct idpf_adapter *adapter);
 #endif /* HAVE_NDO_FEATURES_CHECK */
-int idpf_send_delete_queues_msg(struct idpf_vport *vport);
-int idpf_send_add_queues_msg(struct idpf_vport *vport, u16 num_tx_q,
-			     u16 num_complq, u16 num_rx_q, u16 num_rx_bufq);
 int idpf_initiate_soft_reset(struct idpf_vport *vport,
 			     enum idpf_vport_reset_cause reset_cause);
-int idpf_send_enable_vport_msg(struct idpf_vport *vport);
-int idpf_send_disable_vport_msg(struct idpf_vport *vport);
-int idpf_send_destroy_vport_msg(struct idpf_vport *vport);
-int idpf_send_get_rx_ptype_msg(struct idpf_vport *vport);
-int idpf_send_ena_dis_loopback_msg(struct idpf_vport *vport);
-int idpf_send_get_set_rss_key_msg(struct idpf_vport *vport,
-				  struct idpf_rss_data *rss_data,
-				  bool get);
-int idpf_send_get_set_rss_lut_msg(struct idpf_vport *vport,
-				  struct idpf_rss_data *rss_data,
-				  bool get);
-int idpf_send_get_set_rss_hash_msg(struct idpf_vport *vport, bool get);
-int idpf_send_dealloc_vectors_msg(struct idpf_adapter *adapter);
-int idpf_send_alloc_vectors_msg(struct idpf_adapter *adapter, u16 num_vectors);
 void idpf_deinit_task(struct idpf_adapter *adapter);
 void idpf_deinit_vector_stack(struct idpf_adapter *adapter);
 int idpf_req_rel_vector_indexes(struct idpf_adapter *adapter,
@@ -1342,13 +1329,6 @@ int idpf_vport_alloc_vec_indexes(struct idpf_vport *vport,
 				 struct idpf_vgrp *vgrp);
 void idpf_vport_dealloc_vec_indexes(struct idpf_vport *vport,
 				    struct idpf_vgrp *vgrp);
-int idpf_send_get_stats_msg(struct idpf_vport *vport);
-int idpf_get_vec_ids(struct idpf_adapter *adapter,
-		     u16 *vecids, int num_vecids,
-		     struct virtchnl2_vector_chunks *chunks);
-int idpf_recv_mb_msg(struct idpf_adapter *adapter);
-int idpf_send_mb_msg(struct idpf_adapter *adapter, u32 op,
-		     u16 msg_size, u8 *msg, u16 cookie);
 ssize_t idpf_vc_xn_exec(struct idpf_adapter *adapter,
 			const struct idpf_vc_xn_params *params);
 void idpf_set_ethtool_ops(struct net_device *netdev);
@@ -1366,9 +1346,6 @@ int idpf_add_del_mac_filters(struct idpf_vport *vport,
 int idpf_set_promiscuous(struct idpf_adapter *adapter,
 			 struct idpf_vport_user_config_data *config_data,
 			 u32 vport_id);
-int idpf_send_disable_queues_msg(struct idpf_vport *vport,
-				 struct idpf_vgrp *vgrp,
-				 struct virtchnl2_queue_reg_chunks *chunks);
 struct virtchnl2_queue_reg_chunks *
 idpf_get_queue_reg_chunks(struct idpf_vport *vport);
 int idpf_vport_init(struct idpf_vport *vport, struct idpf_vport_max_q *max_q);
@@ -1382,22 +1359,10 @@ int idpf_vport_queue_ids_init(struct idpf_q_grp *q_grp,
 			      struct virtchnl2_queue_reg_chunks *chunks);
 int idpf_queue_reg_init(struct idpf_vport *vport, struct idpf_q_grp *q_grp,
 			struct virtchnl2_queue_reg_chunks *chunks);
-int idpf_send_config_queues_msg(struct idpf_vport *vport,
-				struct idpf_q_grp *q_grp);
-int idpf_send_enable_queues_msg(struct idpf_vport *vport,
-				struct virtchnl2_queue_reg_chunks *chunks);
 void idpf_set_vport_state(struct idpf_adapter *adapter);
-int idpf_send_create_vport_msg(struct idpf_adapter *adapter,
-			       struct idpf_vport_max_q *max_q);
 int idpf_check_supported_desc_ids(struct idpf_vport *vport);
-int idpf_send_create_adi_msg(struct idpf_adapter *adapter,
-			     struct virtchnl2_non_flex_create_adi *vchnl_adi);
-int idpf_send_destroy_adi_msg(struct idpf_adapter *adapter,
-			      struct virtchnl2_non_flex_destroy_adi *vchnl_adi);
 void idpf_vport_intr_write_itr(struct idpf_q_vector *q_vector,
 			       u16 itr, bool tx);
-int idpf_send_map_unmap_queue_vector_msg(struct idpf_vport *vport,
-					 struct idpf_vgrp *vgrp, bool map);
 #ifdef HAVE_XDP_SUPPORT
 #ifdef HAVE_XDP_FRAME_STRUCT
 int idpf_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
@@ -1409,7 +1374,6 @@ int idpf_xdp_xmit(struct net_device *dev, struct xdp_buff *xdp);
 void idpf_xdp_flush(struct net_device *dev);
 #endif /* NO_NDO_XDP_FLUSH */
 #endif /* HAVE_XDP_SUPPORT */
-int idpf_send_set_sriov_vfs_msg(struct idpf_adapter *adapter, u16 num_vfs);
 int idpf_sriov_configure(struct pci_dev *pdev, int num_vfs);
 int idpf_sriov_config_vfs(struct pci_dev *pdev, int num_vfs);
 int idpf_idc_init(struct idpf_adapter *adapter);

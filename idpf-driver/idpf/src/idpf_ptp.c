@@ -205,9 +205,21 @@ static int idpf_ptp_get_sync_device_time(ktime_t *device,
 
 	*device = ns_to_ktime(ns_time_dev);
 #if IS_ENABLED(CONFIG_ARM_ARCH_TIMER)
+#ifdef HAVE_PTP_SYS_COUNTERVAL_CSID
+	system->cycles = ns_time_sys;
+	system->cs_id = CSID_ARM_ARCH_COUNTER;
+	system->use_nsecs = true;
+#else /* !HAVE_PTP_SYS_COUNTERVAL_CSID */
 	*system = arch_timer_wrap_counter(ns_time_sys);
+#endif /* HAVE_PTP_SYS_COUNTERVAL_CSID */
 #elif IS_ENABLED(CONFIG_PCIE_PTM)
+#ifdef HAVE_PTP_CSID_X86_ART
+	system->cycles = ns_time_sys;
+	system->cs_id = CSID_X86_ART;
+	system->use_nsecs = true;
+#else /* !HAVE_PTP_CSID_X86_ART */
 	*system = convert_art_ns_to_tsc(ns_time_sys);
+#endif /* HAVE_PTP_CSID_X86_ART */
 #endif /* CONFIG_ARM_ARCH_TIMER */
 
 	return err;

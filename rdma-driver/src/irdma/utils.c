@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2015 - 2024 Intel Corporation */
+/* Copyright (c) 2015 - 2025 Intel Corporation */
 #include "main.h"
 
 LIST_HEAD(irdma_handlers);
@@ -774,6 +774,8 @@ struct irdma_cqp_request *irdma_alloc_and_get_cqp_request(struct irdma_cqp *cqp,
 	refcount_set(&cqp_request->refcnt, 1);
 	memset(&cqp_request->compl_info, 0, sizeof(cqp_request->compl_info));
 
+	memset(&cqp_request->info, 0, sizeof(cqp_request->info));
+
 	return cqp_request;
 }
 
@@ -1113,13 +1115,23 @@ int irdma_handle_cqp_op(struct irdma_pci_f *rf,
 err:
 	if (irdma_cqp_crit_err(dev, info->cqp_cmd,
 			       cqp_request->compl_info.maj_err_code,
-			       cqp_request->compl_info.min_err_code))
+			       cqp_request->compl_info.min_err_code)) {
+		int qpn = -1;
+
+		if (info->cqp_cmd == IRDMA_OP_QP_CREATE)
+			qpn = cqp_request->info.in.u.qp_create.qp->qp_uk.qp_id;
+		else if (info->cqp_cmd == IRDMA_OP_QP_MODIFY)
+			qpn = cqp_request->info.in.u.qp_modify.qp->qp_uk.qp_id;
+		else if (info->cqp_cmd == IRDMA_OP_QP_DESTROY)
+			qpn = cqp_request->info.in.u.qp_destroy.qp->qp_uk.qp_id;
+
 		ibdev_err(&rf->iwdev->ibdev,
-			  "[%s Error][op_code=%d] status=%d waiting=%d completion_err=%d maj=0x%x min=0x%x\n",
-			  irdma_cqp_cmd_names[info->cqp_cmd], info->cqp_cmd, status,
+			  "[%s Error] status=%d waiting=%d completion_err=%d maj=0x%x min=0x%x qpn=%d\n",
+			  irdma_cqp_cmd_names[info->cqp_cmd], status,
 			  cqp_request->waiting, cqp_request->compl_info.error,
 			  cqp_request->compl_info.maj_err_code,
-			  cqp_request->compl_info.min_err_code);
+			  cqp_request->compl_info.min_err_code, qpn);
+	}
 
 	if (put_cqp_request)
 		irdma_put_cqp_request(&rf->cqp, cqp_request);
@@ -1387,7 +1399,11 @@ void irdma_terminate_del_timer(struct irdma_sc_qp *qp)
 	int ret;
 
 	iwqp = qp->qp_uk.back_qp;
+#ifdef HAVE_TIMER_DELETE
+	ret = timer_delete(&iwqp->terminate_timer);
+#else
 	ret = del_timer(&iwqp->terminate_timer);
+#endif /* HAVE_TIMER_DELETE */
 	if (ret)
 		irdma_qp_rem_ref(&iwqp->ibqp);
 }
@@ -1544,7 +1560,6 @@ int irdma_cqp_qp_create_cmd(struct irdma_sc_dev *dev, struct irdma_sc_qp *qp)
 
 	cqp_info = &cqp_request->info;
 	qp_info = &cqp_request->info.in.u.qp_create.info;
-	memset(qp_info, 0, sizeof(*qp_info));
 	qp_info->cq_num_valid = true;
 	qp_info->next_iwarp_state = IRDMA_QP_STATE_RTS;
 	cqp_info->cqp_cmd = IRDMA_OP_QP_CREATE;
@@ -1861,7 +1876,6 @@ int irdma_cqp_qp_destroy_cmd(struct irdma_sc_dev *dev, struct irdma_sc_qp *qp)
 		return -ENOMEM;
 
 	cqp_info = &cqp_request->info;
-	memset(cqp_info, 0, sizeof(*cqp_info));
 	cqp_info->cqp_cmd = IRDMA_OP_QP_DESTROY;
 	cqp_info->post_sq = 1;
 	cqp_info->in.u.qp_destroy.qp = qp;
@@ -2248,7 +2262,11 @@ void irdma_hw_stats_stop_timer(struct irdma_sc_vsi *vsi)
 {
 	struct irdma_vsi_pestat *devstat = vsi->pestat;
 
+#ifdef HAVE_TIMER_DELETE
+	timer_delete_sync(&devstat->stats_timer);
+#else
 	del_timer_sync(&devstat->stats_timer);
+#endif /* HAVE_TIMER_DELETE */
 }
 
 /**
@@ -2320,7 +2338,6 @@ int irdma_cqp_gather_stats_cmd(struct irdma_sc_dev *dev,
 		return -ENOMEM;
 
 	cqp_info = &cqp_request->info;
-	memset(cqp_info, 0, sizeof(*cqp_info));
 	cqp_info->cqp_cmd = IRDMA_OP_STATS_GATHER;
 	cqp_info->post_sq = 1;
 	cqp_info->in.u.stats_gather.info = pestat->gather_info;
@@ -2360,7 +2377,6 @@ int irdma_cqp_stats_inst_cmd(struct irdma_sc_vsi *vsi, u8 cmd,
 		return -ENOMEM;
 
 	cqp_info = &cqp_request->info;
-	memset(cqp_info, 0, sizeof(*cqp_info));
 	cqp_info->cqp_cmd = cmd;
 	cqp_info->post_sq = 1;
 	cqp_info->in.u.stats_manage.info = *stats_info;
@@ -2699,7 +2715,6 @@ int irdma_cqp_ws_node_cmd(struct irdma_sc_dev *dev, u8 cmd,
 		return -ENOMEM;
 
 	cqp_info = &cqp_request->info;
-	memset(cqp_info, 0, sizeof(*cqp_info));
 	cqp_info->cqp_cmd = cmd;
 	cqp_info->post_sq = 1;
 	cqp_info->in.u.ws_node.info = *node_info;
@@ -2750,7 +2765,6 @@ int irdma_cqp_up_map_cmd(struct irdma_sc_dev *dev, u8 cmd,
 		return -ENOMEM;
 
 	cqp_info = &cqp_request->info;
-	memset(cqp_info, 0, sizeof(*cqp_info));
 	cqp_info->cqp_cmd = cmd;
 	cqp_info->post_sq = 1;
 	cqp_info->in.u.up_map.info = *map_info;
@@ -3372,7 +3386,6 @@ int irdma_upload_qp_context(struct irdma_qp *iwqp, bool freeze, bool raw)
 
 	cqp_info = &cqp_request->info;
 	info = &cqp_info->in.u.qp_upload_context.info;
-	memset(info, 0, sizeof(struct irdma_upload_context_info));
 	cqp_info->cqp_cmd = IRDMA_OP_QP_UPLOAD_CONTEXT;
 	cqp_info->post_sq = 1;
 	cqp_info->in.u.qp_upload_context.dev = dev;

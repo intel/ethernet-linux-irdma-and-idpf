@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2018 - 2024 Intel Corporation */
+/* Copyright (c) 2018 - 2025 Intel Corporation */
 #include "main.h"
 
 #define IRDMA_ROCE_UDP_ENCAP_VALID_PORT_MIN (0xC000)
@@ -1050,7 +1050,7 @@ static bool irdma_kernel_ah_exists(struct irdma_device *iwdev,
 	}
 	new_ah->sc_ah.ah_info.ah_idx = save_ah_id;
 	/* Add new AH to list */
-	ah = kmemdup(new_ah, sizeof(*new_ah), GFP_KERNEL);
+	ah = kmemdup(new_ah, sizeof(*new_ah), GFP_ATOMIC);
 	if (!ah)
 		return false;
 	new_ah->parent_ah = ah;
@@ -3209,7 +3209,7 @@ struct ib_cq *irdma_create_cq(struct ib_device *ibdev,
 	INIT_LIST_HEAD(&iwcq->resize_list);
 	INIT_LIST_HEAD(&iwcq->cmpl_generated);
 	info.dev = dev;
-	ukinfo->cq_size = max(entries, 4);
+	ukinfo->cq_size = max_t(int, entries, 4);
 	ukinfo->cq_id = cq_num;
 	cqe_64byte_ena = (dev->hw_attrs.uk_attrs.feature_flags & IRDMA_FEATURE_64_BYTE_CQE) ? true : false;
 	ukinfo->avoid_mem_cflct = cqe_64byte_ena;
@@ -4524,7 +4524,7 @@ int irdma_query_port(struct ib_device *ibdev, u8 port,
 	/* no need to zero out pros here. done by caller */
 
 	props->max_mtu = IB_MTU_4096;
-	props->active_mtu = ib_mtu_int_to_enum(netdev->mtu);
+	props->active_mtu = min(props->max_mtu, iboe_get_mtu(netdev->mtu));
 	props->lid = 1;
 	props->lmc = 0;
 	props->sm_lid = 0;

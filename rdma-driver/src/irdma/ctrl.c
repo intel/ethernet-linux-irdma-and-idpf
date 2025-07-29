@@ -452,6 +452,7 @@ irdma_sc_manage_qhash_table_entry(struct irdma_sc_cqp *cqp,
 	}
 
 	qs_handle = vsi->qos[info->user_pri].qs_handle[0];
+
 	qw2 = FIELD_PREP(IRDMA_CQPSQ_QHASH_QS_HANDLE, qs_handle);
 	if (info->vlan_valid)
 		qw2 |= FIELD_PREP(IRDMA_CQPSQ_QHASH_VLANID, info->vlan_id);
@@ -3715,8 +3716,7 @@ void irdma_sc_cqp_def_cmpl_ae_handler(struct irdma_sc_dev *dev,
 				  ooo_op->def_info, *sw_def_info,
 				  ooo_op->wqe_idx);
 
-			list_del(&ooo_op->list_entry);
-			list_add(&ooo_op->list_entry, &dev->cqp->ooo_avail);
+			list_move(&ooo_op->list_entry, &dev->cqp->ooo_avail);
 			atomic64_inc(&dev->cqp->completed_ops);
 
 			break;
@@ -5763,8 +5763,10 @@ int irdma_sc_ccq_destroy(struct irdma_sc_cq *ccq, u64 scratch, bool post_sq)
 	u64 hdr;
 	int ret_code = 0;
 	u32 tail, val, error;
+	struct irdma_sc_dev *dev;
 
 	cqp = ccq->dev->cqp;
+	dev = ccq->dev;
 	wqe = irdma_sc_cqp_get_next_send_wqe(cqp, scratch);
 	if (!wqe)
 		return -ENOMEM;
@@ -5773,7 +5775,7 @@ int irdma_sc_ccq_destroy(struct irdma_sc_cq *ccq, u64 scratch, bool post_sq)
 	set_64bit_val(wqe, 8, RS_64_1(ccq, 1));
 	set_64bit_val(wqe, 40, ccq->shadow_area_pa);
 
-	if (ccq->dev->hw_wa & NO_CEQMASK)
+	if (dev->hw_wa & NO_CEQMASK)
 		ccq->ceqe_mask = 0;
 	hdr = ccq->cq_uk.cq_id |
 	      FLD_LS_64(ccq->dev, (ccq->ceq_id_valid ? ccq->ceq_id : 0),
@@ -5795,10 +5797,11 @@ int irdma_sc_ccq_destroy(struct irdma_sc_cq *ccq, u64 scratch, bool post_sq)
 	if (post_sq) {
 		irdma_sc_cqp_post_sq(cqp);
 		ret_code = irdma_cqp_poll_registers(cqp, tail,
-						    cqp->dev->hw_attrs.max_done_count);
+						    dev->hw_attrs.max_done_count);
 	}
 
 	cqp->process_cqp_sds = irdma_update_sds_noccq;
+	dev->ccq = NULL;
 
 	return ret_code;
 }
@@ -6300,8 +6303,11 @@ static int irdma_sc_query_rdma_features(struct irdma_sc_cqp *cqp,
  */
 int irdma_get_rdma_features(struct irdma_sc_dev *dev)
 {
-	int ret_code, byte_idx, feat_type, feat_cnt, feat_idx;
 	struct irdma_dma_mem feat_buf;
+	u16 feat_cnt;
+	u16 feat_idx;
+	u8 feat_type;
+	int ret_code;
 	u64 temp;
 
 	feat_buf.size = ALIGN(IRDMA_FEATURE_BUF_SIZE,
@@ -6349,10 +6355,15 @@ int irdma_get_rdma_features(struct irdma_sc_dev *dev)
 	print_hex_dump_debug("WQE: QUERY RDMA FEATURES", DUMP_PREFIX_OFFSET,
 			     16, 8, feat_buf.va, feat_cnt * 8, false);
 
-	for (byte_idx = 0, feat_idx = 0; feat_idx < min(feat_cnt, IRDMA_MAX_FEATURES);
-	     feat_idx++, byte_idx += 8) {
-		get_64bit_val(feat_buf.va, byte_idx, &temp);
+	for (feat_idx = 0; feat_idx < feat_cnt; feat_idx++) {
+		get_64bit_val(feat_buf.va, feat_idx * 8, &temp);
 		feat_type = FIELD_GET(IRDMA_FEATURE_TYPE, temp);
+
+		if (feat_type >= IRDMA_MAX_FEATURES) {
+			ibdev_dbg(to_ibdev(dev),
+				  "DEV: unknown feature type %u\n", feat_type);
+			continue;
+		}
 		dev->feature_info[feat_type] = temp;
 	}
 	if (dev->feature_info[IRDMA_FTN_FLAGS] & IRDMA_ATOMICS_ALLOWED_BIT)
@@ -6732,7 +6743,6 @@ static int cfg_fpm_value_gen_3(struct irdma_sc_dev *dev,
 
 	if (is_mrte_loc_mem)
 		loc_mem_pages -= IRDMA_MIN_PBLE_PAGES;
-
 	ibdev_dbg(to_ibdev(dev),
 		  "HMC: mrte_loc %d loc_mem %u fpm max sds %u host_obj %d\n",
 		  hmc_info->hmc_obj[IRDMA_HMC_IW_MR].mem_loc,
@@ -7441,7 +7451,7 @@ static int irdma_wait_pe_ready(struct irdma_sc_dev *dev)
 		if (statuscpu0 == 0x80 && statuscpu1 == 0x80 &&
 		    statuscpu2 == 0x80)
 			return 0;
-		mdelay(1000);
+		mdelay(100);
 	} while (retrycount++ < dev->hw_attrs.max_pe_ready_count);
 	return -1;
 }
@@ -7636,9 +7646,9 @@ static inline u64 irdma_stat_delta(u64 new_val, u64 old_val, u64 max_val)
 {
 	if (new_val >= old_val)
 		return new_val - old_val;
-	else
-		/* roll-over case */
-		return max_val - old_val + new_val + 1;
+
+	/* roll-over case */
+	return max_val - old_val + new_val + 1;
 }
 
 /**
@@ -7701,7 +7711,6 @@ void mev_enable_hw_wa(struct irdma_sc_dev *dev, u64 hw_wa,
 		break;
 	case MMG_DEV_00:
 		dev->hw_wa |= REDUCE_ORD_IRD |
-			      MAX_QP_2K |
 			      MMG_WA;
 		break;
 	case MEV_B0_37:

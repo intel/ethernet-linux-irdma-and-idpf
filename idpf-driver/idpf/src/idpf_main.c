@@ -4,9 +4,10 @@
 #include "kcompat.h"
 #include <linux/aer.h>
 #include "idpf.h"
+#include "idpf_virtchnl.h"
 
-MODULE_VERSION(IDPF_DRV_VER);
 #define DRV_SUMMARY    "Intel(R) Infrastructure Data Path Function Linux Driver"
+MODULE_VERSION(IDPF_DRV_VER);
 static const char idpf_driver_string[] = DRV_SUMMARY;
 static const char idpf_copyright[] = "Copyright (C) 2019-2025 Intel Corporation";
 MODULE_DESCRIPTION(DRV_SUMMARY);
@@ -108,14 +109,7 @@ static void idpf_remove(struct pci_dev *pdev)
 	struct idpf_adapter *adapter = pci_get_drvdata(pdev);
 	int i;
 
-	if (!adapter)
-		return;
-
-	if (test_and_set_bit(IDPF_REMOVE_IN_PROG, adapter->flags)) {
-		dev_info(&pdev->dev, "Device removal already in progress\n");
-
-		return;
-	}
+	set_bit(IDPF_REMOVE_IN_PROG, adapter->flags);
 
 	/* Wait until vc_event_task is done to consider if any hard reset is
 	 * in progress else we may go ahead and release the resources but the
@@ -173,6 +167,10 @@ destroy_wqs:
 	destroy_workqueue(adapter->vc_event_wq);
 
 	for (i = 0; i < adapter->max_vports; i++) {
+#ifndef HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS
+		if (adapter->vport_config[i])
+			kfree(adapter->vport_config[i]->affinity_config);
+#endif /* !HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
 		kfree(adapter->vport_config[i]);
 		adapter->vport_config[i] = NULL;
 	}
@@ -216,7 +214,12 @@ destroy_wqs:
  */
 static void idpf_shutdown(struct pci_dev *pdev)
 {
-	idpf_remove(pdev);
+	struct idpf_adapter *adapter = pci_get_drvdata(pdev);
+
+	cancel_delayed_work_sync(&adapter->serv_task);
+	cancel_delayed_work_sync(&adapter->vc_event_task);
+	idpf_vc_core_deinit(adapter);
+	idpf_deinit_dflt_mbx(adapter);
 
 	if (system_state == SYSTEM_POWER_OFF)
 		pci_set_power_state(pdev, PCI_D3hot);
@@ -397,7 +400,8 @@ static int idpf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	idpf_vc_xn_init(&adapter->vcxn_mngr);
 	init_completion(&adapter->corer_done);
 
-	adapter->init_wq = alloc_workqueue("%s-%s-init", 0, 0,
+	adapter->init_wq = alloc_workqueue("%s-%s-init",
+					   WQ_UNBOUND | WQ_MEM_RECLAIM, 0,
 					   dev_driver_string(dev),
 					   dev_name(dev));
 	if (!adapter->init_wq) {
@@ -410,7 +414,8 @@ static int idpf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 #endif /* HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING */
 	}
 
-	adapter->serv_wq = alloc_workqueue("%s-%s-service", 0, 0,
+	adapter->serv_wq = alloc_workqueue("%s-%s-service",
+					   WQ_UNBOUND | WQ_MEM_RECLAIM, 0,
 					   dev_driver_string(dev),
 					   dev_name(dev));
 	if (!adapter->serv_wq) {
@@ -419,7 +424,8 @@ static int idpf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_serv_wq_alloc;
 	}
 
-	adapter->mbx_wq = alloc_workqueue("%s-%s-mbx", WQ_UNBOUND, 0,
+	adapter->mbx_wq = alloc_workqueue("%s-%s-mbx",
+					  WQ_UNBOUND | WQ_MEM_RECLAIM, 0,
 					  dev_driver_string(dev),
 					  dev_name(dev));
 	if (!adapter->mbx_wq) {
@@ -428,7 +434,8 @@ static int idpf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_mbx_wq_alloc;
 	}
 
-	adapter->stats_wq = alloc_workqueue("%s-%s-stats", 0, 0,
+	adapter->stats_wq = alloc_workqueue("%s-%s-stats",
+					    WQ_UNBOUND | WQ_MEM_RECLAIM, 0,
 					    dev_driver_string(dev),
 					    dev_name(dev));
 	if (!adapter->stats_wq) {
@@ -437,9 +444,10 @@ static int idpf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_stats_wq_alloc;
 	}
 
-	adapter->vc_event_wq = alloc_workqueue("%s-%s-vc_event", 0, 0,
-					   dev_driver_string(dev),
-					   dev_name(dev));
+	adapter->vc_event_wq = alloc_workqueue("%s-%s-vc_event",
+					       WQ_UNBOUND | WQ_MEM_RECLAIM, 0,
+					       dev_driver_string(dev),
+					       dev_name(dev));
 	if (!adapter->vc_event_wq) {
 		dev_err(dev, "Failed to allocate virtchnl event workqueue\n");
 		err = -ENOMEM;
@@ -578,6 +586,8 @@ bool idpf_is_reset_detected(struct idpf_adapter *adapter)
 static void idpf_reset_prepare(struct idpf_adapter *adapter)
 {
 	idpf_vport_init_lock(adapter);
+	cancel_delayed_work_sync(&adapter->serv_task);
+	cancel_delayed_work_sync(&adapter->vc_event_task);
 	set_bit(IDPF_HR_RESET_IN_PROG, adapter->flags);
 	dev_info(idpf_adapter_to_dev(adapter), "Device FLR Reset initiated\n");
 
@@ -683,9 +693,7 @@ static void idpf_pci_err_resume(struct pci_dev *pdev)
 	idpf_vport_init_unlock(adapter);
 
 	/* Wait for all init_task WQs to complete */
-	do {
-		usleep_range(1000, 2000);
-	} while (flush_delayed_work(&adapter->init_task));
+	flush_delayed_work(&adapter->init_task);
 }
 
 #ifdef HAVE_PCI_ERROR_HANDLER_RESET_PREPARE

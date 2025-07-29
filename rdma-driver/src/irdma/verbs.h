@@ -312,6 +312,55 @@ struct irdma_user_mmap_entry {
 	u8 mmap_flag;
 };
 
+#define CRT_RDMA_HEADER 256
+
+/* Adding CRT specific extensions for CRT protocol family.
+ **/
+enum crt_mtu {
+	CRT_MTU_256  = 1,
+	CRT_MTU_512  = 2,
+	CRT_MTU_1024 = 3,
+	CRT_MTU_2048 = 4,
+	CRT_MTU_4096 = 5,
+	CRT_MTU_8192 = 6
+};
+
+static inline int crt_mtu_enum_to_int(enum crt_mtu mtu)
+{
+	switch (mtu) {
+	case CRT_MTU_256:  return  256;
+	case CRT_MTU_512:  return  512;
+	case CRT_MTU_1024: return 1024;
+	case CRT_MTU_2048: return 2048;
+	case CRT_MTU_4096: return 4096;
+	case CRT_MTU_8192: return 8192;
+	default:	   return -1;
+	}
+}
+
+static inline enum crt_mtu crt_iboe_get_mtu(int mtu)
+{
+	/*
+	 * Reduce Falcon headers from effective MTU.
+	 **/
+	mtu = mtu - CRT_RDMA_HEADER;
+
+	if (mtu >= crt_mtu_enum_to_int(CRT_MTU_8192))
+		return CRT_MTU_8192;
+	else if (mtu >= crt_mtu_enum_to_int(CRT_MTU_4096))
+		return CRT_MTU_4096;
+	else if (mtu >= crt_mtu_enum_to_int(CRT_MTU_2048))
+		return CRT_MTU_2048;
+	else if (mtu >= crt_mtu_enum_to_int(CRT_MTU_1024))
+		return CRT_MTU_1024;
+	else if (mtu >= crt_mtu_enum_to_int(CRT_MTU_512))
+		return CRT_MTU_512;
+	else if (mtu >= crt_mtu_enum_to_int(CRT_MTU_256))
+		return CRT_MTU_256;
+	else
+		return 0;
+}
+
 static inline u16 irdma_fw_major_ver(struct irdma_sc_dev *dev)
 {
 	return (u16)FIELD_GET(IRDMA_FW_VER_MAJOR, dev->feature_info[IRDMA_FEATURE_FW_INFO]);
