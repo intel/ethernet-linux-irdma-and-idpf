@@ -533,7 +533,6 @@ static int
 idpf_xsk_check_xmit_params(struct idpf_vport *vport, u32 xdpq_idx)
 {
 	struct idpf_netdev_priv *np = netdev_priv(vport->netdev);
-	struct idpf_q_grp *q_grp = &vport->dflt_grp.q_grp;
 	struct idpf_vport_user_config_data *cfg_data;
 
 	if (unlikely(!np->active))
@@ -547,10 +546,10 @@ idpf_xsk_check_xmit_params(struct idpf_vport *vport, u32 xdpq_idx)
 			       cfg_data->af_xdp_zc_qps)))
 		return -ENXIO;
 
-	if (unlikely(xdpq_idx >= q_grp->num_txq))
+	if (unlikely(xdpq_idx >= vport->num_txq))
 		return -ENXIO;
 
-	if (unlikely(!q_grp->txqs[xdpq_idx]->xsk_pool))
+	if (unlikely(!vport->txqs[xdpq_idx]->xsk_pool))
 		return -ENXIO;
 
 	return 0;
@@ -618,7 +617,7 @@ int idpf_xsk_splitq_async_xmit(struct net_device *netdev, u32 q_id)
 	if (unlikely(ret))
 		goto exit;
 
-	q_vector = vport->dflt_grp.q_grp.txqs[idx]->tx.complq->q_vector;
+	q_vector = vport->txqs[idx]->txq_grp->complq->q_vector;
 
 	idpf_xsk_schedule_napi_for_xmit(vport, q_vector);
 exit:
@@ -669,7 +668,7 @@ int idpf_xsk_singleq_async_xmit(struct net_device *netdev, u32 q_id)
 	if (unlikely(ret))
 		goto exit;
 
-	q_vector = vport->dflt_grp.q_grp.txqs[idx]->q_vector;
+	q_vector = vport->txqs[idx]->q_vector;
 
 	idpf_xsk_schedule_napi_for_xmit(vport, q_vector);
 exit:
@@ -1212,7 +1211,7 @@ int idpf_rx_singleq_clean_zc(struct idpf_queue *rxq, int budget)
 		 * isn't used, if the hardware wrote DD then the length will be
 		 * non-zero
 		 */
-#define IDPF_RXD_DD BIT(VIRTCHNL2_RX_BASE_DESC_STATUS_DD_S)
+#define IDPF_RXD_DD VIRTCHNL2_RX_BASE_DESC_STATUS_DD_M
 		if (!idpf_rx_singleq_test_staterr(rx_desc, IDPF_RXD_DD))
 			break;
 		idpf_rx_singleq_extract_fields(rxq, rx_desc, &fields);

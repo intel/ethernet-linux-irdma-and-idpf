@@ -5,7 +5,7 @@
 ifneq ($(KERNELRELEASE),)
 # kbuild part of makefile
 #
-# Makefile for the Intel(R) Infrastructure Data Path Function Linux Driver
+# Makefile for Intel(R) Infrastructure Data Path Function Linux Driver
 #
 
 ifeq (${NEED_AUX_BUS},2)

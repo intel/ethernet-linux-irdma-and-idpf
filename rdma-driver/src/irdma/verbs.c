@@ -881,7 +881,24 @@ void irdma_sched_qp_flush_work(struct irdma_qp *iwqp)
 		irdma_qp_rem_ref(&iwqp->ibqp);
 }
 
-void irdma_flush_worker(struct work_struct *work)
+void irdma_user_flush_worker(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct irdma_qp *iwqp = container_of(dwork, struct irdma_qp,
+					     dwork_flush);
+
+	/* Set the WAIT flag to prevent a massive buildup of flush commands in
+	 * the extreme case of many QPs lingering in the ERROR state.
+	 */
+	irdma_flush_wqes(iwqp, IRDMA_FLUSH_SQ | IRDMA_FLUSH_RQ | IRDMA_REFLUSH |
+			 IRDMA_FLUSH_WAIT);
+
+	/* Re-arm continuously. Work is canceled when QP is deleted. */
+	mod_delayed_work(iwqp->iwdev->cleanup_wq, &iwqp->dwork_flush,
+			 msecs_to_jiffies(IRDMA_PERIODIC_FLUSH_MS));
+}
+
+void irdma_kern_flush_worker(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
 	struct irdma_qp *iwqp = container_of(dwork, struct irdma_qp, dwork_flush);
@@ -1216,8 +1233,9 @@ int irdma_modify_qp_roce(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 			roce_info->wr_rdresp_en = true;
 		if (attr->qp_access_flags & IB_ACCESS_REMOTE_READ)
 			roce_info->rd_en = true;
-		if (attr->qp_access_flags & IB_ACCESS_REMOTE_ATOMIC)
-			ctx_info->remote_atomics_en = true;
+		if (dev->hw_attrs.uk_attrs.feature_flags & IRDMA_FEATURE_ATOMIC_OPS)
+			if (attr->qp_access_flags & IB_ACCESS_REMOTE_ATOMIC)
+				ctx_info->remote_atomics_en = true;
 	}
 
 	wait_event(iwqp->mod_qp_waitq, !atomic_read(&iwqp->hw_mod_qp_pend));
@@ -1310,6 +1328,9 @@ int irdma_modify_qp_roce(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 			if (iwqp->iwarp_state == IRDMA_QP_STATE_ERROR) {
 				spin_unlock_irqrestore(&iwqp->lock, flags);
 				if (udata && udata->inlen) {
+					if (iwdev->rf->sc_dev.periodic_flush)
+						return 0;
+
 					if (ib_copy_from_udata(&ureq, udata,
 					    min(sizeof(ureq), udata->inlen)))
 						return -EINVAL;
@@ -1361,6 +1382,11 @@ int irdma_modify_qp_roce(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 						       IRDMA_FLUSH_RQ |
 						       IRDMA_FLUSH_WAIT);
 
+				if (iwdev->rf->sc_dev.periodic_flush && iwqp->user_mode) {
+					mod_delayed_work(iwqp->iwdev->cleanup_wq,
+							 &iwqp->dwork_flush,
+							 msecs_to_jiffies(IRDMA_PERIODIC_FLUSH_MS));
+				}
 			} else {
 				spin_unlock_irqrestore(&iwqp->lock, flags);
 			}
@@ -1557,8 +1583,6 @@ int irdma_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr, int attr_mask,
 			offload_info->wr_rdresp_en = true;
 		if (attr->qp_access_flags & IB_ACCESS_REMOTE_READ)
 			offload_info->rd_en = true;
-		if (attr->qp_access_flags & IB_ACCESS_REMOTE_ATOMIC)
-			ctx_info->remote_atomics_en = true;
 	}
 
 	if (ctx_info->iwarp_info_valid) {
@@ -1878,10 +1902,11 @@ error:
 }
 
 /**
- * irdma_srq_event - event notification for srq limit
+ * irdma_srq_event - event notification for srq limit/srq error
  * @srq: shared srq struct
+ * @event_type: srq event type
  */
-void irdma_srq_event(struct irdma_sc_srq *srq)
+void irdma_srq_event(struct irdma_sc_srq *srq, enum ib_event_type event_type)
 {
 	struct irdma_srq *iwsrq = container_of(srq, struct irdma_srq, sc_srq);
 	struct ib_srq *ibsrq = &iwsrq->ibsrq;
@@ -1895,7 +1920,7 @@ void irdma_srq_event(struct irdma_sc_srq *srq)
 	event.device = ibsrq->device;
 	event.element.port_num = 1;
 	event.element.srq = ibsrq;
-	event.event = IB_EVENT_SRQ_LIMIT_REACHED;
+	event.event = event_type;
 	ibsrq->event_handler(&event, ibsrq->srq_context);
 }
 
@@ -2107,23 +2132,12 @@ static struct ib_srq *irdma_create_srq(struct ib_pd *ibpd,
 	}
 #endif
 
-	iwsrq->sg_list = kcalloc(uk_attrs->max_hw_wq_frags, sizeof(*iwsrq->sg_list),
-				 GFP_KERNEL);
-	if (!iwsrq->sg_list) {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0) && !defined(RHEL_8_2) && !defined(RHEL_8_3) && !defined(RHEL_8_4) && !defined(RHEL_8_5) && !defined(RHEL_8_6) && !defined(RHEL_8_7) && !defined(RHEL_8_8)
-		err_code = -ENOMEM;
-		goto error;
-#else
-		return -ENOMEM;
-#endif
-	}
-
 	refcount_set(&iwsrq->refcnt, 1);
 	spin_lock_init(&iwsrq->lock);
 	err_code = irdma_alloc_rsrc(rf, rf->allocated_srqs, rf->max_srq,
 				    &iwsrq->srq_num, &rf->next_srq);
 	if (err_code)
-		goto free_sg_list;
+		goto error;
 
 	ukinfo->max_srq_frag_cnt = attr->max_sge;
 	ukinfo->uk_attrs = uk_attrs;
@@ -2134,7 +2148,7 @@ static struct ib_srq *irdma_create_srq(struct ib_pd *ibpd,
 
 	err_code = irdma_get_srqdepth(ukinfo->uk_attrs, attr->max_wr, shift, &depth);
 	if (err_code)
-		goto free_sg_list;
+		goto free_rsrc;
 
 	/* Actual SRQ size in WRs for ring and HW */
 	ukinfo->srq_size = depth >> shift;
@@ -2209,10 +2223,8 @@ free_dmem:
 				  iwsrq->kmem.va, iwsrq->kmem.pa);
 free_rsrc:
 	irdma_free_rsrc(rf, rf->allocated_srqs, iwsrq->srq_num);
-free_sg_list:
-	kfree(iwsrq->sg_list);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0) && !defined(RHEL_8_2) && !defined(RHEL_8_3) && !defined(RHEL_8_4) && !defined(RHEL_8_5) && !defined(RHEL_8_6) && !defined(RHEL_8_7) && !defined(RHEL_8_8)
 error:
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0) && !defined(RHEL_8_2) && !defined(RHEL_8_3) && !defined(RHEL_8_4) && !defined(RHEL_8_5) && !defined(RHEL_8_6) && !defined(RHEL_8_7) && !defined(RHEL_8_8)
 	kfree(iwsrq);
 	return ERR_PTR(err_code);
 #else
@@ -2754,7 +2766,8 @@ int irdma_hwreg_mr(struct irdma_device *iwdev, struct irdma_mr *iwmr,
 #endif
 	stag_info->access_rights = irdma_get_mr_access(access,
 						       iwdev->rf->sc_dev.hw_attrs.uk_attrs.hw_rev);
-	stag_info->remote_atomics_en = (access & IB_ACCESS_REMOTE_ATOMIC) ? 1 : 0;
+	if (iwdev->rf->sc_dev.hw_attrs.uk_attrs.feature_flags & IRDMA_FEATURE_ATOMIC_OPS)
+		stag_info->remote_atomics_en = (access & IB_ACCESS_REMOTE_ATOMIC) ? 1 : 0;
 	stag_info->pd_id = iwpd->sc_pd.pd_id;
 	if (stag_info->access_rights & IRDMA_ACCESS_FLAGS_ZERO_BASED)
 		stag_info->addr_type = IRDMA_ADDR_TYPE_ZERO_BASED;
@@ -2958,9 +2971,9 @@ free_pble:
  * @udata - user info
  * @iwmr - irdma mr
  */
-static int irdma_reg_user_mr_type_qp(struct irdma_mem_reg_req req,
-				     struct ib_udata *udata,
-				     struct irdma_mr *iwmr)
+int irdma_reg_user_mr_type_qp(struct irdma_mem_reg_req req,
+			      struct ib_udata *udata,
+			      struct irdma_mr *iwmr)
 {
 	struct irdma_device *iwdev = to_iwdev(iwmr->ibmr.device);
 	struct irdma_pbl *iwpbl = &iwmr->iwpbl;
@@ -3000,9 +3013,9 @@ static int irdma_reg_user_mr_type_qp(struct irdma_mem_reg_req req,
  * @udata - user info
  * @iwmr - irdma mr
  */
-static int irdma_reg_user_mr_type_srq(struct irdma_mem_reg_req req,
-				      struct ib_udata *udata,
-				      struct irdma_mr *iwmr)
+int irdma_reg_user_mr_type_srq(struct irdma_mem_reg_req req,
+			       struct ib_udata *udata,
+			       struct irdma_mr *iwmr)
 {
 	struct irdma_device *iwdev = to_iwdev(iwmr->ibmr.device);
 	struct irdma_pbl *iwpbl = &iwmr->iwpbl;
@@ -3036,9 +3049,9 @@ static int irdma_reg_user_mr_type_srq(struct irdma_mem_reg_req req,
  * @udata - user info
  * @iwmr - irdma mr
  */
-static int irdma_reg_user_mr_type_cq(struct irdma_mem_reg_req req,
-				     struct ib_udata *udata,
-				     struct irdma_mr *iwmr)
+int irdma_reg_user_mr_type_cq(struct irdma_mem_reg_req req,
+			      struct ib_udata *udata,
+			      struct irdma_mr *iwmr)
 {
 	struct irdma_device *iwdev = to_iwdev(iwmr->ibmr.device);
 	struct irdma_pbl *iwpbl = &iwmr->iwpbl;
@@ -3065,113 +3078,6 @@ static int irdma_reg_user_mr_type_cq(struct irdma_mem_reg_req req,
 	spin_unlock_irqrestore(&ucontext->cq_reg_mem_list_lock, flags);
 
 	return 0;
-}
-
-/**
- * irdma_reg_user_mr - Register a user memory region
- * @pd: ptr of pd
- * @start: virtual start address
- * @len: length of mr
- * @virt: virtual address
- * @access: access of mr
- * @udata: user data
- */
-static struct ib_mr *irdma_reg_user_mr(struct ib_pd *pd, u64 start, u64 len,
-				       u64 virt, int access,
-				       struct ib_udata *udata)
-{
-#define IRDMA_MEM_REG_MIN_REQ_LEN offsetofend(struct irdma_mem_reg_req, sq_pages)
-	struct irdma_device *iwdev = to_iwdev(pd->device);
-	struct irdma_mem_reg_req req = {};
-	struct ib_umem *region;
-	struct irdma_mr *iwmr;
-	int err;
-
-	if (len > iwdev->rf->sc_dev.hw_attrs.max_mr_size)
-		return ERR_PTR(-EINVAL);
-
-	if (udata->inlen < IRDMA_MEM_REG_MIN_REQ_LEN)
-		return ERR_PTR(-EINVAL);
-
-#ifdef IB_UMEM_GET_V3
-	region = ib_umem_get(pd->device, start, len, access);
-#endif
-#ifdef IB_UMEM_GET_V2
-	region = ib_umem_get(udata, start, len, access);
-#endif
-#ifdef IB_UMEM_GET_V1
-	region = ib_umem_get(udata, start, len, access, 0);
-#endif
-#ifdef IB_UMEM_GET_V0
-	region = ib_umem_get(pd->uobject->context, start, len, access, 0);
-#endif
-
-	if (IS_ERR(region)) {
-		ibdev_dbg(&iwdev->ibdev,
-			  "VERBS: Failed to create ib_umem region err=%ld\n", PTR_ERR(region));
-		return (struct ib_mr *)region;
-	}
-
-	if (ib_copy_from_udata(&req, udata, min(sizeof(req), udata->inlen))) {
-		ib_umem_release(region);
-		return ERR_PTR(-EFAULT);
-	}
-
-#ifndef SET_BEST_PAGE_SZ_V1
-	iwmr = irdma_alloc_iwmr(region, pd, virt, req.reg_type);
-#else
-	iwmr = irdma_alloc_iwmr(region, pd, virt, start, req.reg_type);
-#endif
-	if (IS_ERR(iwmr)) {
-		ib_umem_release(region);
-		return (struct ib_mr *)iwmr;
-	}
-
-	switch (req.reg_type) {
-	case IRDMA_MEMREG_TYPE_QP:
-		err = irdma_reg_user_mr_type_qp(req, udata, iwmr);
-		if (err)
-			goto error;
-
-		break;
-	case IRDMA_MEMREG_TYPE_SRQ:
-		err = irdma_reg_user_mr_type_srq(req, udata, iwmr);
-		if (err)
-			goto error;
-
-		break;
-	case IRDMA_MEMREG_TYPE_CQ:
-		err = irdma_reg_user_mr_type_cq(req, udata, iwmr);
-		if (err)
-			goto error;
-
-		break;
-	case IRDMA_MEMREG_TYPE_MEM:
-		err = irdma_reg_user_mr_type_mem(iwmr, access, true);
-		if (err)
-			goto error;
-
-#ifdef CONFIG_DEBUG_FS
-#ifdef SET_BEST_PAGE_SZ_V1
-		if (iwmr->region->hugetlb && (iwmr->page_size == 0x200000 ||
-					      iwmr->page_size == 0x40000000))
-			iwdev->hugepgcnt += iwmr->page_cnt;
-#endif
-#endif
-		break;
-	default:
-		err = -EINVAL;
-		goto error;
-	}
-
-
-	return &iwmr->ibmr;
-
-error:
-	ib_umem_release(region);
-	irdma_free_iwmr(iwmr);
-
-	return ERR_PTR(err);
 }
 
 int irdma_hwdereg_mr(struct ib_mr *ib_mr)
@@ -3446,6 +3352,11 @@ static int irdma_post_send(struct ib_qp *ibqp,
 			info.read_fence = true;
 		switch (ib_wr->opcode) {
 		case IB_WR_ATOMIC_CMP_AND_SWP:
+			if (unlikely(!(dev->hw_attrs.uk_attrs.feature_flags &
+				       IRDMA_FEATURE_ATOMIC_OPS))) {
+				err = EINVAL;
+				break;
+			}
 			info.op_type = IRDMA_OP_TYPE_ATOMIC_COMPARE_AND_SWAP;
 			info.op.atomic_compare_swap.tagged_offset = ib_wr->sg_list[0].addr;
 			info.op.atomic_compare_swap.remote_tagged_offset =
@@ -3458,6 +3369,11 @@ static int irdma_post_send(struct ib_qp *ibqp,
 			err = irdma_uk_atomic_compare_swap(ukqp, &info, false);
 			break;
 		case IB_WR_ATOMIC_FETCH_AND_ADD:
+			if (unlikely(!(dev->hw_attrs.uk_attrs.feature_flags &
+				       IRDMA_FEATURE_ATOMIC_OPS))) {
+				err = EINVAL;
+				break;
+			}
 			info.op_type = IRDMA_OP_TYPE_ATOMIC_FETCH_AND_ADD;
 			info.op.atomic_fetch_add.tagged_offset = ib_wr->sg_list[0].addr;
 			info.op.atomic_fetch_add.remote_tagged_offset =
@@ -3991,7 +3907,7 @@ static int irdma_req_notify_cq(struct ib_cq *ibcq,
 	}
 
 	if ((notify_flags & IB_CQ_REPORT_MISSED_EVENTS) &&
-	    (!irdma_cq_empty(iwcq) || !list_empty(&iwcq->cmpl_generated)))
+	    (!irdma_uk_cq_empty(&iwcq->sc_cq.cq_uk) || !list_empty(&iwcq->cmpl_generated)))
 		ret = 1;
 	spin_unlock_irqrestore(&iwcq->lock, flags);
 

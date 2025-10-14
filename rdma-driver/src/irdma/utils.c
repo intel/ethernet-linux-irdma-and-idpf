@@ -992,7 +992,7 @@ static const char *const irdma_cqp_cmd_names[IRDMA_MAX_CQP_OPS] = {
 	[IRDMA_OP_DELETE_ARP_CACHE_ENTRY] = "Delete ARP Cache Cmd",
 	[IRDMA_OP_MANAGE_APBVT_ENTRY] = "Manage APBV Table Entry Cmd",
 	[IRDMA_OP_CEQ_CREATE] = "CEQ Create Cmd",
-	[IRDMA_OP_AEQ_CREATE] = "AEQ Destroy Cmd",
+	[IRDMA_OP_AEQ_CREATE] = "AEQ Create Cmd",
 	[IRDMA_OP_MANAGE_QHASH_TABLE_ENTRY] = "Manage Quad Hash Table Entry Cmd",
 	[IRDMA_OP_QP_MODIFY] = "Modify QP Cmd",
 	[IRDMA_OP_QP_UPLOAD_CONTEXT] = "Upload Context Cmd",
@@ -1366,7 +1366,7 @@ void irdma_terminate_done(struct irdma_sc_qp *qp, int timeout_occurred)
 
 static void irdma_terminate_timeout(struct timer_list *t)
 {
-	struct irdma_qp *iwqp = from_timer(iwqp, t, terminate_timer);
+	struct irdma_qp *iwqp = timer_container_of(iwqp, t, terminate_timer);
 	struct irdma_sc_qp *qp = &iwqp->sc_qp;
 
 	irdma_terminate_done(qp, 1);
@@ -1795,7 +1795,7 @@ int irdma_hw_modify_qp(struct irdma_device *iwdev, struct irdma_qp *iwqp,
 	cqp_info->post_sq = 1;
 	cqp_info->in.u.qp_modify.qp = &iwqp->sc_qp;
 	cqp_info->in.u.qp_modify.scratch = (uintptr_t)cqp_request;
-	cqp_info->create = true;
+	cqp_info->create = false;
 	status = irdma_handle_cqp_op(rf, cqp_request);
 	irdma_put_cqp_request(&rf->cqp, cqp_request);
 	if (status) {
@@ -1832,7 +1832,6 @@ int irdma_hw_modify_qp(struct irdma_device *iwdev, struct irdma_qp *iwqp,
 				cqp_info->in.u.qp_modify.scratch = (uintptr_t)cqp_request;
 				m_info->next_iwarp_state = IRDMA_QP_STATE_ERROR;
 				m_info->reset_tcp_conn = true;
-				cqp_info->create = true;
 				irdma_handle_cqp_op(rf, cqp_request);
 				irdma_put_cqp_request(&rf->cqp, cqp_request);
 			}
@@ -2229,7 +2228,7 @@ int irdma_puda_get_tcpip_info(struct irdma_puda_cmpl_info *info,
 static void irdma_hw_stats_timeout(struct timer_list *t)
 {
 	struct irdma_vsi_pestat *pf_devstat =
-		from_timer(pf_devstat, t, stats_timer);
+		timer_container_of(pf_devstat, t, stats_timer);
 	struct irdma_sc_vsi *sc_vsi = pf_devstat->vsi;
 
 	if (sc_vsi->dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_2)
@@ -3355,35 +3354,32 @@ static void clear_qp_ctx_addr(__le64 *ctx)
 
 /**
  * irdma_upload_qp_context - upload raw QP context
- * @iwqp: QP pointer
+ * @rf: RDMA PCI function
+ * @qpn: QP ID
+ * @qp_type: QP Type
  * @freeze: freeze QP
  * @raw: raw context flag
  */
-int irdma_upload_qp_context(struct irdma_qp *iwqp, bool freeze, bool raw)
+int irdma_upload_qp_context(struct irdma_pci_f *rf, u32 qpn,
+			    u8 qp_type, bool freeze, bool raw)
 {
 	struct irdma_dma_mem dma_mem;
 	struct irdma_sc_dev *dev;
-	struct irdma_sc_qp *qp;
 	struct irdma_cqp *iwcqp;
 	struct irdma_cqp_request *cqp_request;
 	struct cqp_cmds_info *cqp_info;
 	struct irdma_upload_context_info *info;
-	struct irdma_pci_f *rf;
 	int ret;
 	u32 *ctx;
 
-	rf = iwqp->iwdev->rf;
-	if (!rf)
-		return -EINVAL;
-
-	qp = &iwqp->sc_qp;
 	dev = &rf->sc_dev;
 	iwcqp = &rf->cqp;
 
 	cqp_request = irdma_alloc_and_get_cqp_request(iwcqp, true);
-	if (!cqp_request)
+	if (!cqp_request) {
+		ibdev_info(to_ibdev(dev), "QP: Could not get CQP req for QP [%u]\n", qpn);
 		return -EINVAL;
-
+	}
 	cqp_info = &cqp_request->info;
 	info = &cqp_info->in.u.qp_upload_context.info;
 	cqp_info->cqp_cmd = IRDMA_OP_QP_UPLOAD_CONTEXT;
@@ -3396,6 +3392,7 @@ int irdma_upload_qp_context(struct irdma_qp *iwqp, bool freeze, bool raw)
 					&dma_mem.pa, GFP_KERNEL);
 	if (!dma_mem.va) {
 		irdma_put_cqp_request(&rf->cqp, cqp_request);
+		ibdev_info(to_ibdev(dev), "QP: Could not allocate buffer for QP [%u]\n", qpn);
 		return -ENOMEM;
 	}
 
@@ -3403,19 +3400,19 @@ int irdma_upload_qp_context(struct irdma_qp *iwqp, bool freeze, bool raw)
 	info->buf_pa = dma_mem.pa;
 	info->raw_format = raw;
 	info->freeze_qp = freeze;
-	info->qp_type = qp->qp_uk.qp_type;	/* 1 is iWARP and 2 UDA */
-	info->qp_id = qp->qp_uk.qp_id;
+	info->qp_type = qp_type;	/* 1 is iWARP and 2 UDA */
+	info->qp_id = qpn;
 	ret = irdma_handle_cqp_op(rf, cqp_request);
 	if (ret)
 		goto error;
-	ibdev_dbg(to_ibdev(dev), "QP: PRINT CONTXT QP [%u]\n", info->qp_id);
+	ibdev_info(to_ibdev(dev), "QP: PRINT CONTXT QP [%u]\n", info->qp_id);
 	{
 		u32 i, j;
 
 		clear_qp_ctx_addr(dma_mem.va);
 		for (i = 0, j = 0; i < 32; i++, j += 4)
-			ibdev_dbg(to_ibdev(dev),
-				  "QP: [%u] %u:\t [%08X %08x %08X %08X]\n",
+			ibdev_info(to_ibdev(dev),
+				   "QP: [%u] %u:\t [%08X %08x %08X %08X]\n",
 				  info->qp_id, (j * 4), ctx[j], ctx[j + 1], ctx[j + 2],
 				  ctx[j + 3]);
 	}
@@ -3426,24 +3423,6 @@ error:
 	dma_mem.va = NULL;
 
 	return ret;
-}
-
-bool irdma_cq_empty(struct irdma_cq *iwcq)
-{
-	struct irdma_cq_uk *ukcq;
-	u64 qword3;
-	__le64 *cqe;
-	u8 polarity;
-
-	ukcq  = &iwcq->sc_cq.cq_uk;
-	if (ukcq->avoid_mem_cflct)
-		cqe = IRDMA_GET_CURRENT_EXTENDED_CQ_ELEM(ukcq);
-	else
-		cqe = IRDMA_GET_CURRENT_CQ_ELEM(ukcq);
-	get_64bit_val(cqe, 24, &qword3);
-	polarity = (u8)FIELD_GET(IRDMA_CQ_VALID, qword3);
-
-	return polarity != ukcq->polarity;
 }
 
 static bool qp_has_unpolled_cqes(struct irdma_qp *iwqp, struct irdma_cq *iwcq)

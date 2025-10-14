@@ -299,6 +299,10 @@ int idpf_ctlq_send(struct idpf_hw *hw, struct idpf_ctlq_info *cq,
 					  IDPF_CTLQ_FLAG_HOST_ID_S);
 		if (msg->data_len) {
 			struct idpf_dma_mem *buff = msg->ctx.indirect.payload;
+			if (!buff) {
+				err = -EBADMSG;
+				goto err_unlock;
+			}
 
 			desc->datalen |= cpu_to_le16(msg->data_len);
 			desc->flags |= cpu_to_le16(IDPF_CTLQ_FLAG_BUF);
@@ -475,9 +479,8 @@ int idpf_ctlq_post_rx_buffs(struct idpf_hw *hw, struct idpf_ctlq_info *cq,
 			    u16 *buff_count, struct idpf_dma_mem **buffs)
 {
 	struct idpf_ctlq_desc *desc;
-	u16 ntp = cq->next_to_post;
 	bool buffs_avail = false;
-	u16 tbp = ntp + 1;
+	u16 ntp, tbp;
 	int i = 0;
 
 	if (*buff_count > cq->ring_size)
@@ -487,6 +490,9 @@ int idpf_ctlq_post_rx_buffs(struct idpf_hw *hw, struct idpf_ctlq_info *cq,
 		buffs_avail = true;
 
 	mutex_lock(&cq->cq_lock);
+
+	ntp = cq->next_to_post;
+	tbp = ntp + 1;
 
 	if (tbp >= cq->ring_size)
 		tbp = 0;

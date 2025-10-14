@@ -65,12 +65,12 @@ extern bool irdma_upload_context;
 #define MEV_PCI_VER_B0	16
 #define MEV_PCI_VER_C0	32
 
+extern u32 wa_mem_pages;
+extern u32 hw_type_wa;
 extern bool irdma_rca_ena;
 extern bool irdma_rca_rq_post;
 extern bool irdma_rca_rq_polarity;
 extern unsigned int irdma_rca_rq_size;
-extern u32 wa_mem_pages;
-extern u32 hw_type_wa;
 extern struct auxiliary_driver i40iw_auxiliary_drv;
 
 #define IRDMA_FW_VER_DEFAULT	2
@@ -419,17 +419,17 @@ struct irdma_device {
 	struct irdma_cm_core cm_core;
 	struct irdma_ae_info ae_info;
 	DECLARE_HASHTABLE(ah_hash_tbl, 8);
-	DECLARE_HASHTABLE(ah_kernel_hash_tbl, 8);
+	DECLARE_HASHTABLE(ah_nosleep_hash_tbl, 8);
 	struct mutex ah_tbl_lock;
-	spinlock_t ah_kernel_tbl_lock;
+	spinlock_t ah_nosleep_tbl_lock;
 #ifdef CONFIG_DEBUG_FS
 	u64 ah_reused;
-	u64 ah_kernel_reused;
+	u64 ah_nosleep_reused;
 #endif
 	u32 ah_list_cnt;
 	u32 ah_list_hwm;
-	u32 ah_kernel_list_cnt;
-	u32 ah_kernel_list_hwm;
+	u32 ah_nosleep_list_cnt;
+	u32 ah_nosleep_list_hwm;
 	u32 roce_cwnd;
 	u32 roce_ackcreds;
 	u32 vendor_id;
@@ -654,7 +654,7 @@ void irdma_cq_wq_destroy(struct irdma_pci_f *rf, struct irdma_sc_cq *cq);
 void irdma_srq_add_ref(struct ib_srq *ibsrq);
 void irdma_srq_rem_ref(struct ib_srq *ibsrq);
 int irdma_find_qs_handle(struct irdma_pd *iwpd, u16 qs_handle);
-void irdma_srq_event(struct irdma_sc_srq *srq);
+void irdma_srq_event(struct irdma_sc_srq *srq, enum ib_event_type event_type);
 void irdma_srq_wq_destroy(struct irdma_pci_f *rf, struct irdma_sc_srq *srq);
 
 void irdma_chk_free_stag(struct irdma_pci_f *rf);
@@ -689,7 +689,8 @@ u16 irdma_get_vlan_ipv4(u32 *addr);
 void irdma_get_vlan_mac_ipv6(u32 *addr, u16 *vlan_id, u8 *mac);
 struct ib_mr *irdma_reg_phys_mr(struct ib_pd *ib_pd, u64 addr, u64 size,
 				int acc, u64 *iova_start, bool dma_mr);
-int irdma_upload_qp_context(struct irdma_qp *iwqp, bool freeze, bool raw);
+int irdma_upload_qp_context(struct irdma_pci_f *rf, u32 qpn,
+			    u8 qp_type, bool freeze, bool raw);
 void irdma_del_hmc_objects(struct irdma_sc_dev *dev,
 			   struct irdma_hmc_info *hmc_info, bool privileged,
 			   bool reset, enum irdma_vers vers);
@@ -700,7 +701,6 @@ int irdma_ah_cqp_op(struct irdma_pci_f *rf, struct irdma_sc_ah *sc_ah, u8 cmd,
 		    bool wait,
 		    void (*callback_fcn)(struct irdma_cqp_request *cqp_request),
 		    void *cb_param);
-bool irdma_cq_empty(struct irdma_cq *iwcq);
 #if IS_ENABLED(CONFIG_CONFIGFS_FS)
 struct irdma_device *irdma_get_device_by_name(const char *name);
 #endif

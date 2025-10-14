@@ -5,6 +5,7 @@
 
 #define IRDMA_MAX_SAVED_PHY_PGADDR	4
 #define IRDMA_FLUSH_DELAY_MS		20
+#define IRDMA_PERIODIC_FLUSH_MS		2000
 
 #define IRDMA_PKEY_TBL_SZ		1
 #define IRDMA_DEFAULT_PKEY		0xFFFF
@@ -167,7 +168,6 @@ struct irdma_srq {
 	refcount_t refcnt;
 	spinlock_t lock; /* for poll srq */
 	struct irdma_pbl *iwpbl;
-	struct ib_sge *sg_list;
 	u16 srq_head;
 	u32 srq_num;
 	u32 max_wr;
@@ -509,7 +509,8 @@ void irdma_generate_flush_completions(struct irdma_qp *iwqp);
 void irdma_remove_cmpls_list(struct irdma_cq *iwcq);
 int irdma_generated_cmpls(struct irdma_cq *iwcq, struct irdma_cq_poll_info *cq_poll_info);
 void irdma_sched_qp_flush_work(struct irdma_qp *iwqp);
-void irdma_flush_worker(struct work_struct *work);
+void irdma_kern_flush_worker(struct work_struct *work);
+void irdma_user_flush_worker(struct work_struct *work);
 struct ib_mr *wa_reg_phys_mr(struct ib_pd *pd);
 int irdma_hw_alloc_mw(struct irdma_device *iwdev, struct irdma_mr *iwmr);
 #endif /* IRDMA_VERBS_H */

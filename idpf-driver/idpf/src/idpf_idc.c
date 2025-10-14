@@ -2,6 +2,7 @@
 /* Copyright (C) 2019-2025 Intel Corporation */
 
 #include "idpf.h"
+#include "idpf_virtchnl.h"
 
 static DEFINE_IDA(idpf_idc_ida);
 

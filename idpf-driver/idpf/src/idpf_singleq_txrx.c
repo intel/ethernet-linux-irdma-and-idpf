@@ -11,9 +11,8 @@
  * @skb: pointer to skb
  * @off: pointer to struct that holds offload parameters
  *
- * Returns negative on error, 0 otherwise. If tx checksum offload can be
- * enabled, the offload params will be set accordingly. If tx checksum offload
- * cannot be enabled, the checksum related fields in offload params will be 0.
+ * Returns 0 or error (negative) if checksum offload cannot be executed, 1
+ * otherwise.
  */
 static int idpf_tx_singleq_csum(struct sk_buff *skb,
 				struct idpf_tx_offload_params *off)
@@ -99,7 +98,7 @@ static int idpf_tx_singleq_csum(struct sk_buff *skb,
 	off->td_cmd |= cmd;
 	off->hdr_offsets |= offset;
 
-	return 0;
+	return 1;
 }
 
 /**
@@ -250,6 +249,7 @@ static void
 idpf_tx_singleq_build_ctx_desc(struct idpf_queue *txq,
 			       struct idpf_tx_offload_params *offload)
 {
+	u16 seg_idx = min_t(u16, IDPF_MAX_SEGS, offload->tso_segs) - 1;
 	struct idpf_base_tx_ctx_desc *desc = idpf_tx_singleq_get_ctx_desc(txq);
 	u64 qw1 = (u64)IDPF_TX_DESC_DTYPE_CTX;
 
@@ -261,6 +261,10 @@ idpf_tx_singleq_build_ctx_desc(struct idpf_queue *txq,
 
 		u64_stats_update_begin(&txq->stats_sync);
 		u64_stats_inc(&txq->q_stats.tx.lso_pkts);
+		u64_stats_add(&txq->q_stats.tx.lso_segs_tot,
+			      offload->tso_segs);
+		u64_stats_add(&txq->q_stats.tx.lso_bytes, offload->tso_len);
+		u64_stats_inc(&txq->q_stats.tx.segs[seg_idx]);
 		u64_stats_update_end(&txq->stats_sync);
 	}
 
@@ -269,38 +273,6 @@ idpf_tx_singleq_build_ctx_desc(struct idpf_queue *txq,
 	desc->qw0.l2tag2 = 0;
 	desc->qw0.rsvd1 = 0;
 	desc->qw1 = cpu_to_le64(qw1);
-}
-
-/**
- * idpf_tx_maybe_stop_singleq - check for singleq Tx stop conditions
- * @txq: the queue to be checked
- * @desc_count: number of descriptors needed for this packet
- *
- * Returns 0 if stop is not needed
- */
-static int idpf_tx_maybe_stop_singleq(struct idpf_queue *txq,
-				      unsigned int desc_count)
-{
-	if (likely(IDPF_DESC_UNUSED(txq) > desc_count))
-		return 0;
-
-	u64_stats_update_begin(&txq->stats_sync);
-	u64_stats_inc(&txq->q_stats.tx.q_busy);
-	u64_stats_update_end(&txq->stats_sync);
-
-	netif_stop_subqueue(txq->vport->netdev, txq->idx);
-
-	/* Memory barrier before checking head and tail */
-	smp_mb();
-
-	/* Check again in a case another CPU has just made room available. */
-	if (likely(IDPF_DESC_UNUSED(txq) < desc_count))
-		return -EBUSY;
-
-	/* A reprieve! - use start_subqueue because it doesn't call schedule */
-	netif_start_subqueue(txq->vport->netdev, txq->idx);
-
-	return 0;
 }
 
 /**
@@ -315,17 +287,18 @@ static netdev_tx_t idpf_tx_singleq_frame(struct sk_buff *skb,
 {
 	struct idpf_tx_offload_params offload = { };
 	struct idpf_tx_buf *first;
+	int csum, tso, needed;
 	unsigned int count;
 	__be16 protocol;
-	int tso;
 
 	count = idpf_tx_desc_count_required(tx_q, skb);
 	if (unlikely(!count))
 		return idpf_tx_drop_skb(tx_q, skb);
 
-	if (idpf_tx_maybe_stop_singleq(tx_q,
-				       count + IDPF_TX_DESCS_PER_CACHE_LINE +
-				       IDPF_TX_DESCS_FOR_CTX)) {
+	needed = count + IDPF_TX_DESCS_PER_CACHE_LINE + IDPF_TX_DESCS_FOR_CTX;
+	if (!netif_subqueue_maybe_stop(tx_q->netdev, tx_q->idx,
+				       IDPF_DESC_UNUSED(tx_q),
+				       needed, needed)) {
 		idpf_tx_buf_hw_update(tx_q, tx_q->next_to_use, false);
 		return NETDEV_TX_BUSY;
 	}
@@ -340,7 +313,8 @@ static netdev_tx_t idpf_tx_singleq_frame(struct sk_buff *skb,
 	if (unlikely(tso < 0))
 		goto out_drop;
 
-	if (idpf_tx_singleq_csum(skb, &offload))
+	csum = idpf_tx_singleq_csum(skb, &offload);
+	if (csum < 0)
 		goto out_drop;
 
 	if (tso || offload.cd_tunneling)
@@ -706,17 +680,15 @@ static void idpf_rx_singleq_base_csum(struct idpf_queue *rx_q,
 	rx_status = FIELD_GET(VIRTCHNL2_RX_BASE_DESC_QW1_STATUS_M, qword);
 	rx_error = FIELD_GET(VIRTCHNL2_RX_BASE_DESC_QW1_ERROR_M, qword);
 
-	csum_bits.ipe = FIELD_GET(BIT(VIRTCHNL2_RX_BASE_DESC_ERROR_IPE_S),
-				  rx_error);
-	csum_bits.eipe = FIELD_GET(BIT(VIRTCHNL2_RX_BASE_DESC_ERROR_EIPE_S),
+	csum_bits.ipe = FIELD_GET(VIRTCHNL2_RX_BASE_DESC_ERROR_IPE_M, rx_error);
+	csum_bits.eipe = FIELD_GET(VIRTCHNL2_RX_BASE_DESC_ERROR_EIPE_M,
 				   rx_error);
-	csum_bits.l4e = FIELD_GET(BIT(VIRTCHNL2_RX_BASE_DESC_ERROR_L4E_S),
-				  rx_error);
-	csum_bits.pprs = FIELD_GET(BIT(VIRTCHNL2_RX_BASE_DESC_ERROR_PPRS_S),
+	csum_bits.l4e = FIELD_GET(VIRTCHNL2_RX_BASE_DESC_ERROR_L4E_M, rx_error);
+	csum_bits.pprs = FIELD_GET(VIRTCHNL2_RX_BASE_DESC_ERROR_PPRS_M,
 				   rx_error);
-	csum_bits.l3l4p = FIELD_GET(BIT(VIRTCHNL2_RX_BASE_DESC_STATUS_L3L4P_S),
+	csum_bits.l3l4p = FIELD_GET(VIRTCHNL2_RX_BASE_DESC_STATUS_L3L4P_M,
 				    rx_status);
-	csum_bits.ipv6exadd = FIELD_GET(BIT(VIRTCHNL2_RX_BASE_DESC_STATUS_IPV6EXADD_S),
+	csum_bits.ipv6exadd = FIELD_GET(VIRTCHNL2_RX_BASE_DESC_STATUS_IPV6EXADD_M,
 					rx_status);
 	csum_bits.nat = 0;
 	csum_bits.eudpe = 0;
@@ -745,19 +717,19 @@ static void idpf_rx_singleq_flex_csum(struct idpf_queue *rx_q,
 	rx_status0 = le16_to_cpu(rx_desc->flex_nic_wb.status_error0);
 	rx_status1 = le16_to_cpu(rx_desc->flex_nic_wb.status_error1);
 
-	csum_bits.ipe = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_STATUS0_XSUM_IPE_S),
+	csum_bits.ipe = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_STATUS0_XSUM_IPE_M,
 				  rx_status0);
-	csum_bits.eipe = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_STATUS0_XSUM_EIPE_S),
+	csum_bits.eipe = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_STATUS0_XSUM_EIPE_M,
 				   rx_status0);
-	csum_bits.l4e = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_STATUS0_XSUM_L4E_S),
+	csum_bits.l4e = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_STATUS0_XSUM_L4E_M,
 				  rx_status0);
-	csum_bits.eudpe = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_STATUS0_XSUM_EUDPE_S),
+	csum_bits.eudpe = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_STATUS0_XSUM_EUDPE_M,
 				    rx_status0);
-	csum_bits.l3l4p = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_STATUS0_L3L4P_S),
+	csum_bits.l3l4p = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_STATUS0_L3L4P_M,
 				    rx_status0);
-	csum_bits.ipv6exadd = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_STATUS0_IPV6EXADD_S),
+	csum_bits.ipv6exadd = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_STATUS0_IPV6EXADD_M,
 					rx_status0);
-	csum_bits.nat = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_STATUS1_NAT_S),
+	csum_bits.nat = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_STATUS1_NAT_M,
 				  rx_status1);
 	csum_bits.pprs = 0;
 
@@ -785,8 +757,7 @@ static void idpf_rx_singleq_base_hash(struct idpf_queue *rx_q,
 	if (unlikely(!(rx_q->vport->netdev->features & NETIF_F_RXHASH)))
 		return;
 
-	mask = VIRTCHNL2_RX_BASE_DESC_FLTSTAT_RSS_HASH <<
-	       VIRTCHNL2_RX_BASE_DESC_STATUS_FLTSTAT_S;
+	mask = VIRTCHNL2_RX_BASE_DESC_STATUS_FLTSTAT_M;
 	qw1 = le64_to_cpu(rx_desc->base_wb.qword1.status_error_ptype_len);
 
 	if (FIELD_GET(mask, qw1) == mask) {
@@ -816,7 +787,7 @@ static void idpf_rx_singleq_flex_hash(struct idpf_queue *rx_q,
 	if (unlikely(!(rx_q->vport->netdev->features & NETIF_F_RXHASH)))
 		return;
 
-	if (FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_STATUS0_RSS_VALID_S),
+	if (FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_STATUS0_RSS_VALID_M,
 		      le16_to_cpu(rx_desc->flex_nic_wb.status_error0)))
 		skb_set_hash(skb, le32_to_cpu(rx_desc->flex_nic_wb.rss_hash),
 			     idpf_ptype_to_htype(decoded));
@@ -967,6 +938,9 @@ static bool idpf_rx_singleq_recycle_buf(struct idpf_queue *rxq,
 		/* hand second half of page back to the queue */
 		idpf_rx_reuse_page(rxq, rx_buf);
 		recycled = true;
+		u64_stats_update_begin(&rxq->stats_sync);
+		u64_stats_inc(&rxq->q_stats.rx.page_recycles);
+		u64_stats_update_end(&rxq->stats_sync);
 	} else {
 		/* we are not reusing the buffer so unmap it */
 #ifndef HAVE_STRUCT_DMA_ATTRS
@@ -977,6 +951,9 @@ static bool idpf_rx_singleq_recycle_buf(struct idpf_queue *rxq,
 			       DMA_FROM_DEVICE);
 #endif /* !HAVE_STRUCT_DMA_ATTRS */
 		__page_frag_cache_drain(pinfo->page, pinfo->pagecnt_bias);
+		u64_stats_update_begin(&rxq->stats_sync);
+		u64_stats_inc(&rxq->q_stats.rx.page_reallocs);
+		u64_stats_update_end(&rxq->stats_sync);
 	}
 
 	/* clear contents of buffer_info */
@@ -1088,7 +1065,7 @@ static int idpf_rx_singleq_clean(struct idpf_queue *rx_q, int budget)
 		 * isn't used, if the hardware wrote DD then the length will be
 		 * non-zero
 		 */
-#define IDPF_RXD_DD BIT(VIRTCHNL2_RX_BASE_DESC_STATUS_DD_S)
+#define IDPF_RXD_DD VIRTCHNL2_RX_BASE_DESC_STATUS_DD_M
 		if (!idpf_rx_singleq_test_staterr(rx_desc,
 						  IDPF_RXD_DD))
 			break;

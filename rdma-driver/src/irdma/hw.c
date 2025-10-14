@@ -355,6 +355,7 @@ void irdma_process_aeq(struct irdma_pci_f *rf)
 			irdma_cq_rem_ref(&iwcq->ibcq);
 			break;
 		case IRDMA_AE_SRQ_LIMIT:
+		case IRDMA_AE_SRQ_CATASTROPHIC_ERROR:
 			srq_id = info->compl_ctx;
 			spin_lock_irqsave(&rf->srqtable_lock, flags);
 			iwsrq = rf->srq_table[srq_id];
@@ -368,10 +369,10 @@ void irdma_process_aeq(struct irdma_pci_f *rf)
 			}
 			irdma_srq_add_ref(&iwsrq->ibsrq);
 			spin_unlock_irqrestore(&rf->srqtable_lock, flags);
-			irdma_srq_event(&iwsrq->sc_srq);
+			irdma_srq_event(&iwsrq->sc_srq,
+					info->ae_id == IRDMA_AE_SRQ_LIMIT
+					? IB_EVENT_SRQ_LIMIT_REACHED : IB_EVENT_SRQ_ERR);
 			irdma_srq_rem_ref(&iwsrq->ibsrq);
-			break;
-		case IRDMA_AE_SRQ_CATASTROPHIC_ERROR:
 			break;
 		case IRDMA_AE_CQP_DEFERRED_COMPLETE:
 			/* Remove completed CQP requests from pending list
@@ -713,9 +714,7 @@ static void irdma_destroy_ceq(struct irdma_pci_f *rf, struct irdma_ceq *iwceq)
 		ibdev_dbg(to_ibdev(dev), "ERR: CEQ destroy completion failed %d\n",
 			  status);
 exit:
-	if (dev->hw_wa & CEQ_POLL) {
-		kfree(iwceq->sc_ceq.reg_cq);
-	}
+	kfree(iwceq->sc_ceq.reg_cq);
 	dma_free_coherent(dev->hw->device, iwceq->mem.size, iwceq->mem.va,
 			  iwceq->mem.pa);
 	iwceq->mem.va = NULL;
@@ -1366,8 +1365,7 @@ static int irdma_create_ceq(struct irdma_pci_f *rf, struct irdma_ceq *iwceq,
 	info.ceqe_base = iwceq->mem.va;
 	info.ceqe_pa = iwceq->mem.pa;
 	info.elem_cnt = ceq_size;
-	if (dev->hw_wa & CEQ_POLL)
-		info.reg_cq = kzalloc(sizeof(struct irdma_sc_cq *) * info.elem_cnt, GFP_KERNEL);
+	info.reg_cq = kzalloc(sizeof(struct irdma_sc_cq *) * info.elem_cnt, GFP_KERNEL);
 
 	iwceq->sc_ceq.ceq_id = ceq_id;
 	info.dev = dev;
@@ -1381,7 +1379,7 @@ static int irdma_create_ceq(struct irdma_pci_f *rf, struct irdma_ceq *iwceq,
 			status = irdma_sc_cceq_create(&iwceq->sc_ceq);
 	}
 
-	if (dev->hw_wa & CEQ_POLL && status)
+	if (status)
 		kfree(info.reg_cq);
 	if (status) {
 		dma_free_coherent(dev->hw->device, iwceq->mem.size,
@@ -3121,12 +3119,21 @@ void irdma_flush_wqes(struct irdma_qp *iwqp, u32 flush_mask)
 	struct irdma_pci_f *rf = iwqp->iwdev->rf;
 	u8 flush_code = iwqp->sc_qp.flush_code;
 
-	if ((!(flush_mask & IRDMA_FLUSH_SQ) && !(flush_mask & IRDMA_FLUSH_RQ)) ||
-	    ((flush_mask & IRDMA_REFLUSH) && rf->rdma_ver >= IRDMA_GEN_3))
-		return;
+	if (iwqp->iwdev->rf->sc_dev.periodic_flush) {
+		if (!(flush_mask & IRDMA_FLUSH_SQ) && !(flush_mask & IRDMA_FLUSH_RQ))
+			return;
 
-	if (atomic_cmpxchg(&iwqp->flush_issued, 0, 1))
-		return;
+		if (atomic_cmpxchg(&iwqp->flush_issued, 0, 1) &&
+		    !(flush_mask & IRDMA_REFLUSH))
+			return;
+	} else {
+		if ((!(flush_mask & IRDMA_FLUSH_SQ) && !(flush_mask & IRDMA_FLUSH_RQ)) ||
+		    ((flush_mask & IRDMA_REFLUSH) && rf->rdma_ver >= IRDMA_GEN_3))
+			return;
+
+		if (atomic_cmpxchg(&iwqp->flush_issued, 0, 1))
+			return;
+	}
 
 	/* Set flush info fields*/
 	info.sq = flush_mask & IRDMA_FLUSH_SQ;
@@ -3138,10 +3145,18 @@ void irdma_flush_wqes(struct irdma_qp *iwqp, u32 flush_mask)
 	info.rq_major_code = IRDMA_FLUSH_MAJOR_ERR;
 	info.rq_minor_code = FLUSH_GENERAL_ERR;
 	info.userflushcode = true;
-	info.err_sq_idx_valid = iwqp->sc_qp.err_sq_idx_valid;
-	info.err_sq_idx = iwqp->sc_qp.err_sq_idx;
-	info.err_rq_idx_valid = iwqp->sc_qp.err_rq_idx_valid;
-	info.err_rq_idx = iwqp->sc_qp.err_rq_idx;
+	if ((rf->rdma_ver == IRDMA_GEN_3) && (flush_mask & IRDMA_REFLUSH)) {
+		/* Reflush on MEV needs valid bit cleared for index. */
+		info.err_sq_idx_valid = 0;
+		info.err_sq_idx = 0;
+		info.err_rq_idx_valid = 0;
+		info.err_rq_idx = 0;
+	} else {
+		info.err_sq_idx_valid = iwqp->sc_qp.err_sq_idx_valid;
+		info.err_sq_idx = iwqp->sc_qp.err_sq_idx;
+		info.err_rq_idx_valid = iwqp->sc_qp.err_rq_idx_valid;
+		info.err_rq_idx = iwqp->sc_qp.err_rq_idx;
+	}
 
 	if (flush_mask & IRDMA_REFLUSH) {
 		if (info.sq)
@@ -3155,7 +3170,9 @@ void irdma_flush_wqes(struct irdma_qp *iwqp, u32 flush_mask)
 			if (info.rq && iwqp->sc_qp.rq_flush_code)
 				info.rq_minor_code = flush_code;
 		}
-		if (irdma_upload_context && irdma_upload_qp_context(iwqp, 0, 1))
+		if (irdma_upload_context &&
+		    irdma_upload_qp_context(rf, iwqp->sc_qp.qp_uk.qp_id,
+					    iwqp->sc_qp.qp_uk.qp_type, 0, 1))
 			ibdev_warn(&iwqp->iwdev->ibdev, "failed to upload QP context\n");
 		if (!iwqp->user_mode)
 			irdma_sched_qp_flush_work(iwqp);

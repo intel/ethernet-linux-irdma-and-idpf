@@ -1739,10 +1739,10 @@ static int irdma_sc_mr_reg_non_shared(struct irdma_sc_dev *dev,
 	else
 		set_64bit_val(wqe, 48,
 			      FIELD_PREP(IRDMA_CQPSQ_STAG_FIRSTPMPBLIDX, info->first_pm_pbl_index));
-	set_64bit_val(wqe, 40, FIELD_PREP(IRDMA_CQPSQ_STAG_NON_CACHED, info->non_cached) |
-		      info->hmc_fcn_index);
-	set_64bit_val(wqe, 56,
-		      FIELD_PREP(IRDMA_CQPSQ_PASID, info->pasid));
+
+	hdr = FIELD_PREP(IRDMA_CQPSQ_STAG_NON_CACHED, info->non_cached) |
+	      info->hmc_fcn_index;
+	set_64bit_val(wqe, 40, hdr);
 
 	addr_type = (info->addr_type == IRDMA_ADDR_TYPE_VA_BASED) ? 1 : 0;
 	hdr = FIELD_PREP(IRDMA_CQPSQ_OPCODE, IRDMA_CQP_OP_REG_MR) |
@@ -1754,7 +1754,6 @@ static int irdma_sc_mr_reg_non_shared(struct irdma_sc_dev *dev,
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_VABASEDTO, addr_type) |
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_USEHMCFNIDX, info->use_hmc_fcn_index) |
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_PLACEMENTTYPE, info->placement_type) |
-	      FIELD_PREP(IRDMA_CQPSQ_PASID_VALID, info->pasid_valid) |
 	      FIELD_PREP(IRDMA_CQPSQ_STAG_REMOTE_ATOMIC_EN,
 			 info->remote_atomics_en) |
 	      FIELD_PREP(IRDMA_CQPSQ_WQEVALID, cqp->polarity);
@@ -4975,6 +4974,7 @@ static int irdma_sc_commit_fpm_val(struct irdma_sc_cqp *cqp, u64 scratch,
 
 	hdr = FIELD_PREP(IRDMA_CQPSQ_BUFSIZE, IRDMA_COMMIT_FPM_BUF_SIZE) |
 	      FIELD_PREP(IRDMA_CQPSQ_OPCODE, IRDMA_CQP_OP_COMMIT_FPM_VAL) |
+	      FIELD_PREP(IRDMA_CQPSQ_CFPM_HW_FLUSH_TIMER_DISABLE, cqp->dev->periodic_flush) |
 	      FIELD_PREP(IRDMA_CQPSQ_WQEVALID, cqp->polarity);
 
 	dma_wmb(); /* make sure WQE is written before valid bit is set */
@@ -5423,8 +5423,10 @@ int irdma_sc_aeq_destroy(struct irdma_sc_aeq *aeq, u64 scratch, bool post_sq)
 	u64 hdr;
 
 	dev = aeq->dev;
-	if (dev->privileged)
-		writel(0, dev->hw_regs[IRDMA_PFINT_AEQCTL]);
+
+	if (dev->hw_attrs.uk_attrs.hw_rev <= IRDMA_GEN_2)
+		if (dev->privileged)
+			writel(0, dev->hw_regs[IRDMA_PFINT_AEQCTL]);
 
 	cqp = dev->cqp;
 	wqe = irdma_sc_cqp_get_next_send_wqe(cqp, scratch);
@@ -7706,8 +7708,6 @@ void mev_enable_hw_wa(struct irdma_sc_dev *dev, u64 hw_wa,
 			      CQ_NO_CHECKFLOW;
 		break;
 	case MEV_C0_45:
-		if (dev->hw_attrs.uk_attrs.hw_rev == IRDMA_GEN_4)
-			dev->hw_wa |= REDUCE_ORD_IRD;
 		break;
 	case MMG_DEV_00:
 		dev->hw_wa |= REDUCE_ORD_IRD |

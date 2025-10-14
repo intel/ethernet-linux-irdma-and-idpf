@@ -4,6 +4,7 @@
 #include "kcompat.h"
 #include <linux/ethtool.h>
 #include "idpf.h"
+#include "idpf_ptp.h"
 
 #ifdef SIOCETHTOOL
 #ifdef ETHTOOL_GRXRINGS
@@ -124,6 +125,7 @@ static int idpf_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
 	u16 i;
 
 	adapter = np->adapter;
+
 	idpf_vport_cfg_lock(adapter);
 
 	if (!idpf_is_cap_ena_all(adapter, IDPF_RSS_CAPS, IDPF_CAP_RSS)) {
@@ -140,7 +142,6 @@ static int idpf_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
 	if (hfunc)
 		*hfunc = ETH_RSS_HASH_TOP;
 #endif /* HAVE_ETHTOOL_RXFH_PARAM or HAVE_RXFH_HASHFUNC */
-
 	if (key)
 		memcpy(key, rss_data->rss_key, rss_data->rss_key_size);
 
@@ -192,7 +193,6 @@ static int idpf_set_rxfh(struct net_device *netdev, const u32 *indir,
 
 	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
-
 	if (!idpf_is_cap_ena_all(adapter, IDPF_RSS_CAPS, IDPF_CAP_RSS)) {
 		err = -EOPNOTSUPP;
 		goto unlock_mutex;
@@ -201,9 +201,13 @@ static int idpf_set_rxfh(struct net_device *netdev, const u32 *indir,
 	rss_data = &adapter->vport_config[vport->idx]->user_config.rss_data;
 	if (!np->active)
 		goto unlock_mutex;
+
 #if defined(HAVE_ETHTOOL_RXFH_PARAM) || defined(HAVE_RXFH_HASHFUNC)
-	if (hfunc != ETH_RSS_HASH_NO_CHANGE && hfunc != ETH_RSS_HASH_TOP)
+	if (hfunc != ETH_RSS_HASH_NO_CHANGE &&
+	    hfunc != ETH_RSS_HASH_TOP) {
+		err = -EOPNOTSUPP;
 		goto unlock_mutex;
+	}
 #endif /* HAVE_ETHTOOL_RXFH_PARAM || HAVE_RXFH_HASHFUNC */
 
 	if (key)
@@ -304,14 +308,14 @@ static int idpf_set_channels(struct net_device *netdev,
 	 * max combined_count + [tx|rx]_count. These checks should catch that.
 	 */
 	if (num_req_tx_q > vport_config->max_q.max_txq) {
-		dev_err(dev, "Maximum TX queues is %d\n",
-			vport_config->max_q.max_txq);
+		dev_info(dev, "Maximum TX queues is %d\n",
+			 vport_config->max_q.max_txq);
 		err = -EINVAL;
 		goto unlock_mutex;
 	}
 	if (num_req_rx_q > vport_config->max_q.max_rxq) {
-		dev_err(dev, "Maximum RX queues is %d\n",
-			vport_config->max_q.max_rxq);
+		dev_info(dev, "Maximum RX queues is %d\n",
+			 vport_config->max_q.max_rxq);
 		err = -EINVAL;
 		goto unlock_mutex;
 	}
@@ -488,7 +492,7 @@ unlock_mutex:
  * values to be inserted while looping over multiple structures for a given
  * statistics array. Thus, every statistic string in an array should have the
  * same type and number of format specifiers, to be formatted by variadic
- * arguments to the idpf_add_port_stat_string() helper function.
+ * arguments to the idpf_add_stat_string() helper function.
  */
 struct idpf_stats {
 	char stat_string[ETH_GSTRING_LEN];
@@ -581,6 +585,14 @@ static const struct idpf_stats idpf_gstrings_port_stats[] = {
 	IDPF_PORT_STAT("rx-csum-complete-offload", port_stats.extra_stats.rx_csum_complete),
 	IDPF_PORT_STAT("rx-csum-unnecessary", port_stats.extra_stats.rx_csum_unnecessary),
 #endif /* IDPF_ADD_PROBES */
+	IDPF_PORT_STAT("tx-lso_pkts", port_stats.tx_lso_pkts),
+	IDPF_PORT_STAT("tx-lso_bytes", port_stats.tx_lso_bytes),
+	IDPF_PORT_STAT("tx-lso_segs_tot", port_stats.tx_lso_segs_tot),
+	IDPF_PORT_STAT("rx-page_recycles", port_stats.rx_page_recycles),
+	IDPF_PORT_STAT("rx-page_reallocs", port_stats.rx_page_reallocs),
+	IDPF_PORT_STAT("rx-gro_hw_pkts", port_stats.rx_rsc_pkts),
+	IDPF_PORT_STAT("rx-gro_hw_bytes", port_stats.rx_rsc_bytes),
+	IDPF_PORT_STAT("rx-gro_hw_segs_tot", port_stats.rx_rsc_segs_tot),
 };
 
 #define IDPF_PORT_STATS_LEN ARRAY_SIZE(idpf_gstrings_port_stats)
@@ -649,9 +661,9 @@ static void __idpf_add_qstat_strings(u8 **p, const struct idpf_stats *stats,
  * idpf_add_stat_strings - Copy port stat strings into ethtool buffer
  * @p: ethtool buffer
  * @stats: struct to copy from
- * @size: size of the corresponding stats array
+ * @size: size of stats array to copy from
  */
-static void idpf_add_stat_strings(u8 **p, const struct idpf_stats stats[],
+static void idpf_add_stat_strings(u8 **p, const struct idpf_stats *stats,
 				  const unsigned int size)
 {
 	unsigned int i;
@@ -662,6 +674,10 @@ static void idpf_add_stat_strings(u8 **p, const struct idpf_stats stats[],
 #else
 		ethtool_sprintf(p, "%s", stats[i].stat_string);
 #endif /* HAVE_ETHTOOL_PUTS */
+	for (i = 0; i < IDPF_MAX_SEGS; i++)
+		ethtool_sprintf(p, "lso_num_segs_%u", i + 1);
+	for (i = 0; i < IDPF_MAX_SEGS; i++)
+		ethtool_sprintf(p, "rx-gro_hw_num_segs_%u", i + 1);
 #ifdef IDPF_ADD_PROBES
 	for (i = 0; i < IDPF_RX_MAX_PTYPE; i++)
 		ethtool_sprintf(p, "ptype[%u]", i);
@@ -682,7 +698,6 @@ static void idpf_get_stat_strings(struct net_device *netdev, u8 *data)
 	unsigned int i;
 
 	vport_config = np->adapter->vport_config[np->vport_idx];
-
 	idpf_add_stat_strings(&data, idpf_gstrings_port_stats,
 			      IDPF_PORT_STATS_LEN);
 
@@ -693,6 +708,7 @@ static void idpf_get_stat_strings(struct net_device *netdev, u8 *data)
 	for (i = 0; i < vport_config->max_q.max_txq; i++)
 		idpf_add_qstat_strings(&data, idpf_gstrings_tx_queue_stats,
 				       "tx", i);
+
 	for (i = 0; i < vport_config->max_q.max_rxq; i++)
 		idpf_add_qstat_strings(&data, idpf_gstrings_rx_queue_stats,
 				       "rx", i);
@@ -871,11 +887,11 @@ static int idpf_get_sset_count(struct net_device *netdev, int sset)
 	max_rxq = vport_config->max_q.max_rxq;
 
 	size = IDPF_PORT_STATS_LEN + (IDPF_TX_QUEUE_STATS_LEN * max_txq) +
-		(IDPF_RX_QUEUE_STATS_LEN * max_rxq);
+	       (IDPF_RX_QUEUE_STATS_LEN * max_rxq);
+	size += (IDPF_MAX_SEGS * 2);
 #ifdef IDPF_ADD_PROBES
 	size +=	IDPF_PTYPE_STATS_LEN;
 #endif /* IDPF_ADD_PROBES */
-
 	return size;
 }
 
@@ -927,12 +943,12 @@ static void idpf_add_one_ethtool_stat(u64 *data, const void *pstat,
  * @data: ethtool stats buffer
  * @q: the queue to copy
  *
- * Queue statistics must be copied while protected by
- * u64_stats_fetch_begin, so we can't directly use idpf_add_ethtool_stats.
- * Assumes that queue stats are defined in idpf_gstrings_queue_stats. If the
- * queue pointer is null, zero out the queue stat values and update the data
- * pointer. Otherwise safely copy the stats from the queue into the supplied
- * buffer and update the data pointer when finished.
+ * Queue statistics must be copied while protected by u64_stats_fetch_begin,
+ * so we can't directly use idpf_add_ethtool_stats. Assumes that queue stats
+ * are defined in idpf_gstrings_queue_stats. If the queue pointer is null,
+ * zero out the queue stat values and update the data pointer. Otherwise
+ * safely copy the stats from the queue into the supplied buffer and update
+ * the data pointer when finished.
  *
  * This function expects to be called while under rcu_read_lock().
  */
@@ -998,15 +1014,23 @@ static void idpf_add_empty_queue_stats(u64 **data, u16 qtype)
  */
 static void idpf_add_port_stats(struct idpf_vport *vport, u64 **data)
 {
-	unsigned int size, start, i;
+	unsigned int size = IDPF_PORT_STATS_LEN;
+	unsigned int start;
+	unsigned int i;
 
 	do {
-		size = 0;
 		start = u64_stats_fetch_begin(&vport->port_stats.stats_sync);
-		for (i = 0; i < IDPF_PORT_STATS_LEN; i++)
+		for (i = 0; i < size; i++)
 			idpf_add_one_ethtool_stat(&(*data)[i], vport,
 						  &idpf_gstrings_port_stats[i]);
-		size += IDPF_PORT_STATS_LEN;
+		for (i = 0; i < IDPF_MAX_SEGS; i++)
+			(*data)[i + size] =
+				u64_stats_read(&vport->port_stats.lso_seg[i]);
+		size += IDPF_MAX_SEGS;
+		for (i = 0; i < IDPF_MAX_SEGS; i++)
+			(*data)[i + size] =
+				u64_stats_read(&vport->port_stats.rsc_seg[i]);
+		size += IDPF_MAX_SEGS;
 #ifdef IDPF_ADD_PROBES
 		for (i = 0; i < IDPF_RX_MAX_PTYPE; i++)
 			(*data)[i + size] = u64_stats_read(&vport->ptype_stats[i]);
@@ -1026,7 +1050,7 @@ static void idpf_collect_queue_stats(struct idpf_vport *vport)
 {
 	struct idpf_port_stats *pstats = &vport->port_stats;
 	struct idpf_q_grp *q_grp = &vport->dflt_grp.q_grp;
-	int i;
+	int i, j;
 
 	/* zero out port stats since they're actually tracked in per
 	 * queue stats; this is only for reporting
@@ -1040,9 +1064,27 @@ static void idpf_collect_queue_stats(struct idpf_vport *vport)
 	u64_stats_set(&pstats->tx_busy, 0);
 	u64_stats_set(&pstats->tx_drops, 0);
 	u64_stats_set(&pstats->tx_dma_map_errs, 0);
+	u64_stats_set(&pstats->rx_page_recycles, 0);
+	u64_stats_set(&pstats->rx_page_reallocs, 0);
+	u64_stats_set(&pstats->rx_rsc_pkts, 0);
+	u64_stats_set(&pstats->rx_rsc_bytes, 0);
+	u64_stats_set(&pstats->rx_rsc_segs_tot, 0);
+	u64_stats_set(&pstats->tx_lso_pkts, 0);
+	u64_stats_set(&pstats->tx_lso_bytes, 0);
+	u64_stats_set(&pstats->tx_lso_segs_tot, 0);
+
+	for (i = 0; i < IDPF_MAX_SEGS; i++) {
+		u64_stats_set(&pstats->rsc_seg[i], 0);
+		u64_stats_set(&pstats->lso_seg[i], 0);
+	}
+
+	u64_stats_update_end(&pstats->stats_sync);
 
 	for (i = 0; i < q_grp->num_rxq; i++) {
 		u64 hw_csum_err, hsplit, hsplit_hbo, bad_descs;
+		u64 rsc_pkts, rsc_bytes, rsc_segs_tot, k;
+		u64 page_recycles = 0, page_reallocs = 0;
+		u64 segs[IDPF_MAX_SEGS];
 		struct idpf_queue *rxq = q_grp->rxqs[i];
 		struct idpf_rx_queue_stats *stats;
 		unsigned int start;
@@ -1055,6 +1097,19 @@ static void idpf_collect_queue_stats(struct idpf_vport *vport)
 			hsplit = u64_stats_read(&stats->hsplit_pkts);
 			hsplit_hbo = u64_stats_read(&stats->hsplit_buf_ovf);
 			bad_descs = u64_stats_read(&stats->bad_descs);
+
+			/* These counters will be 0 in splitq mode. The
+			 * page stats will be accumulated below for all
+			 * of the buffer queues.
+			 */
+			page_recycles = u64_stats_read(&stats->page_recycles);
+			page_reallocs = u64_stats_read(&stats->page_reallocs);
+			rsc_pkts = u64_stats_read(&stats->rsc_pkts);
+			rsc_bytes = u64_stats_read(&stats->rsc_bytes);
+			rsc_segs_tot = u64_stats_read(&stats->rsc_segs_tot);
+
+			for (k = 0; k < IDPF_MAX_SEGS; k++)
+				segs[k] = u64_stats_read(&stats->segs[k]);
 		} while (u64_stats_fetch_retry(&rxq->stats_sync, start));
 
 		u64_stats_update_begin(&pstats->stats_sync);
@@ -1062,30 +1117,66 @@ static void idpf_collect_queue_stats(struct idpf_vport *vport)
 		u64_stats_add(&pstats->rx_hsplit, hsplit);
 		u64_stats_add(&pstats->rx_hsplit_hbo, hsplit_hbo);
 		u64_stats_add(&pstats->rx_bad_descs, bad_descs);
+
+		u64_stats_add(&pstats->rx_page_recycles, page_recycles);
+		u64_stats_add(&pstats->rx_page_reallocs, page_reallocs);
+		u64_stats_add(&pstats->rx_rsc_pkts, rsc_pkts);
+		u64_stats_add(&pstats->rx_rsc_bytes, rsc_bytes);
+		u64_stats_add(&pstats->rx_rsc_segs_tot, rsc_segs_tot);
+
+		for (k = 0; k < IDPF_MAX_SEGS; k++)
+			u64_stats_add(&pstats->rsc_seg[k], segs[k]);
+
 		u64_stats_update_end(&pstats->stats_sync);
 	}
 
-	for (i = 0; i < q_grp->num_txq; i++) {
-		u64 linearize, qbusy, skb_drops, dma_map_errs;
-		struct idpf_queue *txq = q_grp->txqs[i];
-		struct idpf_tx_queue_stats *stats;
-		unsigned int start;
+	for (i = 0; i < q_grp->num_txq_grp; i++) {
+		struct idpf_txq_group *txq_grp = &q_grp->txq_grps[i];
 
-		do {
-			start = u64_stats_fetch_begin(&txq->stats_sync);
+		for (j = 0; j < txq_grp->num_txq; j++) {
+			u64 linearize, qbusy, skb_drops, dma_map_errs;
+			struct idpf_queue *txq = txq_grp->txqs[j];
+			u64 lso_pkts, lso_bytes, lso_segs_tot;
+			u64 segs[IDPF_MAX_SEGS];
+			unsigned int k;
+			struct idpf_tx_queue_stats *stats;
+			unsigned int start;
 
-			stats = &txq->q_stats.tx;
-			linearize = u64_stats_read(&stats->linearize);
-			qbusy = u64_stats_read(&stats->q_busy);
-			skb_drops = u64_stats_read(&stats->skb_drops);
-			dma_map_errs = u64_stats_read(&stats->dma_map_errs);
+			if (!txq)
+				continue;
+
+			do {
+				start = u64_stats_fetch_begin(&txq->stats_sync);
+
+				stats = &txq->q_stats.tx;
+				linearize = u64_stats_read(&stats->linearize);
+				qbusy = u64_stats_read(&stats->q_busy);
+				skb_drops = u64_stats_read(&stats->skb_drops);
+				dma_map_errs = u64_stats_read(&stats->dma_map_errs);
+
+				lso_pkts = u64_stats_read(&stats->lso_pkts);
+				lso_bytes = u64_stats_read(&stats->lso_bytes);
+				lso_segs_tot = u64_stats_read(&stats->lso_segs_tot);
+
+				for (k = 0; k < IDPF_MAX_SEGS; k++)
+					segs[k] = u64_stats_read(&stats->segs[k]);
 			} while (u64_stats_fetch_retry(&txq->stats_sync, start));
 
-		u64_stats_update_begin(&pstats->stats_sync);
-		u64_stats_add(&pstats->tx_linearize, linearize);
-		u64_stats_add(&pstats->tx_busy, qbusy);
-		u64_stats_add(&pstats->tx_drops, skb_drops);
-		u64_stats_add(&pstats->tx_dma_map_errs, dma_map_errs);
+			u64_stats_update_begin(&pstats->stats_sync);
+			u64_stats_add(&pstats->tx_linearize, linearize);
+			u64_stats_add(&pstats->tx_busy, qbusy);
+			u64_stats_add(&pstats->tx_drops, skb_drops);
+			u64_stats_add(&pstats->tx_dma_map_errs, dma_map_errs);
+
+			u64_stats_add(&pstats->tx_lso_pkts, lso_pkts);
+			u64_stats_add(&pstats->tx_lso_bytes, lso_bytes);
+			u64_stats_add(&pstats->tx_lso_segs_tot, lso_segs_tot);
+
+			for (k = 0; k < IDPF_MAX_SEGS; k++)
+				u64_stats_add(&pstats->lso_seg[k], segs[k]);
+
+			u64_stats_update_begin(&pstats->stats_sync);
+		}
 	}
 }
 
@@ -1106,7 +1197,8 @@ static void idpf_get_ethtool_stats(struct net_device *netdev,
 	struct idpf_vport_config *vport_config;
 	struct idpf_vport *vport;
 	struct idpf_q_grp *q_grp;
-	unsigned int i;
+	unsigned int total = 0;
+	unsigned int i, j;
 	u16 qtype;
 
 	idpf_vport_cfg_lock(adapter);
@@ -1126,15 +1218,22 @@ static void idpf_get_ethtool_stats(struct net_device *netdev,
 
 	q_grp = &vport->dflt_grp.q_grp;
 	qtype = VIRTCHNL2_QUEUE_TYPE_TX;
-	for (i = 0; i < q_grp->num_txq; i++) {
-		struct idpf_queue *txq = q_grp->txqs[i];
+	for (i = 0; i < q_grp->num_txq_grp; i++) {
+		struct idpf_txq_group *txq_grp = &q_grp->txq_grps[i];
 
+		for (j = 0; j < txq_grp->num_txq; j++, total++) {
+			struct idpf_queue *txq = txq_grp->txqs[j];
+
+			if (!txq) {
+				idpf_add_empty_queue_stats(&data, qtype);
+			} else {
 #ifdef HAVE_XDP_SUPPORT
-		if (test_bit(__IDPF_Q_XDP, txq->flags))
-			continue;
-		else
+				if (test_bit(__IDPF_Q_XDP, txq->flags))
+					continue;
 #endif /* HAVE_XDP_SUPPORT */
-			idpf_add_queue_stats(&data, txq);
+				idpf_add_queue_stats(&data, txq);
+			}
+		}
 	}
 
 	/* It is critical we provide a constant number of stats back to
@@ -1142,8 +1241,9 @@ static void idpf_get_ethtool_stats(struct net_device *netdev,
 	 * there is no way to inform userspace the size has changed between
 	 * ioctl calls. This will fill in any missing stats with zero.
 	 */
-	for (; i < vport_config->max_q.max_txq; i++)
+	for (; total < vport_config->max_q.max_txq; total++)
 		idpf_add_empty_queue_stats(&data, VIRTCHNL2_QUEUE_TYPE_TX);
+	total = 0;
 
 	qtype = VIRTCHNL2_QUEUE_TYPE_RX;
 	for (i = 0; i < q_grp->num_rxq; i++) {
@@ -1221,12 +1321,12 @@ static int idpf_get_q_coalesce(struct net_device *netdev,
 	if (q_num < q_grp->num_rxq)
 		__idpf_get_q_coalesce(ec, q_grp->rxqs[q_num]);
 
-	if (q_num < q_grp->num_txq) {
+	if (q_num < vport->num_txq) {
 		struct idpf_queue *q;
 
 		q = idpf_is_queue_model_split(q_grp->txq_model) ?
-			q_grp->txqs[q_num]->tx.complq :
-			q_grp->txqs[q_num];
+			vport->txqs[q_num]->txq_grp->complq :
+			vport->txqs[q_num];
 
 		__idpf_get_q_coalesce(ec, q);
 	}
@@ -1288,23 +1388,24 @@ static int idpf_get_per_q_coalesce(struct net_device *netdev, u32 q_num,
 static int __idpf_set_q_coalesce(struct ethtool_coalesce *ec,
 				 struct idpf_queue *q, bool is_rxq)
 {
-	u32 use_adaptive_coalesce, old_itr, new_itr;
+	u32 use_adaptive_coalesce, coalesce_usecs;
 	struct idpf_q_vector *qv = q->q_vector;
 	bool is_dim_ena = false;
+	u16 itr_val;
 
 	if (is_rxq) {
 		is_dim_ena = IDPF_ITR_IS_DYNAMIC(qv->rx_intr_mode);
 		use_adaptive_coalesce = ec->use_adaptive_rx_coalesce;
-		new_itr = ec->rx_coalesce_usecs;
-		old_itr = qv->rx_itr_value;
+		coalesce_usecs = ec->rx_coalesce_usecs;
+		itr_val = qv->rx_itr_value;
 	} else {
 		is_dim_ena = IDPF_ITR_IS_DYNAMIC(qv->tx_intr_mode);
 		use_adaptive_coalesce = ec->use_adaptive_tx_coalesce;
-		new_itr = ec->tx_coalesce_usecs;
-		old_itr = qv->tx_itr_value;
+		coalesce_usecs = ec->tx_coalesce_usecs;
+		itr_val = qv->tx_itr_value;
 	}
 
-	if (new_itr != old_itr && use_adaptive_coalesce) {
+	if (coalesce_usecs != itr_val && use_adaptive_coalesce) {
 		netdev_err(q->vport->netdev, "Cannot set coalesce usecs if adaptive enabled\n");
 
 		return -EINVAL;
@@ -1313,22 +1414,23 @@ static int __idpf_set_q_coalesce(struct ethtool_coalesce *ec,
 	if (is_dim_ena && use_adaptive_coalesce)
 		return 0;
 
-	if (new_itr > IDPF_ITR_MAX) {
+	if (coalesce_usecs > IDPF_ITR_MAX) {
 		netdev_err(q->vport->netdev,
 			   "Invalid value, %d-usecs range is 0-%d\n",
-			   new_itr, IDPF_ITR_MAX);
+			   coalesce_usecs, IDPF_ITR_MAX);
+
 		return -EINVAL;
 	}
 
-	if (new_itr % 2 != 0) {
-		new_itr--;
+	if (coalesce_usecs % 2) {
+		coalesce_usecs--;
 		netdev_info(q->vport->netdev,
 			    "HW only supports even ITR values, ITR rounded to %d\n",
-			    new_itr);
+			    coalesce_usecs);
 	}
 
 	if (is_rxq) {
-		qv->rx_itr_value = new_itr;
+		qv->rx_itr_value = coalesce_usecs;
 		if (use_adaptive_coalesce) {
 			qv->rx_intr_mode = IDPF_ITR_DYNAMIC;
 		} else {
@@ -1337,7 +1439,7 @@ static int __idpf_set_q_coalesce(struct ethtool_coalesce *ec,
 						  false);
 		}
 	} else {
-		qv->tx_itr_value = new_itr;
+		qv->tx_itr_value = coalesce_usecs;
 		if (use_adaptive_coalesce) {
 			qv->tx_intr_mode = IDPF_ITR_DYNAMIC;
 		} else {
@@ -1345,6 +1447,7 @@ static int __idpf_set_q_coalesce(struct ethtool_coalesce *ec,
 			idpf_vport_intr_write_itr(qv, qv->tx_itr_value, true);
 		}
 	}
+
 	/* Update of static/dynamic itr will be taken care when interrupt is
 	 * fired
 	 */
@@ -1353,25 +1456,26 @@ static int __idpf_set_q_coalesce(struct ethtool_coalesce *ec,
 
 /**
  * idpf_set_q_coalesce - set ITR values for specific queue
- * @q_grp: Queue resources
+ * @vport: vport associated to the queue that need updating
  * @ec: coalesce settings to program the device with
  * @q_num: update ITR/INTRL (coalesce) settings for this queue number/index
  * @is_rxq: is queue type rx
  *
  * Return 0 on success, and negative on failure
  */
-static int idpf_set_q_coalesce(struct idpf_q_grp *q_grp,
+static int idpf_set_q_coalesce(struct idpf_vport *vport,
 			       struct ethtool_coalesce *ec,
 			       int q_num, bool is_rxq)
 {
+	struct idpf_q_grp *q_grp = &vport->dflt_grp.q_grp;
 	struct idpf_queue *q;
 
 	if (is_rxq)
 		q = q_grp->rxqs[q_num];
 	else
 		q = idpf_is_queue_model_split(q_grp->txq_model) ?
-			q_grp->txqs[q_num]->tx.complq :
-			q_grp->txqs[q_num];
+			vport->txqs[q_num]->txq_grp->complq :
+			vport->txqs[q_num];
 
 	if (q && __idpf_set_q_coalesce(ec, q, is_rxq))
 		return -EINVAL;
@@ -1410,15 +1514,15 @@ static int idpf_set_coalesce(struct net_device *netdev,
 	if (!np->active)
 		goto unlock_mutex;
 
-	q_grp = &vport->dflt_grp.q_grp;
-	for (i = 0; i < q_grp->num_txq; i++) {
-		err = idpf_set_q_coalesce(q_grp, ec, i, false);
+	for (i = 0; i < vport->num_txq; i++) {
+		err = idpf_set_q_coalesce(vport, ec, i, false);
 		if (err)
 			goto unlock_mutex;
 	}
 
+	q_grp = &vport->dflt_grp.q_grp;
 	for (i = 0; i < q_grp->num_rxq; i++) {
-		err = idpf_set_q_coalesce(q_grp, ec, i, true);
+		err = idpf_set_q_coalesce(vport, ec, i, true);
 		if (err)
 			goto unlock_mutex;
 	}
@@ -1449,15 +1553,15 @@ static int idpf_set_per_q_coalesce(struct net_device *netdev, u32 q_num,
 	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
-	q_grp = &vport->dflt_grp.q_grp;
-	if (q_num < q_grp->num_txq) {
-		err = idpf_set_q_coalesce(q_grp, ec, q_num, false);
+	if (q_num < vport->num_txq) {
+		err = idpf_set_q_coalesce(vport, ec, q_num, false);
 		if (err)
 			goto vport_unlock;
 	}
 
+	q_grp = &vport->dflt_grp.q_grp;
 	if (q_num < q_grp->num_rxq)
-		err = idpf_set_q_coalesce(q_grp, ec, q_num, true);
+		err = idpf_set_q_coalesce(vport, ec, q_num, true);
 
 vport_unlock:
 	idpf_vport_cfg_unlock(adapter);
@@ -1539,39 +1643,42 @@ static void idpf_get_drvinfo(struct net_device *netdev,
 }
 
 /**
- * idpf_set_timestamp_filters - Set the supported timestamping mode
+ * idpf_get_timestamp_filters - Get the supported timestamping mode
  * @vport: Virtual port structure
  * @info: ethtool timestamping info structure
  *
- * Set the Tx/Rx timestamp filters
+ * Get the Tx/Rx timestamp filters.
  */
 #ifdef HAVE_ETHTOOL_KERNEL_TS_INFO
-static void idpf_set_timestamp_filters(struct idpf_vport *vport,
+static void idpf_get_timestamp_filters(struct idpf_vport *vport,
 				       struct kernel_ethtool_ts_info *info)
 #else
-static void idpf_set_timestamp_filters(struct idpf_vport *vport,
+static void idpf_get_timestamp_filters(struct idpf_vport *vport,
 				       struct ethtool_ts_info *info)
 #endif /* HAVE_ETHTOOL_KERNEL_TS_INFO */
 {
-	if (vport->adapter->ptp.tx_tstamp_access == IDPF_PTP_NONE ||
-	    !vport->tx_tstamp_caps)
-		return;
-
-	info->so_timestamping = SOF_TIMESTAMPING_TX_SOFTWARE |
-				SOF_TIMESTAMPING_RX_SOFTWARE |
-				SOF_TIMESTAMPING_SOFTWARE |
-				SOF_TIMESTAMPING_TX_HARDWARE |
-				SOF_TIMESTAMPING_RX_HARDWARE |
+	info->so_timestamping = SOF_TIMESTAMPING_RX_HARDWARE |
 				SOF_TIMESTAMPING_RAW_HARDWARE;
 
-	info->tx_types = BIT(HWTSTAMP_TX_OFF) | BIT(HWTSTAMP_TX_ON);
+	info->tx_types = BIT(HWTSTAMP_TX_OFF);
 	info->rx_filters = BIT(HWTSTAMP_FILTER_NONE) | BIT(HWTSTAMP_FILTER_ALL);
+
+	if (!vport->tx_tstamp_caps ||
+	    vport->adapter->ptp->tx_tstamp_access == IDPF_PTP_NONE)
+		return;
+
+	info->so_timestamping |= SOF_TIMESTAMPING_TX_SOFTWARE |
+				 SOF_TIMESTAMPING_TX_HARDWARE;
+
+	info->tx_types |= BIT(HWTSTAMP_TX_ON);
 }
 
 /**
  * idpf_get_ts_info - Get device PHC association
  * @netdev: network interface device structure
  * @info: ethtool timestamping info structure
+ *
+ * Return: 0 on success, -errno otherwise.
  */
 #ifdef HAVE_ETHTOOL_KERNEL_TS_INFO
 static int idpf_get_ts_info(struct net_device *netdev,
@@ -1581,25 +1688,33 @@ static int idpf_get_ts_info(struct net_device *netdev,
 			    struct ethtool_ts_info *info)
 #endif /* HAVE_ETHTOOL_KERNEL_TS_INFO */
 {
-	struct idpf_adapter *adapter = idpf_netdev_to_adapter(netdev);
+	struct idpf_netdev_priv *np = netdev_priv(netdev);
 	struct idpf_vport *vport;
+	int err = 0;
 
-	idpf_vport_cfg_lock(adapter);
+	if (!mutex_trylock(&np->adapter->vport_cfg_lock))
+		return -EBUSY;
+
 	vport = idpf_netdev_to_vport(netdev);
 
-	idpf_set_timestamp_filters(vport, info);
-
-	if (idpf_is_cap_ena(vport->adapter, IDPF_OTHER_CAPS, VIRTCHNL2_CAP_PTP) &&
-	    vport->adapter->ptp.clock) {
-		info->phc_index = ptp_clock_index(vport->adapter->ptp.clock);
-	} else {
-		dev_dbg(idpf_adapter_to_dev(vport->adapter), "PTP clock not detected\n");
-		idpf_vport_cfg_unlock(adapter);
-		return ethtool_op_get_ts_info(netdev, info);
+	if (!vport->adapter->ptp) {
+		err = -EOPNOTSUPP;
+		goto unlock;
 	}
 
-	idpf_vport_cfg_unlock(adapter);
-	return 0;
+	if (idpf_is_cap_ena(vport->adapter, IDPF_OTHER_CAPS, VIRTCHNL2_CAP_PTP) &&
+	    vport->adapter->ptp->clock) {
+		info->phc_index = ptp_clock_index(vport->adapter->ptp->clock);
+		idpf_get_timestamp_filters(vport, info);
+	} else {
+		dev_dbg(idpf_adapter_to_dev(vport->adapter), "PTP clock not detected\n");
+		err = ethtool_op_get_ts_info(netdev, info);
+	}
+
+unlock:
+	mutex_unlock(&np->adapter->vport_cfg_lock);
+
+	return err;
 }
 
 static const struct ethtool_ops idpf_ethtool_ops = {
