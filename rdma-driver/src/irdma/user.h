@@ -160,6 +160,8 @@
 #define IRDMA_AE_REMOTE_QP_CATASTROPHIC					0x0703
 #define IRDMA_AE_LOCAL_QP_CATASTROPHIC					0x0704
 #define IRDMA_AE_RCE_QP_CATASTROPHIC					0x0705
+#define IRDMA_AE_RCE_ADAPTER_CATASTROPHIC				0x0706
+#define IRDMA_AE_LCE_CRC_FUNCTION_CATASTROPHIC				0x0707
 #define IRDMA_AE_QP_SUSPEND_COMPLETE					0x0900
 #define IRDMA_AE_CQP_DEFERRED_COMPLETE					0x0901
 #define IRDMA_AE_ADAPTER_CATASTROPHIC					0x0B0B
@@ -482,6 +484,7 @@ struct irdma_wqe_uk_ops {
 				   struct irdma_bind_window *op_info);
 };
 
+bool irdma_uk_cq_empty(struct irdma_cq_uk *cq);
 int irdma_uk_cq_poll_cmpl(struct irdma_cq_uk *cq,
 			  struct irdma_cq_poll_info *info);
 void irdma_uk_cq_request_notification(struct irdma_cq_uk *cq,

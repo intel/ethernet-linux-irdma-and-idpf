@@ -13,6 +13,9 @@
 #include <linux/indirect_call_wrapper.h>
 #endif
 #include <net/tcp.h>
+#ifdef HAVE_NETIF_SUBQUEUE_MAYBE_STOP
+#include <net/netdev_queues.h>
+#endif /* HAVE_NETIF_SUBQUEUE_MAYBE_STOP */
 #ifdef HAVE_XDP_SUPPORT
 #include <net/xdp.h>
 #endif /* HAVE_XDP_SUPPORT */
@@ -20,8 +23,10 @@
 #include "virtchnl2_lan_desc.h"
 
 #define IDPF_LARGE_MAX_Q			256
-#define IDPF_MAX_Q				16
+#define IDPF_MAX_TXQ				IDPF_LARGE_MAX_Q
+#define IDPF_MAX_RXQ				64
 #define IDPF_MIN_Q				2
+#define IDPF_DFLT_NUM_Q				16
 /* Mailbox Queue */
 #define IDPF_MAX_MBXQ				1
 
@@ -48,15 +53,9 @@
 	VIRTCHNL2_TXDID_FLEX_FLOW_SCHED |\
 	VIRTCHNL2_TXDID_FLEX_TSO_CTX)
 
-#define IDPF_DFLT_SINGLEQ_TXQ			4
-#define IDPF_DFLT_SINGLEQ_RXQ			4
+#define IDPF_DFLT_SINGLEQ_TX_Q_GROUPS		1
 
-/* For now this will make TX:COMPLQ mapped in a 1:1 configuration but there's
- * nothing that strictly prevents trying an N:1 configuration. The main problem
- * is there currently don't exist any kernel/user hooks to set this dynamically
- * for different use cases. A 1:1 is safe and works for most workloads.
- */
-#define IDPF_TXQ_PER_COMPLQ			1
+#define IDPF_COMPLQ_PER_GROUP			1
 #define IDPF_SINGLE_BUFQ_PER_RXQ		1
 /* Multiple buffer queues can be mapped to an RX queue to provide different
  * size buffers and features.
@@ -69,6 +68,8 @@
 #define IDPF_DFLT_SPLITQ_RXQ_PER_BUFQ		1
 
 #define IDPF_NUMQ_PER_CHUNK			1
+
+#define IDPF_DFLT_SPLITQ_TXQ_PER_GROUP		1
 
 /* Default vector sharing */
 #define IDPF_MBX_Q_VEC		1
@@ -138,8 +139,8 @@
 #define IDPF_RX_BI_BUFID_M		GENMASK(14, 0)
 #define IDPF_RX_BI_GEN_S		15
 #define IDPF_RX_BI_GEN_M		BIT(IDPF_RX_BI_GEN_S)
-#define IDPF_RXD_EOF_SPLITQ		BIT(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_EOF_S)
-#define IDPF_RXD_EOF_SINGLEQ		BIT(VIRTCHNL2_RX_BASE_DESC_STATUS_EOF_S)
+#define IDPF_RXD_EOF_SPLITQ		VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_EOF_M
+#define IDPF_RXD_EOF_SINGLEQ		VIRTCHNL2_RX_BASE_DESC_STATUS_EOF_M
 
 #define IDPF_SINGLEQ_RX_BUF_DESC(rxq, i)	\
 	(&(((struct virtchnl2_singleq_rx_buf_desc *)((rxq)->desc_ring))[i]))
@@ -164,7 +165,7 @@
 	0 : (txq)->desc_count) + \
 	(txq)->next_to_clean - (txq)->next_to_use - 1)
 
-#define IDPF_TX_BUF_RSV_UNUSED(txq)	((txq)->buf_stack.top)
+#define IDPF_TX_BUF_RSV_UNUSED(txq)	((txq)->stash->buf_stack.top)
 #define IDPF_TX_BUF_RSV_LOW(txq)	(IDPF_TX_BUF_RSV_UNUSED(txq) < \
 					 (txq)->desc_count >> 2)
 
@@ -173,12 +174,12 @@
  * completions that are expected to arrive on the TX completion queue.  This
  * number should never be more than ~IDPF_TX_COMPLQ_OVERFLOW_THRESH. That is
  * because once the delta hits IDPF_TX_COMPLQ_OVERFLOW_THRESH, the txq is
- * stopped, i.e. num_compl_pend won't increment. Meanwhile, num_compl should
- * continue incrementing as completions are processed. Eventually the delta
- * will become small enough that the txq can be restarted.
+ * stopped, i.e. num_completions_pending won't increment. Meanwhile,
+ * num_completions should continue incrementing as completions are processed.
+ * Eventually the delta will become small enough that the txq can be restarted.
  */
 #define IDPF_TX_COMPLQ_PENDING(txq)	\
-	((txq)->tx.num_compl_pend - (txq)->tx.num_compl)
+	((txq)->num_completions_pending - (txq)->complq->tx.num_completions)
 
 #define IDPF_TX_SPLITQ_COMPL_TAG_WIDTH	16
 #define IDPF_TX_SPLITQ_MISS_COMPL_TAG	BIT(15)
@@ -675,6 +676,9 @@ struct idpf_q_vector {
 #endif /* CONFIG_TX_TIMEOUT_VERBOSE */
 };
 
+/* Maximum number of segments supported by RSC and TSO */
+#define IDPF_MAX_SEGS 16
+
 struct idpf_rx_queue_stats {
 	u64_stats_t packets;
 	u64_stats_t bytes;
@@ -683,6 +687,11 @@ struct idpf_rx_queue_stats {
 	u64_stats_t hsplit_pkts;
 	u64_stats_t hsplit_buf_ovf;
 	u64_stats_t bad_descs;
+	u64_stats_t page_recycles;
+	u64_stats_t page_reallocs;
+	u64_stats_t rsc_bytes;
+	u64_stats_t rsc_segs_tot;
+	u64_stats_t segs[IDPF_MAX_SEGS];
 };
 
 struct idpf_tx_queue_stats {
@@ -709,6 +718,9 @@ struct idpf_tx_queue_stats {
 	u64_stats_t complq_clean_incomplete;
 	u64_stats_t sharedrxq_clean_incomplete;
 #endif /* CONFIG_TX_TIMEOUT_VERBOSE */
+	u64_stats_t lso_bytes;
+	u64_stats_t lso_segs_tot;
+	u64_stats_t segs[IDPF_MAX_SEGS];
 };
 
 struct idpf_cleaned_stats {
@@ -769,14 +781,26 @@ struct idpf_sw_queue {
 } ____cacheline_internodealigned_in_smp;
 
 /**
+ * struct idpf_txq_stash
+ * @buf_stack: Stack of empty buffers to store buffer info for out of order
+ *	       buffer completions. See struct idpf_buf_lifo.
+ * @sched_buf_hash: Hash table to stores buffers
+ */
+struct idpf_txq_stash {
+	struct idpf_buf_lifo buf_stack;
+	DECLARE_HASHTABLE(sched_buf_hash, 12);
+};
+
+/**
  * struct idpf_queue
  * @dev: Device back pointer for DMA mapping
  * @vport: Back pointer to associated vport
+ * @netdev: &net_device corresponding to this queue
  * @tx: Structure with TX descriptor and TX completion queue related members
- * @tx.num_compl: Number of completions
- * @tx.num_compl_pend: Number of pending completions
- * @tx.complq: Array of completion queues
- * @tx.txqs: Copy of mapped TX queues to a completion queue for hot path access
+ * @tx.num_completions: Only relevant for TX completion queue. It tracks the
+ *			number of completions received to compare against the
+ *			number of completions pending, as accumulated by the
+ *			TX queues.
  * @tx.bufs: See struct idpf_tx_buf
  * @tx.rel_qid: Relative completion queue id
  * @tx.num_txq: Number of TX queues mapped to the completion queue
@@ -794,9 +818,12 @@ struct idpf_sw_queue {
  * @rx.refillqs: Array of refill queues
  * @rx.num_refillq: Number of refill queues associated with the each RX/bufferq
  * @rx.rxq_idx: Index of the RX queue mapped to the buffer queue
+ * @rx.vlan_proto: VLAN protocol to be passed in the skb
  * @cached_phc_time: Pointer to the cached PHC time for Tx/Rx timestamp
  *		     extension
- * @tstmp_en: Indicates whether the Rx timestamping is enabled for the queue
+ * @tstamp_task: Work that handles TX timestamp read
+ * @cached_tstamp_caps: TX timestamp capabilities negotiated with the CP
+ * @tstmp_en: Indicates whether the timestamping is enabled for the queue
  * @idx: For buffer queue, it is used as group id, either 0 or 1. On clean,
  *	 buffer queue uses this index to determine which group of refill queues
  *	 to clean.
@@ -853,12 +880,6 @@ struct idpf_sw_queue {
  * @tx_max_bufs: Max buffers that can be transmitted with scatter-gather
  * @crc_enable: Enable CRC insertion offload
  * @tx_min_pkt_len: Min supported packet length
- * @num_completions: Only relevant for TX completion queue. It tracks the
- *		     number of completions received to compare against the
- *		     number of completions pending, as accumulated by the
- *		     TX queues.
- * @buf_stack: Stack of empty buffers to store buffer info for out of order
- *	       buffer completions. See struct idpf_buf_lifo.
  * @compl_tag_bufid_m: Completion tag buffer id mask
  * @compl_tag_gen_s: Completion tag generation bit
  *	The format of the completion tag will change based on the TXQ
@@ -882,17 +903,16 @@ struct idpf_sw_queue {
  *	This gives us 8*8160 = 65280 possible unique values.
  * @compl_tag_cur_gen: Used to keep track of current completion tag generation
  * @compl_tag_gen_max: To determine when compl_tag_cur_gen should be reset
- * @sched_buf_hash: Hash table to stores buffers
+ * @stash: pointer to stashing structures
  */
 struct idpf_queue {
 	struct device *dev;
 	struct idpf_vport *vport;
+	struct net_device *netdev;
+	struct idpf_txq_group *txq_grp;
 	union {
 		struct {
-			u32 num_compl;
-			u32 num_compl_pend;
-			struct idpf_queue *complq;
-			struct idpf_queue **txqs;
+			u32 num_completions;
 			struct idpf_tx_buf *bufs;
 			u32 rel_qid;
 			u16 num_txq;
@@ -916,10 +936,13 @@ struct idpf_queue {
 			struct idpf_sw_queue *refillqs;
 			int num_refillq;
 			u16 rxq_idx;
+			__be16 vlan_proto;
 		} rx;
 	};
 
 	u64 *cached_phc_time;
+	struct work_struct *tstamp_task;
+	struct idpf_ptp_vport_tx_tstamp_caps *cached_tstamp_caps;
 	bool tstmp_en;
 	u16 idx;
 	void __iomem *tail;
@@ -960,7 +983,6 @@ struct idpf_queue {
 	u16 tx_max_bufs;
 	bool crc_enable;
 	u8 tx_min_pkt_len;
-	struct idpf_buf_lifo buf_stack;
 
 	u16 compl_tag_bufid_m;
 	u16 compl_tag_gen_s;
@@ -968,8 +990,32 @@ struct idpf_queue {
 	u16 compl_tag_cur_gen;
 	u16 compl_tag_gen_max;
 
-	DECLARE_HASHTABLE(sched_buf_hash, 12);
+	struct idpf_txq_stash *stash;
 } ____cacheline_internodealigned_in_smp;
+
+/**
+ * struct idpf_txq_group
+ * @vport: Vport back pointer
+ * @num_txq: Number of TX queues associated
+ * @txqs: Array of TX queue pointers
+ * @complq: Associated completion queue pointer, split queue only
+ * @num_completions_pending: Total number of completions pending for the
+ *			     completion queue, acculumated for all TX queues
+ *			     associated with that completion queue.
+ *
+ * Between singleq and splitq, a txq_group is largely the same except for the
+ * complq. In splitq a single complq is responsible for handling completions
+ * for some number of txqs associated in this txq_group.
+ */
+struct idpf_txq_group {
+	struct idpf_vport *vport;
+
+	u16 num_txq;
+	struct idpf_queue **txqs;
+
+	struct idpf_queue *complq;
+	u32 num_completions_pending __aligned(L1_CACHE_BYTES);
+};
 
 /**
  * idpf_rx_bump_ntc - Bump and wrap q->next_to_clean value
@@ -1087,10 +1133,11 @@ void idpf_vport_calc_num_q_desc(struct idpf_vport *vport,
 void idpf_vport_calc_total_qs(struct idpf_adapter *adapter, u16 vport_index,
 			      struct virtchnl2_create_vport *vport_msg,
 			      struct idpf_vport_max_q *max_q);
+void idpf_vport_calc_num_q_groups(struct idpf_q_grp *q_grp);
 int idpf_vport_queue_alloc_all(struct idpf_vport *vport,
 			       struct idpf_q_grp *q_grp);
-void idpf_vport_queue_rel_all(struct idpf_vport *vport,
-			      struct idpf_q_grp *q_grp);
+void idpf_vport_queues_rel(struct idpf_vport *vport,
+			   struct idpf_q_grp *q_grp);
 void idpf_rx_post_buf_refill(struct idpf_sw_queue *refillq, u16 buf_id);
 void idpf_vport_intr_rel(struct idpf_vgrp *vgrp);
 int idpf_vport_intr_alloc(struct idpf_vport *vport, struct idpf_vgrp *vgrp);
@@ -1144,7 +1191,6 @@ unsigned int idpf_tx_desc_count_required(struct idpf_queue *txq,
 					 struct sk_buff *skb);
 bool idpf_chk_linearize(struct sk_buff *skb, unsigned int max_bufs,
 			unsigned int count);
-int idpf_tx_maybe_stop_common(struct idpf_queue *tx_q, unsigned int size);
 #ifdef HAVE_TX_TIMEOUT_TXQUEUE
 void idpf_tx_timeout(struct net_device *netdev, unsigned int txqueue);
 #else

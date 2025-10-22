@@ -1288,6 +1288,27 @@ void irdma_uk_cq_request_notification(struct irdma_cq_uk *cq,
 }
 
 /**
+ * irdma_uk_cq_empty - Check if CQ is empty
+ * @cq: hw cq
+ */
+bool irdma_uk_cq_empty(struct irdma_cq_uk *cq)
+{
+	__le64 *cqe;
+	u8 polarity;
+	u64 qword3;
+
+	if (cq->avoid_mem_cflct)
+		cqe = IRDMA_GET_CURRENT_EXTENDED_CQ_ELEM(cq);
+	else
+		cqe = IRDMA_GET_CURRENT_CQ_ELEM(cq);
+
+	get_64bit_val(cqe, 24, &qword3);
+	polarity = (u8)FIELD_GET(IRDMA_CQ_VALID, qword3);
+
+	return polarity != cq->polarity;
+}
+
+/**
  * irdma_uk_cq_poll_cmpl - get cq completion info
  * @cq: hw cq
  * @info: cq poll information returned
@@ -1559,10 +1580,10 @@ int irdma_uk_cq_poll_cmpl(struct irdma_cq_uk *cq,
 exit:
 	if (!ret_code && info->comp_status == IRDMA_COMPL_STATUS_FLUSHED) {
 		if (pring && IRDMA_RING_MORE_WORK(*pring))
-		/* Park CQ head during a flush to generate additional CQEs
-		 * from SW for all unprocessed WQEs. For GEN3 and beyond
-		 * FW will generate/flush these CQEs so move to the next CQE
-		 */
+			/* Park CQ head during a flush to generate additional CQEs
+			 * from SW for all unprocessed WQEs. For GEN3 and beyond
+			 * FW will generate/flush these CQEs so move to the next CQE
+			 */
 			move_cq_head = qp->uk_attrs->hw_rev <= IRDMA_GEN_2 ?
 						false : true;
 	}
@@ -1581,8 +1602,9 @@ exit:
 		IRDMA_RING_MOVE_TAIL(cq->cq_ring);
 		if (!cq->avoid_mem_cflct && ext_valid)
 			IRDMA_RING_MOVE_TAIL(cq->cq_ring);
-		set_64bit_val(cq->shadow_area, 0,
-			      IRDMA_RING_CURRENT_HEAD(cq->cq_ring));
+		if (IRDMA_RING_CURRENT_HEAD(cq->cq_ring) & 0x3F || irdma_uk_cq_empty(cq))
+			set_64bit_val(cq->shadow_area, 0,
+				      IRDMA_RING_CURRENT_HEAD(cq->cq_ring));
 	} else {
 		qword3 &= ~IRDMA_CQ_WQEIDX;
 		qword3 |= FIELD_PREP(IRDMA_CQ_WQEIDX, pring->tail);

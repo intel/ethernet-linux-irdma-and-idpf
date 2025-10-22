@@ -9,6 +9,7 @@
 #include "idpf.h"
 #include "idpf_virtchnl.h"
 #include "idpf_lan_txrx.h"
+#include "idpf_ptp.h"
 
 /**
  * idpf_buf_lifo_push - push a buffer pointer onto stack
@@ -72,8 +73,8 @@ static void idpf_dump_tx_state(struct idpf_vport *vport, struct idpf_queue *txq)
 {
 	struct idpf_tx_queue_stats *txq_stats = &txq->q_stats.tx;
 	struct idpf_q_grp *q_grp = &vport->dflt_grp.q_grp;
+	struct idpf_queue *complq = txq->txq_grp->complq;
 	struct idpf_adapter *adapter = vport->adapter;
-	struct idpf_queue *complq = txq->tx.complq;
 	struct net_device *netdev = vport->netdev;
 	struct idpf_tx_stash *stash;
 	struct netdev_queue *nq;
@@ -184,7 +185,7 @@ static void idpf_dump_tx_state(struct idpf_vport *vport, struct idpf_queue *txq)
 			    q_head_compl_tag);
 	}
 
-	hash_for_each(txq->sched_buf_hash, bkt, stash, hlist) {
+	hash_for_each(txq->stash->sched_buf_hash, bkt, stash, hlist) {
 		if (stash)
 			netdev_err(netdev,
 				   "\tuncleaned tx_buf with compl_tag = %u, type = %u, dma_len = %u still in hash table\n",
@@ -198,7 +199,7 @@ static void idpf_dump_tx_state(struct idpf_vport *vport, struct idpf_queue *txq)
 	netdev_err(netdev,
 		   "txcomplq[%d]: ntc: %d, pending_compls: %u\n",
 		   complq->q_id, complq->next_to_clean,
-		   IDPF_TX_COMPLQ_PENDING(complq));
+		   IDPF_TX_COMPLQ_PENDING(txq->txq_grp));
 }
 
 #endif /* CONFIG_TX_TIMEOUT_VERBOSE */
@@ -314,25 +315,28 @@ static void idpf_tx_buf_rel_all(struct idpf_queue *txq)
 	kfree(txq->tx.bufs);
 	txq->tx.bufs = NULL;
 
-	if (!txq->buf_stack.bufs)
+	if (!txq->stash->buf_stack.bufs)
 		return;
 
 	/* If a TX timeout occurred, there are potentially still bufs in the
 	 * hash table, free them here.
 	 */
-	hash_for_each_safe(txq->sched_buf_hash, tag, tmp, stash, hlist) {
+	hash_for_each_safe(txq->stash->sched_buf_hash, tag, tmp, stash, hlist) {
 		if (stash) {
 			idpf_tx_buf_rel(txq, &stash->buf);
 			hash_del(&stash->hlist);
-			idpf_buf_lifo_push(&txq->buf_stack, stash);
+			idpf_buf_lifo_push(&txq->stash->buf_stack, stash);
 		}
 	}
 
-	for (i = 0; i < txq->buf_stack.size; i++)
-		kfree(txq->buf_stack.bufs[i]);
+	for (i = 0; i < txq->stash->buf_stack.size; i++)
+		kfree(txq->stash->buf_stack.bufs[i]);
 
-	kfree(txq->buf_stack.bufs);
-	txq->buf_stack.bufs = NULL;
+	kfree(txq->stash->buf_stack.bufs);
+	txq->stash->buf_stack.bufs = NULL;
+
+	kfree(txq->stash);
+	txq->stash = NULL;
 }
 
 /**
@@ -377,16 +381,20 @@ static void idpf_tx_desc_rel(struct idpf_queue *txq, bool bufq)
  */
 static void idpf_tx_desc_rel_all(struct idpf_q_grp *q_grp)
 {
-	int i;
+	int i, j;
 
-	for (i = 0; i < q_grp->num_txq; i++)
-		idpf_tx_desc_rel(q_grp->txqs[i], true);
-
-	if (!q_grp->complqs)
+	if (!q_grp->txq_grps)
 		return;
 
-	for (i = 0; i < q_grp->num_complq; i++)
-		idpf_tx_desc_rel(&q_grp->complqs[i], false);
+	for (i = 0; i < q_grp->num_txq_grp; i++) {
+		struct idpf_txq_group *txq_grp = &q_grp->txq_grps[i];
+
+		for (j = 0; j < txq_grp->num_txq; j++)
+			idpf_tx_desc_rel(txq_grp->txqs[j], true);
+
+		if (idpf_is_queue_model_split(q_grp->txq_model))
+			idpf_tx_desc_rel(txq_grp->complq, false);
+	}
 }
 
 /**
@@ -411,19 +419,19 @@ static int idpf_tx_buf_alloc_all(struct idpf_queue *tx_q)
 	/* Initialize tx buf stack for out-of-order completions if
 	 * flow scheduling offload is enabled
 	 */
-	tx_q->buf_stack.bufs = kcalloc(tx_q->desc_count,
-				       sizeof(struct idpf_tx_stash *),
-				       GFP_KERNEL);
-	if (!tx_q->buf_stack.bufs)
+	tx_q->stash->buf_stack.bufs = kcalloc(tx_q->desc_count,
+					      sizeof(struct idpf_tx_stash *),
+					      GFP_KERNEL);
+	if (!tx_q->stash->buf_stack.bufs)
 		return -ENOMEM;
 
-	tx_q->buf_stack.size = tx_q->desc_count;
-	tx_q->buf_stack.top = tx_q->desc_count;
+	tx_q->stash->buf_stack.size = tx_q->desc_count;
+	tx_q->stash->buf_stack.top = tx_q->desc_count;
 
 	for (i = 0; i < tx_q->desc_count; i++) {
-		tx_q->buf_stack.bufs[i] = kzalloc(sizeof(*tx_q->buf_stack.bufs[i]),
-						  GFP_KERNEL);
-		if (!tx_q->buf_stack.bufs[i])
+		tx_q->stash->buf_stack.bufs[i] = kzalloc(sizeof(*tx_q->stash->buf_stack.bufs[i]),
+							 GFP_KERNEL);
+		if (!tx_q->stash->buf_stack.bufs[i])
 			return -ENOMEM;
 	}
 
@@ -491,7 +499,8 @@ static int idpf_tx_desc_alloc_all(struct idpf_vport *vport,
 {
 	bool is_splitq = idpf_is_queue_model_split(q_grp->txq_model);
 	u16 compl_tag_w = IDPF_TX_SPLITQ_COMPL_TAG_WIDTH;
-	int i, err;
+	int err = 0;
+	int i, j;
 
 	if (idpf_is_cap_ena(vport->adapter, IDPF_OTHER_CAPS,
 			    VIRTCHNL2_CAP_MISS_COMPL_TAG))
@@ -500,45 +509,48 @@ static int idpf_tx_desc_alloc_all(struct idpf_vport *vport,
 	/* Setup buffer queues. In single queue model buffer queues and
 	 * completion queues will be same.
 	 */
-	for (i = 0; i < q_grp->num_txq; i++) {
-		struct idpf_queue *txq = q_grp->txqs[i];
-		u8 gen_bits = 0;
-		u16 bufidx_mask;
+	for (i = 0; i < q_grp->num_txq_grp; i++) {
+		for (j = 0; j < q_grp->txq_grps[i].num_txq; j++) {
+			struct idpf_queue *txq = q_grp->txq_grps[i].txqs[j];
+			u8 gen_bits = 0;
+			u16 bufidx_mask;
 
-		err = idpf_tx_desc_alloc(txq, true);
-		if (err)
-			return err;
+			err = idpf_tx_desc_alloc(txq, true);
+			if (err)
+				return err;
+
+			if (!is_splitq)
+				continue;
+
+			txq->compl_tag_cur_gen = 0;
+
+			/* Determine the number of bits in the bufid
+			 * mask and add one to get the start of the
+			 * generation bits
+			 */
+			bufidx_mask = txq->desc_count - 1;
+			while (bufidx_mask >> 1) {
+				txq->compl_tag_gen_s++;
+				bufidx_mask = bufidx_mask >> 1;
+			}
+			txq->compl_tag_gen_s++;
+
+			gen_bits = compl_tag_w - txq->compl_tag_gen_s;
+			txq->compl_tag_gen_max = GETMAXVAL(gen_bits);
+
+			/* Set bufid mask based on location of first
+			 * gen bit; it cannot simply be the descriptor
+			 * ring size-1 since we can have size values
+			 * where not all of those bits are set.
+			 */
+			txq->compl_tag_bufid_m =
+				GETMAXVAL(txq->compl_tag_gen_s);
+		}
 
 		if (!is_splitq)
 			continue;
 
-		txq->compl_tag_cur_gen = 0;
-
-		/* Determine the number of bits in the bufid mask and add one
-		 * to get the start of the generation bits
-		 */
-		bufidx_mask = txq->desc_count - 1;
-		while (bufidx_mask >> 1) {
-			txq->compl_tag_gen_s++;
-			bufidx_mask = bufidx_mask >> 1;
-		}
-		txq->compl_tag_gen_s++;
-
-		gen_bits = compl_tag_w - txq->compl_tag_gen_s;
-		txq->compl_tag_gen_max = GETMAXVAL(gen_bits);
-
-		/* Set bufid mask based on location of first gen bit; it cannot
-		 * simply be the descriptor ring size-1 since we can have size
-		 * values where not all of those bits are set.
-		 */
-		txq->compl_tag_bufid_m = GETMAXVAL(txq->compl_tag_gen_s);
-	}
-
-	if (!is_splitq)
-		return 0;
-
-	for (i = 0; i < q_grp->num_complq; i++) {
-		err = idpf_tx_desc_alloc(&q_grp->complqs[i], false);
+		err = idpf_tx_desc_alloc(q_grp->txq_grps[i].complq, false);
 		if (err)
 			return err;
 	}
@@ -716,6 +728,28 @@ static int idpf_rx_hdr_buf_alloc(struct idpf_queue *rxq)
 }
 
 /**
+ * idpf_rx_post_buf_refill - Post buffer id to refill queue
+ * @refillq: refill queue to post to
+ * @buf_id: buffer id to post
+ */
+void idpf_rx_post_buf_refill(struct idpf_sw_queue *refillq, u16 buf_id)
+{
+	u16 nta = refillq->next_to_alloc;
+
+	/* store the buffer ID and the SW maintained GEN bit to the refillq */
+	refillq->ring[nta] =
+		FIELD_PREP(IDPF_RX_BI_BUFID_M, buf_id) |
+		FIELD_PREP(IDPF_RX_BI_GEN_M,
+			   test_bit(__IDPF_Q_GEN_CHK, refillq->flags));
+
+	if (unlikely(++nta == refillq->desc_count)) {
+		nta = 0;
+		change_bit(__IDPF_Q_GEN_CHK, refillq->flags);
+	}
+	refillq->next_to_alloc = nta;
+}
+
+/**
  * idpf_rx_post_buf_desc - Post buffer to bufq descriptor ring
  * @bufq: buffer queue to post to
  * @buf_id: buffer id to post
@@ -824,28 +858,6 @@ static int idpf_rx_buf_hw_alloc(struct idpf_queue *q, bool is_splitq)
 }
 
 /**
- * idpf_rx_post_buf_refill - Post buffer id to refill queue
- * @refillq: Refill queue to post to
- * @buf_id: Buffer id to post
- */
-void idpf_rx_post_buf_refill(struct idpf_sw_queue *refillq, u16 buf_id)
-{
-	u16 nta = refillq->next_to_alloc;
-
-	/* Store the buffer ID and the SW maintained GEN bit to the refillq */
-	refillq->ring[nta] =
-		FIELD_PREP(IDPF_RX_BI_BUFID_M, buf_id) |
-		FIELD_PREP(IDPF_RX_BI_GEN_M,
-			   test_bit(__IDPF_Q_GEN_CHK, refillq->flags));
-
-	if (unlikely(++nta == refillq->desc_count)) {
-		nta = 0;
-		change_bit(__IDPF_Q_GEN_CHK, refillq->flags);
-	}
-	refillq->next_to_alloc = nta;
-}
-
-/**
  * idpf_rx_buf_alloc - Allocate buffers for a queue
  * @q: Queue to allocate for
  * @is_splitq: True if RX queue model split
@@ -899,7 +911,9 @@ static int idpf_rx_buf_alloc(struct idpf_queue *q, bool is_splitq)
 static int idpf_fast_path_txq_init(struct idpf_vport *vport,
 				   struct idpf_q_grp *q_grp)
 {
-	u16 i;
+	struct idpf_ptp_vport_tx_tstamp_caps *caps = vport->tx_tstamp_caps;
+	struct work_struct *tstamp_task = &vport->tstamp_task;
+	int i, j, k = 0;
 
 	vport->txqs = kcalloc(q_grp->num_txq, sizeof(struct idpf_queue *),
 			      GFP_KERNEL);
@@ -907,8 +921,20 @@ static int idpf_fast_path_txq_init(struct idpf_vport *vport,
 		return -ENOMEM;
 
 	vport->num_txq = q_grp->num_txq;
-	for (i = 0; i < q_grp->num_txq; i++)
-		vport->txqs[i] = q_grp->txqs[i];
+	for (i = 0; i < q_grp->num_txq_grp; i++) {
+		struct idpf_txq_group *tx_grp = &q_grp->txq_grps[i];
+
+		for (j = 0; j < tx_grp->num_txq; j++, k++) {
+			vport->txqs[k] = tx_grp->txqs[j];
+			vport->txqs[k]->idx = k;
+
+			if (!caps)
+				continue;
+
+			vport->txqs[i]->cached_tstamp_caps = caps;
+			vport->txqs[i]->tstamp_task = tstamp_task;
+		}
+	}
 
 	return 0;
 }
@@ -939,8 +965,11 @@ static void idpf_init_cached_phc_time(struct idpf_vport *vport,
 				      struct idpf_q_grp *q_grp)
 {
 	struct idpf_adapter *adapter = vport->adapter;
-	struct idpf_ptp *ptp = &adapter->ptp;
-	u16 i;
+	struct idpf_ptp *ptp = adapter->ptp;
+	u16 i, j;
+
+	if (!ptp)
+		return;
 
 	if (ptp->get_dev_clk_time_access == IDPF_PTP_NONE)
 		return;
@@ -948,8 +977,12 @@ static void idpf_init_cached_phc_time(struct idpf_vport *vport,
 	for (i = 0; i < q_grp->num_rxq; i++)
 		q_grp->rxqs[i]->cached_phc_time = &ptp->cached_phc_time;
 
-	for (i = 0; i < q_grp->num_txq; i++)
-		q_grp->txqs[i]->cached_phc_time = &ptp->cached_phc_time;
+	for (i = 0; i < q_grp->num_txq_grp; i++) {
+		struct idpf_txq_group *txq_grp = &q_grp->txq_grps[i];
+
+		for (j = 0; j < txq_grp->num_txq; j++)
+			txq_grp->txqs[j]->cached_phc_time = &ptp->cached_phc_time;
+	}
 }
 
 /**
@@ -1056,39 +1089,41 @@ static int idpf_rx_desc_alloc_all(struct idpf_q_grp *q_grp)
 }
 
 /**
- * idpf_tx_queue_rel_all - Release all resources for TX queues
+ * idpf_txq_group_rel - Release all resources for txq groups
  * @q_grp: Queue resources
  */
-static void idpf_tx_queue_rel_all(struct idpf_q_grp *q_grp)
+static void idpf_txq_group_rel(struct idpf_q_grp *q_grp)
 {
-	int i;
+	bool split;
+	int i, j;
 
-	/* If we failed to allcoate txqs, no need to release complqs since they
-	 * won't have been allocated.
-	 */
-	if (!q_grp->txqs)
+	if (!q_grp->txq_grps)
 		return;
 
-	idpf_tx_desc_rel_all(q_grp);
+	split = idpf_is_queue_model_split(q_grp->txq_model);
 
-	for (i = 0; i < q_grp->num_txq; i++) {
-		kfree(q_grp->txqs[i]);
-		q_grp->txqs[i] = NULL;
+	for (i = 0; i < q_grp->num_txq_grp; i++) {
+		struct idpf_txq_group *txq_grp = &q_grp->txq_grps[i];
+
+		for (j = 0; j < txq_grp->num_txq; j++) {
+			if (!txq_grp->txqs[j])
+				continue;
+
+			kfree(txq_grp->txqs[j]);
+			txq_grp->txqs[j] = NULL;
+		}
+
+		kfree(txq_grp->txqs);
+		txq_grp->txqs = NULL;
+
+		if (!split)
+			continue;
+
+		kfree(txq_grp->complq);
+		txq_grp->complq = NULL;
 	}
-
-	kfree(q_grp->txqs);
-	q_grp->txqs = NULL;
-
-	if (!q_grp->complqs)
-		return;
-
-	for (i = 0; i < q_grp->num_complq; i++) {
-		kfree(q_grp->complqs[i].tx.txqs);
-		q_grp->complqs[i].tx.txqs = NULL;
-	}
-
-	kfree(q_grp->complqs);
-	q_grp->complqs = NULL;
+	kfree(q_grp->txq_grps);
+	q_grp->txq_grps = NULL;
 }
 
 /**
@@ -1195,16 +1230,26 @@ rxq_rel:
 }
 
 /**
- * idpf_vport_queue_rel_all - Free memory for all queues
+ * idpf_vport_queue_grp_rel_all - Release all queue groups
+ * @q_grp: Queue resources
+ */
+static void idpf_vport_queue_grp_rel_all(struct idpf_q_grp *q_grp)
+{
+	idpf_txq_group_rel(q_grp);
+}
+
+/**
+ * idpf_vport_queues_rel - Free memory for all queues
  * @vport: virtual port
  * @q_grp: Queue resources
  *
  * Free the memory allocated for queues associated to a vport
  */
-void idpf_vport_queue_rel_all(struct idpf_vport *vport,
-			      struct idpf_q_grp *q_grp)
+void idpf_vport_queues_rel(struct idpf_vport *vport,
+			   struct idpf_q_grp *q_grp)
 {
-	idpf_tx_queue_rel_all(q_grp);
+	idpf_tx_desc_rel_all(q_grp);
+	idpf_vport_queue_grp_rel_all(q_grp);
 	idpf_rx_queue_rel_all(q_grp);
 	idpf_fast_path_txq_deinit(vport);
 }
@@ -1250,11 +1295,6 @@ void idpf_vport_init_num_qs(struct idpf_vport *vport,
 	vport->num_xdp_txq = le16_to_cpu(vport_msg->num_rx_q);
 	vport->xdp_txq_offset = le16_to_cpu(vport_msg->num_tx_q) -
 				le16_to_cpu(vport_msg->num_rx_q);
-
-	if (idpf_is_queue_model_split(q_grp->txq_model)) {
-		vport->num_xdp_complq = vport->num_xdp_txq;
-		vport->xdp_complq_offset = vport->xdp_txq_offset;
-	}
 
 adjust_bufqs:
 #endif /* HAVE_XDP_SUPPORT */
@@ -1364,14 +1404,21 @@ void idpf_vport_calc_total_qs(struct idpf_adapter *adapter, u16 vport_idx,
 		}
 #endif /* HAVE_XDP_SUPPORT */
 	} else {
+		int num_dflt_rx = IDPF_DFLT_NUM_Q;
+		int num_dflt_tx = IDPF_DFLT_NUM_Q;
 		int num_cpus = num_online_cpus();
 
-		num_txq = min_t(int, max_q->max_txq, num_cpus);
-		num_rxq = min_t(int, max_q->max_rxq, num_cpus);
+		if (max_q->max_txq < IDPF_DFLT_NUM_Q)
+			num_dflt_tx = max_q->max_txq;
+		if (max_q->max_rxq < IDPF_DFLT_NUM_Q)
+			num_dflt_rx = max_q->max_rxq;
+
+		num_txq = min_t(int, num_dflt_tx, num_cpus);
+		num_rxq = min_t(int, num_dflt_rx, num_cpus);
 	}
 
 	if (idpf_is_queue_model_split(le16_to_cpu(vport_msg->txq_model)))
-		num_complq = num_txq * IDPF_TXQ_PER_COMPLQ;
+		num_complq = num_txq * IDPF_COMPLQ_PER_GROUP;
 
 	if (idpf_is_queue_model_split(le16_to_cpu(vport_msg->rxq_model))) {
 		num_bufq = num_rxq * num_bufq_per_rxq;
@@ -1381,6 +1428,32 @@ void idpf_vport_calc_total_qs(struct idpf_adapter *adapter, u16 vport_idx,
 	vport_msg->num_tx_complq = cpu_to_le16(num_complq);
 	vport_msg->num_rx_q = cpu_to_le16(num_rxq);
 	vport_msg->num_rx_bufq = cpu_to_le16(num_bufq);
+}
+
+/**
+ * idpf_vport_calc_num_q_groups - Calculate number of queue groups
+ * @q_grp: Queue resources
+ */
+void idpf_vport_calc_num_q_groups(struct idpf_q_grp *q_grp)
+{
+	if (idpf_is_queue_model_split(q_grp->txq_model))
+		q_grp->num_txq_grp = q_grp->num_complq;
+	else
+		q_grp->num_txq_grp = IDPF_DFLT_SINGLEQ_TX_Q_GROUPS;
+}
+
+/**
+ * idpf_vport_calc_numq_per_grp - Calculate number of queues per group
+ * @q_grp: Queue resources
+ * @num_txq: return parameter for number of TX queues
+ */
+static void idpf_vport_calc_numq_per_grp(struct idpf_q_grp *q_grp,
+					 u16 *num_txq)
+{
+	if (idpf_is_queue_model_split(q_grp->txq_model))
+		*num_txq = IDPF_DFLT_SPLITQ_TXQ_PER_GROUP;
+	else
+		*num_txq = q_grp->num_txq;
 }
 
 /**
@@ -1402,121 +1475,124 @@ static void idpf_rxq_set_descids(struct idpf_q_grp *q_grp, struct idpf_queue *q)
 }
 
 /**
- * idpf_txq_alloc - Allocate all TX queue resources
- * @vport: Vport to allocate TX queues for
+ * idpf_txq_group_alloc - Allocate all txq group resources
+ * @vport: vport to allocate txq groups for
  * @q_grp: Queue resources
+ * @num_txq_per_grp: number of txqs to allocate for each group
  *
  * Returns 0 on success, negative on failure
  */
-static int idpf_txq_alloc(struct idpf_vport *vport, struct idpf_q_grp *q_grp)
+static int idpf_txq_group_alloc(struct idpf_vport *vport, struct idpf_q_grp *q_grp,
+				u16 num_txq_per_grp)
 {
 	struct idpf_adapter *adapter = vport->adapter;
-	bool flow_sch_en, miss_compl_tag_en;
+	bool flow_sch_en, miss_compl_tag_en, split;
 	int i;
 
+	q_grp->txq_grps = kcalloc(q_grp->num_txq_grp,
+				  sizeof(*q_grp->txq_grps), GFP_KERNEL);
+	if (!q_grp->txq_grps)
+		return -ENOMEM;
+
+	split = idpf_is_queue_model_split(q_grp->txq_model);
 	flow_sch_en = !idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS,
 				       VIRTCHNL2_CAP_SPLITQ_QSCHED);
 	miss_compl_tag_en = idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS,
 					    VIRTCHNL2_CAP_MISS_COMPL_TAG);
 
-	q_grp->txqs = kcalloc(q_grp->num_txq, sizeof(struct idpf_queue *),
-			      GFP_KERNEL);
-	if (!q_grp->txqs)
-		return -ENOMEM;
-
-	for (i = 0; i < q_grp->num_txq; i++) {
-		struct idpf_queue *txq;
-
-		txq = kzalloc(sizeof(*txq), GFP_KERNEL);
-
-		if (!txq)
-			return -ENOMEM;
-
-		u64_stats_init(&txq->stats_sync);
-		q_grp->txqs[i] = txq;
-		txq->vport = vport;
-#ifdef CONFIG_IOMMU_BYPASS
-#ifdef CONFIG_ARM64
-		if (adapter->iommu_byp.ddev)
-			txq->dev = adapter->iommu_byp.ddev;
-		else
-#endif /* CONFIG_ARM64 */
-#endif /* CONFIG_IOMMU_BYPASS */
-		txq->dev = idpf_adapter_to_dev(adapter);
-		txq->idx = i;
-		txq->desc_count = q_grp->txq_desc_count;
-		txq->tx_max_bufs = idpf_get_max_tx_bufs(adapter);
-		txq->crc_enable = vport->crc_enable;
-		txq->tx_min_pkt_len = idpf_get_min_tx_pkt_len(adapter);
-		if (adapter->tx_compl_tstamp_gran_s) {
-			txq->tx.cmpl_tstamp_ns_s = adapter->tx_compl_tstamp_gran_s;
-			txq->tstmp_en = true;
-		}
-
-		if (flow_sch_en) {
-			set_bit(__IDPF_Q_FLOW_SCH_EN, txq->flags);
-			hash_init(txq->sched_buf_hash);
-
-			if (miss_compl_tag_en)
-				set_bit(__IDPF_Q_MISS_TAG_EN, txq->flags);
-		}
-	}
-
-	if (!idpf_is_queue_model_split(q_grp->txq_model))
-		return 0;
-
-	q_grp->complqs = kcalloc(q_grp->num_complq, sizeof(*q_grp->complqs),
-				 GFP_KERNEL);
-	if (!q_grp->complqs)
-		return -ENOMEM;
-
-	for (i = 0; i < q_grp->num_complq; i++) {
-		struct idpf_queue *complq = &q_grp->complqs[i];
+	for (i = 0; i < q_grp->num_txq_grp; i++) {
+		struct idpf_txq_group *tx_qgrp = &q_grp->txq_grps[i];
 		int j;
 
-		u64_stats_init(&complq->stats_sync);
+		tx_qgrp->vport = vport;
+		tx_qgrp->num_txq = num_txq_per_grp;
+
+		tx_qgrp->txqs = kcalloc(tx_qgrp->num_txq,
+					sizeof(*tx_qgrp->txqs), GFP_KERNEL);
+		if (!tx_qgrp->txqs)
+			goto err_alloc;
+
+		for (j = 0; j < tx_qgrp->num_txq; j++) {
+			tx_qgrp->txqs[j] = kzalloc(sizeof(*tx_qgrp->txqs[j]),
+						   GFP_KERNEL);
+			if (!tx_qgrp->txqs[j])
+				goto err_alloc;
+		}
+
+		for (j = 0; j < tx_qgrp->num_txq; j++) {
+			struct idpf_queue *q = tx_qgrp->txqs[j];
+
+			u64_stats_init(&q->stats_sync);
+#ifdef CONFIG_IOMMU_BYPASS
+#ifdef CONFIG_ARM64
+			if (adapter->iommu_byp.ddev)
+				q->dev = adapter->iommu_byp.ddev;
+			else
+#endif /* CONFIG_ARM64 */
+#endif /* CONFIG_IOMMU_BYPASS */
+			q->dev = idpf_adapter_to_dev(adapter);
+			q->netdev = vport->netdev;
+			q->vport = vport;
+			q->desc_count = q_grp->txq_desc_count;
+			q->tx_max_bufs = idpf_get_max_tx_bufs(adapter);
+			q->tx_min_pkt_len = idpf_get_min_tx_pkt_len(adapter);
+			q->txq_grp = tx_qgrp;
+			q->crc_enable = vport->crc_enable;
+			if (split)
+				q->tx.rel_qid = j;
+
+			if (adapter->tx_compl_tstamp_gran_s) {
+				q->tx.cmpl_tstamp_ns_s = adapter->tx_compl_tstamp_gran_s;
+				q->tstmp_en = true;
+			}
+
+			if (flow_sch_en) {
+				set_bit(__IDPF_Q_FLOW_SCH_EN, q->flags);
+				q->stash = kzalloc(sizeof(*q->stash),
+						   GFP_KERNEL);
+				if (!q->stash)
+					return -ENOMEM;
+
+				hash_init(q->stash->sched_buf_hash);
+
+				if (miss_compl_tag_en)
+					set_bit(__IDPF_Q_MISS_TAG_EN, q->flags);
+			}
+		}
+
+		if (!idpf_is_queue_model_split(q_grp->txq_model))
+			continue;
+
+		tx_qgrp->complq = kcalloc(IDPF_COMPLQ_PER_GROUP,
+					  sizeof(*tx_qgrp->complq),
+					  GFP_KERNEL);
+		if (!tx_qgrp->complq)
+			goto err_alloc;
+
+		u64_stats_init(&tx_qgrp->complq->stats_sync);
 #ifdef CONFIG_IOMMU_BYPASS
 #ifdef CONFIG_ARM64
 		if (adapter->iommu_byp.ddev)
-			complq->dev = adapter->iommu_byp.ddev;
+			tx_qgrp->complq->dev = adapter->iommu_byp.ddev;
 		else
 #endif /* CONFIG_ARM64 */
 #endif /* CONFIG_IOMMU_BYPASS */
-		complq->dev = idpf_adapter_to_dev(adapter);
-		complq->desc_count = q_grp->complq_desc_count;
-		complq->vport = vport;
-		complq->idx = i;
-
-		complq->tx.txqs = kcalloc(IDPF_TXQ_PER_COMPLQ,
-					  sizeof(struct idpf_queue *),
-					  GFP_KERNEL);
-		if (!complq->tx.txqs)
-			return -ENOMEM;
+		tx_qgrp->complq->dev = idpf_adapter_to_dev(adapter);
+		tx_qgrp->complq->netdev = vport->netdev;
+		tx_qgrp->complq->desc_count = q_grp->complq_desc_count;
+		tx_qgrp->complq->txq_grp = tx_qgrp;
+		tx_qgrp->complq->vport = vport;
 
 		if (flow_sch_en)
-			set_bit(__IDPF_Q_FLOW_SCH_EN, complq->flags);
-
-		for (j = 0; j < IDPF_TXQ_PER_COMPLQ; j++) {
-			struct idpf_queue *txq;
-
-			txq = idpf_txq_from_rel_qid(q_grp, complq, j);
-			/* It's possible there's an odd number of TX queues to
-			 * map to complqs, just return in that case. There
-			 * should only ever be one complq that doesn't have a
-			 * full IDPF_TXQ_PER_COMPLQ mapped to it, so we're done
-			 * here.
-			 */
-			if (!txq)
-				return 0;
-
-			txq->tx.complq = complq;
-			txq->tx.rel_qid = j;
-			complq->tx.txqs[j] = txq;
-			complq->tx.num_txq++;
-		}
+			set_bit(__IDPF_Q_FLOW_SCH_EN, tx_qgrp->complq->flags);
 	}
 
 	return 0;
+
+err_alloc:
+	idpf_txq_group_rel(q_grp);
+
+	return -ENOMEM;
 }
 
 #ifdef HAVE_XDP_SUPPORT
@@ -1741,9 +1817,12 @@ static int idpf_rxq_alloc(struct idpf_vport *vport, struct idpf_q_grp *q_grp)
 static int idpf_vport_queue_alloc(struct idpf_vport *vport,
 				  struct idpf_q_grp *q_grp)
 {
+	u16 num_txq_per_grp;
 	int err;
 
-	err = idpf_txq_alloc(vport, q_grp);
+	idpf_vport_calc_numq_per_grp(q_grp, &num_txq_per_grp);
+
+	err = idpf_txq_group_alloc(vport, q_grp, num_txq_per_grp);
 	if (err)
 		return err;
 
@@ -1887,10 +1966,10 @@ int idpf_vport_queue_alloc_all(struct idpf_vport *vport,
 	/* Initialize flow scheduling for queues that were requested
 	 * before the interface was brought up
 	 */
-	for (i = 0; i < q_grp->num_txq; i++) {
+	for (i = 0; i < vport->num_txq; i++) {
 		if (test_bit(i, config_data->etf_qenable)) {
-			set_bit(__IDPF_Q_FLOW_SCH_EN, q_grp->txqs[i]->flags);
-			set_bit(__IDPF_Q_ETF_EN, q_grp->txqs[i]->flags);
+			set_bit(__IDPF_Q_FLOW_SCH_EN, vport->txqs[i]->flags);
+			set_bit(__IDPF_Q_ETF_EN, vport->txqs[i]->flags);
 		}
 	}
 
@@ -1899,15 +1978,15 @@ int idpf_vport_queue_alloc_all(struct idpf_vport *vport,
 	if (idpf_xdp_is_prog_ena(vport)) {
 		int j;
 
-		for (j = vport->xdp_txq_offset; j < q_grp->num_txq; j++)
-			set_bit(__IDPF_Q_XDP, q_grp->txqs[j]->flags);
+		for (j = vport->xdp_txq_offset; j < vport->num_txq; j++)
+			set_bit(__IDPF_Q_XDP, vport->txqs[j]->flags);
 	}
 
 #endif /* HAVE_XDP_SUPPORT */
 	return 0;
 
 err_out:
-	idpf_vport_queue_rel_all(vport, q_grp);
+	idpf_vport_queues_rel(vport, q_grp);
 
 	return err;
 }
@@ -1919,20 +1998,19 @@ err_out:
 static void idpf_tx_handle_sw_marker(struct idpf_queue *tx_q)
 {
 	struct idpf_vport *vport = tx_q->vport;
-	struct idpf_q_grp *q_grp;
 	int i;
 
 	clear_bit(__IDPF_Q_SW_MARKER, tx_q->flags);
 	/* Hardware must write marker packets to all queues associated with
 	 * completion queues. So check if all queues received marker packets
 	 */
-	q_grp = &vport->dflt_grp.q_grp;
-	for (i = 0; i < q_grp->num_txq; i++)
+	for (i = 0; i < vport->num_txq; i++) {
 		/* If we're still waiting on any other TXQ marker completions,
 		 * just return now since we cannot wake up the marker_wq yet.
 		 */
-		if (test_bit(__IDPF_Q_SW_MARKER, q_grp->txqs[i]->flags))
+		if (test_bit(__IDPF_Q_SW_MARKER, vport->txqs[i]->flags))
 			return;
+	}
 
 	/* Drain complete */
 	set_bit(IDPF_VPORT_SW_MARKER, vport->flags);
@@ -2024,7 +2102,7 @@ static void idpf_tx_hw_tstamp(struct idpf_queue *txq, struct sk_buff *skb,
 #else
 static inline void idpf_tx_hw_tstamp(struct idpf_queue *txq,
 				     struct sk_buff *skb, u8 *desc_ts) { }
-#endif /* CONFIG_PTP_1588_CLOCK */
+#endif /* CONFIG_PTP_1588_CLOCK && CONFIG_PTP */
 
 /**
  * idpf_tx_read_tstamp - schedule a work to read Tx timestamp value
@@ -2038,38 +2116,31 @@ static void idpf_tx_read_tstamp(struct idpf_queue *txq, struct sk_buff *skb)
 {
 	struct idpf_ptp_vport_tx_tstamp_caps *tx_tstamp_caps;
 	struct idpf_ptp_tx_tstamp_status *tx_tstamp_status;
-	enum idpf_ptp_access access;
-	int i;
+	u32 i;
 
-	if (!txq->vport->tx_tstamp_caps)
-		return;
-
-	access = txq->vport->adapter->ptp.tx_tstamp_access;
-	tx_tstamp_caps = txq->vport->tx_tstamp_caps;
+	tx_tstamp_caps = txq->cached_tstamp_caps;
+	spin_lock_bh(&tx_tstamp_caps->status_lock);
 
 	for (i = 0; i < tx_tstamp_caps->num_entries; i++) {
 		tx_tstamp_status = &tx_tstamp_caps->tx_tstamp_status[i];
-		if (tx_tstamp_status->state == IDPF_PTP_FREE) {
-			tx_tstamp_status->skb = skb;
-			tx_tstamp_status->state = IDPF_PTP_REQUEST;
+		if (tx_tstamp_status->state != IDPF_PTP_FREE)
+			continue;
 
-			if (access == IDPF_PTP_MAILBOX) {
-				/* Fetch timestamp from completion descriptor through
-				 * virtchnl msg to report to stack.
-				 */
-				queue_work(system_unbound_wq,
-					   &txq->vport->tstamp_task);
-			} else if (access == IDPF_PTP_DIRECT) {
-				idpf_ptp_get_tx_tstamp(txq->vport);
-			}
+		tx_tstamp_status->skb = skb;
+		tx_tstamp_status->state = IDPF_PTP_REQUEST;
 
-			break;
-		}
+		/* Fetch timestamp from completion descriptor through
+		 * virtchnl msg to report to stack.
+		 */
+		queue_work(system_unbound_wq, txq->tstamp_task);
+		break;
 	}
+
+	spin_unlock_bh(&tx_tstamp_caps->status_lock);
 }
 
 /**
- * idpf_tx_clean_stashed_bufs - clean bufs that were stored for
+ * idpf_tx_clean_stashed_bufs clean bufs that were stored for
  * out of order completions
  * @txq: queue to clean
  * @compl_tag: completion tag of packet to clean (from completion descriptor)
@@ -2085,7 +2156,7 @@ idpf_tx_clean_stashed_bufs(struct idpf_queue *txq, u16 compl_tag, u8 *desc_ts,
 	struct hlist_node *tmp_buf;
 
 	/* Buffer completion */
-	hash_for_each_possible_safe(txq->sched_buf_hash, stash, tmp_buf,
+	hash_for_each_possible_safe(txq->stash->sched_buf_hash, stash, tmp_buf,
 				    hlist, compl_tag) {
 		if (unlikely(stash->buf.compl_tag != compl_tag))
 			continue;
@@ -2133,7 +2204,7 @@ skip_tx_tstamp:
 		}
 
 		/* Push shadow buf back onto stack */
-		idpf_buf_lifo_push(&txq->buf_stack, stash);
+		idpf_buf_lifo_push(&txq->stash->buf_stack, stash);
 	}
 }
 
@@ -2149,7 +2220,7 @@ static struct idpf_tx_stash *idpf_tx_find_stashed_bufs(struct idpf_queue *txq,
 	struct idpf_tx_stash *stash;
 
 	/* Buffer completion */
-	hash_for_each_possible(txq->sched_buf_hash, stash, hlist, compl_tag) {
+	hash_for_each_possible(txq->stash->sched_buf_hash, stash, hlist, compl_tag) {
 		if (unlikely(stash->buf.compl_tag != (int)compl_tag))
 			continue;
 
@@ -2166,7 +2237,7 @@ static struct idpf_tx_stash *idpf_tx_find_stashed_bufs(struct idpf_queue *txq,
  */
 static void idpf_tx_handle_reinject_expire(struct timer_list *timer)
 {
-	struct idpf_tx_stash *stash = from_timer(stash, timer, reinject_timer);
+	struct idpf_tx_stash *stash = timer_container_of(stash, timer, reinject_timer);
 	struct idpf_cleaned_stats cleaned = { };
 	struct idpf_queue *txq = stash->txq;
 	struct netdev_queue *nq;
@@ -2218,7 +2289,7 @@ static int idpf_stash_flow_sch_buf(struct idpf_queue *txq,
 	if (unlikely(!tx_buf->type))
 		return 0;
 
-	stash = idpf_buf_lifo_pop(&txq->buf_stack);
+	stash = idpf_buf_lifo_pop(&txq->stash->buf_stack);
 	if (unlikely(!stash)) {
 		net_err_ratelimited("%s: No out-of-order TX buffers left!\n",
 				    txq->vport->netdev->name);
@@ -2243,7 +2314,7 @@ static int idpf_stash_flow_sch_buf(struct idpf_queue *txq,
 		stash->miss_pkt = false;
 
 	/* Add buffer to buf_hash table to be freed later */
-	hash_add(txq->sched_buf_hash, &stash->hlist, stash->buf.compl_tag);
+	hash_add(txq->stash->sched_buf_hash, &stash->hlist, stash->buf.compl_tag);
 
 	tx_buf->type = IDPF_TX_BUF_EMPTY;
 	tx_buf->nr_frags = 0;
@@ -2761,13 +2832,13 @@ static bool idpf_tx_clean_complq(struct idpf_queue *complq, int budget,
 		/* Find necessary info of TX queue to clean buffers */
 		rel_tx_qid = le16_get_bits(tx_desc->qid_comptype_gen,
 					   IDPF_TXD_COMPLQ_QID_M);
-		if (unlikely(rel_tx_qid >= complq->tx.num_txq)) {
+		if (unlikely(rel_tx_qid >= complq->txq_grp->num_txq)) {
 			dev_err(idpf_adapter_to_dev(vport->adapter),
 				"TxQ not found\n");
 			goto fetch_next_desc;
 		}
 
-		tx_q = complq->tx.txqs[rel_tx_qid];
+		tx_q = complq->txq_grp->txqs[rel_tx_qid];
 
 		/* Determine completion type */
 		ctype = le16_get_bits(tx_desc->qid_comptype_gen,
@@ -2830,7 +2901,7 @@ static bool idpf_tx_clean_complq(struct idpf_queue *complq, int budget,
 #endif /* CONFIG_TX_TIMEOUT_VERBOSE */
 		tx_q->cleaned_pkts += cleaned_stats.packets;
 		tx_q->cleaned_bytes += cleaned_stats.bytes;
-		complq->tx.num_compl++;
+		complq->tx.num_completions++;
 		u64_stats_update_end(&tx_q->stats_sync);
 
 fetch_next_desc:
@@ -2860,14 +2931,14 @@ fetch_next_desc:
 	/* Store the state of the complq to be used later in deciding if a
 	 * TXQ can be started again
 	 */
-	if (unlikely(IDPF_TX_COMPLQ_PENDING(complq) >
+	if (unlikely(IDPF_TX_COMPLQ_PENDING(complq->txq_grp) >
 		     IDPF_TX_COMPLQ_OVERFLOW_THRESH(complq)))
 		complq_ok = false;
 
-	for (i = 0; i < complq->tx.num_txq; i++) {
+	for (i = 0; i < complq->txq_grp->num_txq; ++i) {
 		struct netdev_queue *nq;
 
-		tx_q = complq->tx.txqs[i];
+		tx_q = complq->txq_grp->txqs[i];
 
 #ifdef HAVE_XDP_SUPPORT
 		if (test_bit(__IDPF_Q_XDP, tx_q->flags)) {
@@ -2987,69 +3058,48 @@ void idpf_tx_splitq_build_flow_desc(union idpf_tx_flex_desc *desc,
 	desc->flow.qw1.ts[2] = params->offload.desc_ts[2];
 }
 
-/**
- * idpf_tx_splitq_has_room - check if enough Tx splitq resources are available
- * @txq: the queue to be checked
- * @desc_count: number of descriptors required for this packet
- *
- * Returns -EBUSY if a stop is needed, else 0
+/* Global conditions to tell whether the txq (and related resources)
+ * has room to allow the use of "size" descriptors.
  */
-static bool idpf_tx_splitq_has_room(struct idpf_queue *txq,
-				    unsigned int desc_count)
+static int idpf_txq_has_room(struct idpf_queue *tx_q, u32 size)
 {
-	if (IDPF_DESC_UNUSED(txq) < desc_count ||
-	    IDPF_TX_COMPLQ_PENDING(txq->tx.complq) >
-	    IDPF_TX_COMPLQ_OVERFLOW_THRESH(txq->tx.complq) ||
-	    IDPF_TX_BUF_RSV_LOW(txq))
-		return false;
-
-	return true;
+	if (IDPF_DESC_UNUSED(tx_q) < size ||
+	    IDPF_TX_COMPLQ_PENDING(tx_q->txq_grp) >
+		IDPF_TX_COMPLQ_OVERFLOW_THRESH(tx_q->txq_grp->complq) ||
+	    IDPF_TX_BUF_RSV_LOW(tx_q))
+		return 0;
+	return 1;
 }
 
 /**
- * idpf_tx_maybe_stop_splitq - check for Tx splitq stop conditions
- * @txq: the queue to be checked
- * @desc_count: number of descriptors required for this packet
+ * idpf_tx_maybe_stop_splitq - 1st level check for Tx splitq stop conditions
+ * @tx_q: the queue to be checked
+ * @descs_needed: number of descriptors required for this packet
  *
- * Returns 0 if stop is not needed
+ * Return: 0 if stop is not needed
  */
-static int idpf_tx_maybe_stop_splitq(struct idpf_queue *txq,
-				     unsigned int desc_count)
+static int idpf_tx_maybe_stop_splitq(struct idpf_queue *tx_q,
+				     unsigned int descs_needed)
 {
-	if (likely(idpf_tx_splitq_has_room(txq, desc_count)))
+	if (netif_subqueue_maybe_stop(tx_q->netdev, tx_q->idx,
+				      idpf_txq_has_room(tx_q, descs_needed),
+				      1, 1))
 		return 0;
 
-	netif_stop_subqueue(txq->vport->netdev, txq->idx);
-
-	u64_stats_update_begin(&txq->stats_sync);
-	u64_stats_inc(&txq->q_stats.tx.q_busy);
+	u64_stats_update_begin(&tx_q->stats_sync);
+	u64_stats_inc(&tx_q->q_stats.tx.q_busy);
 #ifdef CONFIG_TX_TIMEOUT_VERBOSE
-	if (IDPF_DESC_UNUSED(txq) < desc_count)
-		u64_stats_inc(&txq->q_stats.tx.busy_low_txq_descs);
-	if (IDPF_TX_COMPLQ_PENDING(txq->tx.complq) >
-	    IDPF_TX_COMPLQ_OVERFLOW_THRESH(txq->tx.complq))
-		u64_stats_inc(&txq->q_stats.tx.busy_too_many_pend_compl);
-	if (IDPF_TX_BUF_RSV_LOW(txq))
-		u64_stats_inc(&txq->q_stats.tx.busy_low_rsv_bufs);
+	if (IDPF_DESC_UNUSED(tx_q) < descs_needed)
+		u64_stats_inc(&tx_q->q_stats.tx.busy_low_txq_descs);
+	if (IDPF_TX_COMPLQ_PENDING(tx_q->txq_grp) >
+	    IDPF_TX_COMPLQ_OVERFLOW_THRESH(tx_q->txq_grp->complq))
+		u64_stats_inc(&tx_q->q_stats.tx.busy_too_many_pend_compl);
+	if (IDPF_TX_BUF_RSV_LOW(tx_q))
+		u64_stats_inc(&tx_q->q_stats.tx.busy_low_rsv_bufs);
 #endif /* CONFIG_TX_TIMEOUT_VERBOSE */
-	u64_stats_update_end(&txq->stats_sync);
+	u64_stats_update_end(&tx_q->stats_sync);
 
-	/* Memory barrier before checking head and tail */
-	smp_mb();
-
-	/* Check again in a case another CPU has just made room available. */
-	if (likely(!idpf_tx_splitq_has_room(txq, desc_count)))
-		return -EBUSY;
-
-	/* A reprieve! - use start_subqueue because it doesn't call schedule */
-	netif_start_subqueue(txq->vport->netdev, txq->idx);
-#ifdef CONFIG_TX_TIMEOUT_VERBOSE
-	u64_stats_update_begin(&txq->stats_sync);
-	u64_stats_inc(&txq->q_stats.tx.busy_q_restarts);
-	u64_stats_update_end(&txq->stats_sync);
-#endif /* CONFIG_TX_TIMEOUT_VERBOSE */
-
-	return 0;
+	return -EBUSY;
 }
 
 /**
@@ -3323,7 +3373,6 @@ static void idpf_tx_splitq_map(struct idpf_queue *tx_q,
 	unsigned int data_len, size;
 	struct idpf_tx_buf *tx_buf;
 	u16 i = tx_q->next_to_use;
-	struct idpf_queue *complq;
 	struct netdev_queue *nq;
 	struct sk_buff *skb;
 	skb_frag_t *frag;
@@ -3484,9 +3533,7 @@ static void idpf_tx_splitq_map(struct idpf_queue *tx_q,
 	idpf_tx_splitq_build_desc(tx_desc, params, td_cmd, size);
 	i = idpf_tx_splitq_bump_ntu(tx_q, i);
 
-	/* Update complq on how many completions to expect. */
-	complq = tx_q->tx.complq;
-	complq->tx.num_compl_pend++;
+	tx_q->txq_grp->num_completions_pending++;
 
 	/* record bytecount for BQL */
 	nq = netdev_get_tx_queue(tx_q->vport->netdev, tx_q->idx);
@@ -3725,41 +3772,64 @@ netdev_tx_t idpf_tx_drop_skb(struct idpf_queue *tx_q, struct sk_buff *skb)
 	return NETDEV_TX_OK;
 }
 
+#if IS_ENABLED(CONFIG_PTP_1588_CLOCK)
 /**
  * idpf_tx_tstamp - set up context descriptor for hardware timestamp
  * @tx_q: queue to send buffer on
- * @index: requested index of the tstamp latch
- * @off: pointer to the offload struct
  * @skb: pointer to the SKB we're sending
+ * @off: pointer to the offload struct
+ *
+ * Return: Positive index number on success, negative otherwise.
  */
-static bool idpf_tx_tstamp(struct idpf_queue *tx_q, u8 *index,
-			   struct idpf_tx_offload_params *off, struct sk_buff *skb)
+int idpf_tx_tstamp(struct idpf_queue *tx_q, struct sk_buff *skb,
+		   struct idpf_tx_offload_params *off)
 {
-	enum idpf_ptp_access access;
-	s8 idx = 0;
-
-	/* Tx timestamps cannot be sampled when doing TSO */
-	if (off->tx_flags & IDPF_TX_FLAGS_TSO)
-		return false;
+	int err;
+	u32 idx;
 
 	/* only timestamp the outbound packet if the user has requested it */
 	if (likely(!(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP)))
-		return false;
+		return -1;
 
-	access = tx_q->vport->adapter->ptp.tx_tstamp_access;
-	if (access == IDPF_PTP_NONE)
-		return false;
+	if (!idpf_ptp_get_txq_tstamp_capability(tx_q))
+		return -1;
+
+	/* Tx timestamps cannot be sampled when doing TSO */
+	if (off->tx_flags & IDPF_TX_FLAGS_TSO)
+		return -1;
 
 	/* Grab an open timestamp slot */
-	idx = idpf_ptp_request_tstamp_idx(tx_q->vport, skb);
-	if (idx < 0)
-		return false;
+	err = idpf_ptp_request_ts(tx_q, skb, &idx);
+	if (err)
+		return -1;
 
 	off->tx_flags |= IDPF_TX_FLAGS_TSYN;
-	*index = idx;
 
-	return true;
+	return idx;
 }
+
+/**
+ * idpf_tx_set_tstamp_desc - Set the Tx descriptor fields needed to generate
+ *			     PHY Tx timestamp
+ * @ctx_desc: Context descriptor
+ * @idx: Index of the Tx timestamp latch
+ */
+void idpf_tx_set_tstamp_desc(union idpf_flex_tx_ctx_desc *ctx_desc, u32 idx)
+{
+	ctx_desc->tsyn.qw1.cmd_dtype =
+		cpu_to_le16(FIELD_PREP(IDPF_TXD_QW1_CMD_M,
+				       IDPF_TX_CTX_DESC_TSYN));
+	ctx_desc->tsyn.qw1.cmd_dtype |=
+		cpu_to_le16(FIELD_PREP(IDPF_TXD_QW1_DTYPE_M,
+				       IDPF_TX_DESC_DTYPE_CTX));
+	ctx_desc->tsyn.qw1.tsyn_reg_l =
+		cpu_to_le16(FIELD_PREP(IDPF_TX_DESC_CTX_TSYN_L_M,
+				       idx));
+	ctx_desc->tsyn.qw1.tsyn_reg_h =
+		cpu_to_le16(FIELD_PREP(IDPF_TX_DESC_CTX_TSYN_H_M,
+				       idx >> 2));
+}
+#endif /* CONFIG_PTP_1588_CLOCK && CONFIG_PTP */
 
 /**
  * idpf_tx_splitq_need_re - check whether RE bit needs to be set
@@ -3777,6 +3847,26 @@ static inline bool idpf_tx_splitq_need_re(struct idpf_queue *tx_q)
 }
 
 /**
+ * idpf_tx_prepare_vlan_tag - prepare context descriptor with VLAN tag
+ * @tx_q: TX queue to get the next available descriptor
+ * @skb: send buffer to extract the VLAN tag
+ */
+static void idpf_tx_prepare_vlan_tag(struct idpf_queue *tx_q,
+				     struct sk_buff *skb)
+{
+	union idpf_flex_tx_ctx_desc *ctx_desc;
+	u64 qw1;
+
+	qw1 = FIELD_PREP(IDPF_TX_FLEX_CTX_DTYPE_M,
+			 IDPF_TX_DESC_DTYPE_FLEX_L2TAG1_CTX) |
+	      IDPF_TX_FLEX_CTX_DESC_CMD_L2TAG1 |
+	      FIELD_PREP(IDPF_TX_FLEX_CTX_L2TAG1_M, skb_vlan_tag_get(skb));
+
+	ctx_desc = idpf_tx_splitq_get_ctx_desc(tx_q);
+	ctx_desc->qw1 = cpu_to_le64(qw1);
+}
+
+/**
  * idpf_tx_splitq_frame - Sends buffer on Tx ring using flex descriptors
  * @skb: send buffer
  * @tx_q: queue to send buffer on
@@ -3787,10 +3877,12 @@ static netdev_tx_t idpf_tx_splitq_frame(struct sk_buff *skb,
 					struct idpf_queue *tx_q)
 {
 	struct idpf_tx_splitq_params tx_params = { };
+	int vlan_tag = skb_vlan_tag_present(skb);
+	union idpf_flex_tx_ctx_desc *ctx_desc;
 	struct idpf_tx_buf *first;
 	unsigned int count;
 	int tso;
-	u8 idx;
+	int idx;
 
 	count = idpf_tx_desc_count_required(tx_q, skb);
 	if (unlikely(!count))
@@ -3801,7 +3893,7 @@ static netdev_tx_t idpf_tx_splitq_frame(struct sk_buff *skb,
 		return idpf_tx_drop_skb(tx_q, skb);
 
 	/* Check for splitq specific TX resources */
-	count += tso;
+	count += tso + vlan_tag;
 	if (idpf_tx_maybe_stop_splitq(tx_q, count)) {
 		idpf_tx_buf_hw_update(tx_q, tx_q->next_to_use, false);
 		return NETDEV_TX_BUSY;
@@ -3809,8 +3901,9 @@ static netdev_tx_t idpf_tx_splitq_frame(struct sk_buff *skb,
 
 	if (tso) {
 		/* If tso is needed, set up context desc */
-		union idpf_flex_tx_ctx_desc *ctx_desc =
-			idpf_tx_splitq_get_ctx_desc(tx_q);
+		u16 seg_idx = min_t(u16, IDPF_MAX_SEGS,
+				    tx_params.offload.tso_segs) - 1;
+		ctx_desc = idpf_tx_splitq_get_ctx_desc(tx_q);
 
 		ctx_desc->tso.qw1.cmd_dtype =
 				cpu_to_le16(IDPF_TX_DESC_DTYPE_FLEX_TSO_CTX |
@@ -3825,27 +3918,25 @@ static netdev_tx_t idpf_tx_splitq_frame(struct sk_buff *skb,
 
 		u64_stats_update_begin(&tx_q->stats_sync);
 		u64_stats_inc(&tx_q->q_stats.tx.lso_pkts);
+		u64_stats_add(&tx_q->q_stats.tx.lso_segs_tot,
+			      tx_params.offload.tso_segs);
+		u64_stats_add(&tx_q->q_stats.tx.lso_bytes, skb->data_len);
+		u64_stats_inc(&tx_q->q_stats.tx.segs[seg_idx]);
 		u64_stats_update_end(&tx_q->stats_sync);
-	} else if (idpf_tx_tstamp(tx_q, &idx, &tx_params.offload, skb)) {
-		union idpf_flex_tx_ctx_desc *ctx_desc = idpf_tx_splitq_get_ctx_desc(tx_q);
-
-		ctx_desc->tsyn.qw1.cmd_dtype =
-			cpu_to_le16(FIELD_PREP(IDPF_TXD_QW1_CMD_M,
-					       IDPF_TX_CTX_DESC_TSYN));
-
-		ctx_desc->tsyn.qw1.cmd_dtype |=
-			cpu_to_le16(FIELD_PREP(IDPF_TXD_QW1_DTYPE_M,
-					       IDPF_TX_DESC_DTYPE_CTX));
-
-		ctx_desc->tsyn.qw1.tsyn_reg_l =
-			cpu_to_le16(FIELD_PREP(IDPF_TX_DESC_CTX_TSYN_L_M,
-					       idx));
-
-		/* Shift index as two first bits are already written */
-		ctx_desc->tsyn.qw1.tsyn_reg_h =
-			cpu_to_le16(FIELD_PREP(IDPF_TX_DESC_CTX_TSYN_H_M,
-					       idx >> 2));
 	}
+
+	/* According to HW packet rules, context descriptor order should be:
+	 * TSO context descriptor followed by non TSO context descriptors.
+	 */
+	if (vlan_tag)
+		idpf_tx_prepare_vlan_tag(tx_q, skb);
+
+	idx = idpf_tx_tstamp(tx_q, skb, &tx_params.offload);
+	if (idx != -1) {
+		ctx_desc = idpf_tx_splitq_get_ctx_desc(tx_q);
+		idpf_tx_set_tstamp_desc(ctx_desc, idx);
+	}
+
 	/* record the location of the first descriptor for this packet */
 	first = &tx_q->tx.bufs[tx_q->next_to_use];
 	first->skb = skb;
@@ -3875,11 +3966,9 @@ static netdev_tx_t idpf_tx_splitq_frame(struct sk_buff *skb,
 		 * time around the ring.
 		 */
 		if (idpf_tx_splitq_need_re(tx_q)) {
-			struct idpf_queue *complq = tx_q->tx.complq;
-
 			tx_params.eop_cmd |= IDPF_TXD_FLEX_FLOW_CMD_RE;
 			tx_q->tx.last_re = tx_q->next_to_use;
-			complq->tx.num_compl_pend++;
+			tx_q->txq_grp->num_completions_pending++;
 		}
 
 		if (skb->ip_summed == CHECKSUM_PARTIAL)
@@ -4118,6 +4207,7 @@ static void idpf_rx_csum(struct idpf_queue *rxq, struct sk_buff *skb,
 	default:
 		break;
 	}
+
 	return;
 
 checksum_fail:
@@ -4140,15 +4230,15 @@ static void idpf_rx_splitq_extract_csum_bits(struct virtchnl2_rx_flex_desc_adv_n
 	qword0 = rx_desc->status_err0_qw0;
 	qword1 = rx_desc->status_err0_qw1;
 
-	csum->ipe = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_XSUM_IPE_S),
+	csum->ipe = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_XSUM_IPE_M,
 			      qword1);
-	csum->eipe = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_XSUM_EIPE_S),
+	csum->eipe = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_XSUM_EIPE_M,
 			       qword1);
-	csum->l4e = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_XSUM_L4E_S),
+	csum->l4e = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_XSUM_L4E_M,
 			      qword1);
-	csum->l3l4p = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_L3L4P_S),
+	csum->l3l4p = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_L3L4P_M,
 				qword1);
-	csum->ipv6exadd = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_IPV6EXADD_S),
+	csum->ipv6exadd = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_IPV6EXADD_M,
 				    qword0);
 	csum->raw_csum_inv =
 		le16_get_bits(rx_desc->ptype_err_fflags0,
@@ -4173,6 +4263,7 @@ static int idpf_rx_rsc(struct idpf_queue *rxq, struct sk_buff *skb,
 		       struct idpf_rx_ptype_decoded *decoded)
 {
 	u16 rsc_segments, rsc_seg_len;
+	u16 rsc_seg_stat;
 	bool ipv4, ipv6;
 	int len;
 
@@ -4204,7 +4295,7 @@ static int idpf_rx_rsc(struct idpf_queue *rxq, struct sk_buff *skb,
 		skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
 
 		/* Reset and set transport header offset in skb */
-		skb_set_transport_header(skb, sizeof(*ipv4h));
+		skb_set_transport_header(skb, sizeof(struct iphdr));
 		len = skb->len - skb_transport_offset(skb);
 
 		/* Compute the TCP pseudo header checksum*/
@@ -4214,7 +4305,7 @@ static int idpf_rx_rsc(struct idpf_queue *rxq, struct sk_buff *skb,
 		struct ipv6hdr *ipv6h = ipv6_hdr(skb);
 
 		skb_shinfo(skb)->gso_type = SKB_GSO_TCPV6;
-		skb_set_transport_header(skb, sizeof(*ipv6h));
+		skb_set_transport_header(skb, sizeof(struct ipv6hdr));
 		len = skb->len - skb_transport_offset(skb);
 		tcp_hdr(skb)->check =
 			~tcp_v6_check(len, &ipv6h->saddr, &ipv6h->daddr, 0);
@@ -4224,6 +4315,10 @@ static int idpf_rx_rsc(struct idpf_queue *rxq, struct sk_buff *skb,
 
 	u64_stats_update_begin(&rxq->stats_sync);
 	u64_stats_inc(&rxq->q_stats.rx.rsc_pkts);
+	rsc_seg_stat = min_t(u16, IDPF_MAX_SEGS, rsc_segments) - 1;
+	u64_stats_inc(&rxq->q_stats.rx.segs[rsc_seg_stat]);
+	u64_stats_add(&rxq->q_stats.rx.rsc_segs_tot, rsc_segments);
+	u64_stats_add(&rxq->q_stats.rx.rsc_bytes, skb->data_len);
 	u64_stats_update_end(&rxq->stats_sync);
 
 	return 0;
@@ -4243,13 +4338,17 @@ static void idpf_rx_hwtstamp(struct idpf_queue *rxq,
 	u64 cached_time, ts_ns;
 	u32 ts_high;
 
+	if (!(rx_desc->ts_low & VIRTCHNL2_RX_FLEX_TSTAMP_VALID))
+		return;
+
 	cached_time = READ_ONCE(*rxq->cached_phc_time);
 
-	if (rx_desc->ts_low & VIRTCHNL2_RX_FLEX_TSTAMP_VALID) {
-		ts_high = le32_to_cpu(rx_desc->ts_high);
-		ts_ns = idpf_ptp_tstamp_extend_32b_to_64b(cached_time, ts_high);
-		skb_hwtstamps(skb)->hwtstamp = ns_to_ktime(ts_ns);
-	}
+	ts_high = le32_to_cpu(rx_desc->ts_high);
+	ts_ns = idpf_ptp_tstamp_extend_32b_to_64b(cached_time, ts_high);
+
+	*skb_hwtstamps(skb) = (struct skb_shared_hwtstamps) {
+		.hwtstamp = ns_to_ktime(ts_ns),
+	};
 }
 
 /**
@@ -4549,10 +4648,39 @@ static struct sk_buff *idpf_rx_hdr_construct_skb(struct idpf_queue *rxq,
  * @stat_err_bits: value to mask
  *
  */
-static bool
-idpf_rx_splitq_test_staterr(const u8 stat_err_field, const u8 stat_err_bits)
+static bool idpf_rx_splitq_test_staterr(const u8 stat_err_field,
+					const u8 stat_err_bits)
 {
 	return !!(stat_err_field & stat_err_bits);
+}
+
+/**
+ * idpf_get_vlan_tci - extract VLAN TCI from the RX descriptor
+ * @rx_desc: RX descriptor to extract from
+ */
+static u16 idpf_get_vlan_tci(const struct virtchnl2_rx_flex_desc_adv_nic_3 *rx_desc)
+{
+	if (FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_L2TAG1P_M,
+		      rx_desc->status_err0_qw0))
+		return le16_to_cpu(rx_desc->l2tag1);
+
+	return 0;
+}
+
+/**
+ * idpf_receive_skb - wrapper to insert VLAN tag into skb and call
+ *		      napi_gro_receive
+ * @q: RX queue to get the VLAN tag and napi info
+ * @skb: skb to fill the data into
+ * @vlan_tci: VLAN TCI extracted from the descriptor
+ */
+static void idpf_receive_skb(struct idpf_queue *q, struct sk_buff *skb,
+			     u16 vlan_tci)
+{
+	if (vlan_tci & VLAN_VID_MASK)
+		__vlan_hwaccel_put_tag(skb, q->rx.vlan_proto, vlan_tci);
+
+	napi_gro_receive(&q->q_vector->napi, skb);
 }
 
 /**
@@ -4592,6 +4720,9 @@ static void idpf_rx_splitq_recycle_buf(struct idpf_queue *rxq,
 	struct idpf_page_info *pinfo = &rx_buf->page_info[rx_buf->page_indx];
 
 	if (idpf_rx_can_reuse_page(rx_buf)) {
+		u64_stats_update_begin(&rxq->stats_sync);
+		u64_stats_inc(&rxq->q_stats.rx.page_recycles);
+		u64_stats_update_end(&rxq->stats_sync);
 		return;
 	}
 
@@ -4612,6 +4743,9 @@ static void idpf_rx_splitq_recycle_buf(struct idpf_queue *rxq,
 	 * hole.
 	 */
 	idpf_alloc_page(rxq->dev, pinfo);
+	u64_stats_update_begin(&rxq->stats_sync);
+	u64_stats_inc(&rxq->q_stats.rx.page_reallocs);
+	u64_stats_update_end(&rxq->stats_sync);
 }
 
 #ifdef HAVE_XDP_SUPPORT
@@ -4932,6 +5066,7 @@ static int idpf_rx_splitq_clean(struct idpf_queue *rxq, int budget)
 		u16 gen_id, buf_id = 0;
 		 /* Header buffer overflow only valid for header split */
 		bool hbo = false;
+		u16 vlan_tci;
 		int bufq_id;
 		u8 rxdid;
 
@@ -4943,14 +5078,14 @@ static int idpf_rx_splitq_clean(struct idpf_queue *rxq, int budget)
 		desc = IDPF_RX_DESC(rxq, ntc);
 		rx_desc = (struct virtchnl2_rx_flex_desc_adv_nic_3 *)desc;
 
-		/* if the descriptor isn't done, no work yet to do */
-		gen_id = le16_get_bits(rx_desc->pktlen_gen_bufq_id,
-				       VIRTCHNL2_RX_FLEX_DESC_ADV_GEN_M);
-
 		/* This memory barrier is needed to keep us from reading
 		 * any other fields out of the rx_desc
 		 */
 		dma_rmb();
+
+		/* if the descriptor isn't done, no work yet to do */
+		gen_id = le16_get_bits(rx_desc->pktlen_gen_bufq_id,
+				       VIRTCHNL2_RX_FLEX_DESC_ADV_GEN_M);
 
 		if (test_bit(__IDPF_Q_GEN_CHK, rxq->flags) != gen_id)
 			break;
@@ -4968,7 +5103,10 @@ static int idpf_rx_splitq_clean(struct idpf_queue *rxq, int budget)
 		pkt_len = le16_get_bits(rx_desc->pktlen_gen_bufq_id,
 					VIRTCHNL2_RX_FLEX_DESC_ADV_LEN_PBUF_M);
 
-		hbo = FIELD_GET(BIT(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_HBO_S),
+		bufq_id = le16_get_bits(rx_desc->pktlen_gen_bufq_id,
+					VIRTCHNL2_RX_FLEX_DESC_ADV_BUFQ_ID_M);
+
+		hbo = FIELD_GET(VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_HBO_M,
 				rx_desc->status_err0_qw1);
 
 		if (unlikely(hbo)) {
@@ -4987,9 +5125,6 @@ static int idpf_rx_splitq_clean(struct idpf_queue *rxq, int budget)
 					VIRTCHNL2_RX_FLEX_DESC_ADV_LEN_HDR_M);
 
 bypass_hsplit:
-		bufq_id = le16_get_bits(rx_desc->pktlen_gen_bufq_id,
-					VIRTCHNL2_RX_FLEX_DESC_ADV_BUFQ_ID_M);
-
 		refillq = &rxq->rx.refillqs[bufq_id];
 
 		buf_id = le16_to_cpu(rx_desc->buf_id);
@@ -5058,6 +5193,8 @@ bypass_hsplit:
 		if (!idpf_rx_splitq_is_eop(rx_desc))
 			continue;
 
+		vlan_tci = idpf_get_vlan_tci(rx_desc);
+
 		/* pad skb if needed (to make valid ethernet frame) */
 		if (eth_skb_pad(skb)) {
 			skb = NULL;
@@ -5075,7 +5212,7 @@ bypass_hsplit:
 		}
 
 		/* send completed skb up the stack */
-		napi_gro_receive(&rxq->q_vector->napi, skb);
+		idpf_receive_skb(rxq, skb, vlan_tci);
 		skb = NULL;
 
 		/* update budget accounting */
@@ -5165,7 +5302,6 @@ static void idpf_rx_clean_refillq(struct idpf_queue *bufq,
 	struct virtchnl2_splitq_rx_buf_desc *buf_desc;
 	u16 bufq_nta = bufq->next_to_alloc;
 	u16 ntc = refillq->next_to_clean;
-	bool failure = false;
 	int cleaned = 0;
 	u16 gen;
 
@@ -5174,6 +5310,7 @@ static void idpf_rx_clean_refillq(struct idpf_queue *bufq,
 	/* make sure we stop at ring wrap in the unlikely case ring is full */
 	while (likely(cleaned < refillq->desc_count)) {
 		u16 refill_desc = IDPF_SPLITQ_RX_BI_DESC(refillq, ntc);
+		bool failure;
 
 		gen = FIELD_GET(IDPF_RX_BI_GEN_M, refill_desc);
 		if (test_bit(__IDPF_RFLQ_GEN_CHK, refillq->flags) != gen)
@@ -5221,7 +5358,7 @@ static void idpf_rx_clean_refillq(struct idpf_queue *bufq,
  * @bufq: buffer queue with refill queues
  *
  * Iterates through all refill queues assigned to the buffer queue assigned to
- * this vector. Returns true if clean is complete within budget, false
+ * this vector.  Returns true if clean is complete within budget, false
  * otherwise.
  */
 static void idpf_rx_clean_refillq_all(struct idpf_queue *bufq)
@@ -5821,9 +5958,7 @@ static bool idpf_rx_splitq_clean_all(struct idpf_q_vector *q_vec, int budget,
 #else
 		pkts_cleaned_per_q = idpf_rx_splitq_clean(rxq, budget_per_q);
 #endif /* HAVE_NETDEV_BPF_XSK_POOL */
-		/* if we clean as many as budgeted, we must not
-		 * be done
-		 */
+		/* if we clean as many as budgeted, we must not be done */
 		if (pkts_cleaned_per_q >= budget_per_q)
 			clean_complete = false;
 		pkts_cleaned += pkts_cleaned_per_q;
@@ -5867,6 +6002,14 @@ static int idpf_vport_splitq_napi_poll(struct napi_struct *napi, int budget)
 		return budget;
 	}
 
+	/* Switch to poll mode in the tear-down path after sending disable
+	 * queues virtchnl message, as the interrupts will be disabled after
+	 * that
+	 */
+	if (unlikely(q_vector->num_txq && test_bit(__IDPF_Q_POLL_MODE,
+						   q_vector->tx[0]->flags)))
+		return budget;
+
 	work_done = min_t(int, work_done, budget - 1);
 
 	/* Exit the polling mode, but don't re-enable interrupts if stack might
@@ -5877,15 +6020,7 @@ static int idpf_vport_splitq_napi_poll(struct napi_struct *napi, int budget)
 	else
 		idpf_vport_intr_set_wb_on_itr(q_vector);
 
-	/* Switch to poll mode in the tear-down path after sending disable
-	 * queues virtchnl message, as the interrupts will be disabled after
-	 * that
-	 */
-	if (unlikely(q_vector->num_txq && test_bit(__IDPF_Q_POLL_MODE,
-						   q_vector->tx[0]->flags)))
-		return budget;
-	else
-		return work_done;
+	return work_done;
 }
 
 /**
@@ -5896,7 +6031,11 @@ static void idpf_vport_intr_map_vector_to_qs(struct idpf_vgrp *vgrp)
 {
 	struct idpf_intr_grp *intr_grp = &vgrp->intr_grp;
 	struct idpf_q_grp *q_grp = &vgrp->q_grp;
-	int i, j, num_txq;
+	u16 num_txq_grp = q_grp->num_txq_grp;
+	struct idpf_txq_group *tx_qgrp;
+	struct idpf_queue *q;
+	int i, j, qv_idx;
+	u16 q_index;
 
 	for (i = 0; i < q_grp->num_rxq; i++) {
 		struct idpf_queue *rxq = q_grp->rxqs[i];
@@ -5923,19 +6062,36 @@ static void idpf_vport_intr_map_vector_to_qs(struct idpf_vgrp *vgrp)
 	/* In splitq, we want to map the vectors for TX to the complqs as they
 	 * will do the cleaning and reporting.
 	 */
-	num_txq = idpf_is_queue_model_split(q_grp->txq_model) ?
-		q_grp->num_complq : q_grp->num_txq;
+	for (i = 0, qv_idx = 0; i < num_txq_grp; i++) {
+		u16 num_txq;
 
-	for (i = 0; i < num_txq; i++) {
-		int qv_idx = i % intr_grp->num_q_vectors;
-		struct idpf_queue *q;
+		tx_qgrp = &q_grp->txq_grps[i];
+		num_txq = tx_qgrp->num_txq;
 
-		q = idpf_is_queue_model_split(q_grp->txq_model) ?
-			&q_grp->complqs[i] : q_grp->txqs[i];
+		if (idpf_is_queue_model_split(q_grp->txq_model)) {
+			if (qv_idx >= intr_grp->num_q_vectors)
+				qv_idx = 0;
 
-		q->q_vector = &intr_grp->q_vectors[qv_idx];
-		q->q_vector->tx[q->q_vector->num_txq] = q;
-		q->q_vector->num_txq++;
+			q = tx_qgrp->complq;
+			q->q_vector = &intr_grp->q_vectors[qv_idx];
+			q_index = q->q_vector->num_txq;
+			q->q_vector->tx[q_index] = q;
+			q->q_vector->num_txq++;
+			qv_idx++;
+		} else {
+			for (j = 0; j < num_txq; j++) {
+				if (qv_idx >= intr_grp->num_q_vectors)
+					qv_idx = 0;
+
+				q = tx_qgrp->txqs[j];
+				q->q_vector = &intr_grp->q_vectors[qv_idx];
+				q_index = q->q_vector->num_txq;
+				q->q_vector->tx[q_index] = q;
+				q->q_vector->num_txq++;
+
+				qv_idx++;
+			}
+		}
 	}
 }
 

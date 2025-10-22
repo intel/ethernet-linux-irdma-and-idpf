@@ -4,6 +4,7 @@
 #include "idpf.h"
 #include "idpf_lan_pf_regs.h"
 #include "idpf_virtchnl.h"
+#include "idpf_ptp.h"
 
 /* LAN driver does not own all the BAR0 address space. This results in 2 BAR0
  * regions for PF device and the driver should map each region separately.
@@ -22,7 +23,7 @@
 
 /**
  * idpf_ctlq_reg_init - initialize default mailbox registers
- * @hw: pointer to hw struct
+ * @hw: pointer to the hardware structure
  * @cq: pointer to the array of create control queues
  */
 static void idpf_ctlq_reg_init(struct idpf_hw *hw,
@@ -198,10 +199,10 @@ static u64 idpf_read_master_time_ns(const struct idpf_hw *hw)
  *
  * Set the bits required for enabling shtime and cmd execution
  */
-static void idpf_ptp_reg_init(struct idpf_adapter *adapter)
+static void idpf_ptp_reg_init(const struct idpf_adapter *adapter)
 {
-	adapter->ptp.cmd.shtime_enable_mask = PF_GLTSYN_CMD_SYNC_SHTIME_EN_M;
-	adapter->ptp.cmd.exec_cmd_mask = PF_GLTSYN_CMD_SYNC_EXEC_CMD_M;
+	adapter->ptp->cmd.shtime_enable_mask = PF_GLTSYN_CMD_SYNC_SHTIME_EN_M;
+	adapter->ptp->cmd.exec_cmd_mask = PF_GLTSYN_CMD_SYNC_EXEC_CMD_M;
 }
 
 /**

@@ -4,7 +4,7 @@
 #ifndef _VIRTCHNL2_H_
 #define _VIRTCHNL2_H_
 
-/* All opcodes associated with virtchnl 2 are prefixed with virtchnl2 or
+/* All opcodes associated with virtchnl2 are prefixed with virtchnl2 or
  * VIRTCHNL2. Any future opcodes, offloads/capabilities, structures,
  * and defines must be prefixed with virtchnl2 or VIRTCHNL2 to avoid confusion.
  *
@@ -125,6 +125,14 @@ enum virtchnl2_op {
 	VIRTCHNL2_OP_PTP_ADJ_DEV_CLK_TIME		= 547,
 	VIRTCHNL2_OP_PTP_GET_VPORT_TX_TSTAMP_CAPS	= 548,
 	VIRTCHNL2_OP_GET_LAN_MEMORY_REGIONS		= 549,
+	/* 550 is reserved for future use
+	 * 551, 552, 553 are reserved for flow steering
+	 */
+	VIRTCHNL2_OP_GET_VLAN_CAPS			= 554,
+	VIRTCHNL2_OP_ENABLE_VLAN_STRIPPING		= 555,
+	VIRTCHNL2_OP_DISABLE_VLAN_STRIPPING		= 556,
+	VIRTCHNL2_OP_ENABLE_VLAN_INSERTION		= 557,
+	VIRTCHNL2_OP_DISABLE_VLAN_INSERTION		= 558,
 	VIRTCHNL2_OP_GET_OEM_CAPS			= 4999,
 	VIRTCHNL2_OP_OEM_RCA                            = 5000,
 };
@@ -278,6 +286,7 @@ enum virtchnl2_cap_other {
 	VIRTCHNL2_CAP_FLOW_STEER		= BIT_ULL(21),
 	VIRTCHNL2_CAP_LAN_MEMORY_REGIONS	= BIT_ULL(22),
 	VIRTCHNL2_CAP_TX_CMPL_TSTMP		= BIT_ULL(23),
+	VIRTCHNL2_CAP_TX_LARGE_COMPLQ		= BIT_ULL(24),
 	/* This must be the last capability */
 	VIRTCHNL2_CAP_OEM			= BIT_ULL(63),
 };
@@ -340,13 +349,12 @@ enum virtchnl2_device_type {
 
 /**
  * enum virtchnl2_txq_sched_mode - Transmit Queue Scheduling Modes.
- * @VIRTCHNL2_TXQ_SCHED_MODE_QUEUE: Queue mode is the legacy mode i.e. inorder
- *				    completions where descriptors and buffers
- *				    are completed at the same time.
- * @VIRTCHNL2_TXQ_SCHED_MODE_FLOW: Flow scheduling mode allows for out of order
- *				   packet processing where descriptors are
- *				   cleaned in order, but buffers can be
- *				   completed out of order.
+ * @VIRTCHNL2_TXQ_SCHED_MODE_QUEUE: Queue mode is the legacy mode i.e.
+ * inorder completions where descriptors and buffers are completed at
+ * the same time.
+ * @VIRTCHNL2_TXQ_SCHED_MODE_FLOW: Flow scheduling mode allows for out
+ * of order packet processing where descriptors cleaned in order, but
+ *  buffers can be completed out of order.
  */
 enum virtchnl2_txq_sched_mode {
 	VIRTCHNL2_TXQ_SCHED_MODE_QUEUE		= 0,
@@ -355,13 +363,16 @@ enum virtchnl2_txq_sched_mode {
 
 /**
  * enum virtchnl2_txq_flags - Transmit Queue feature flags
- * @VIRTCHNL2_TXQ_ENABLE_MISS_COMPL: Enable rule miss completion type. Packet
- *				     completion for a packet sent on exception
- *				     path and only relevant in flow scheduling
- *				     mode.
+ * @VIRTCHNL2_TXQ_ENABLE_MISS_COMPL: Enable rule miss completion type.
+ *  Packet completion for a packet sent on exception path and only
+ *  relevant in flow scheduling mode.
+ * @VIRTCHNL2_TXQ_LARGE_COMPLQ: Configure the completion queue with
+ * a larger than U16_MAX ring length. This is used to support large
+ * numbers of packets in flight.
  */
 enum virtchnl2_txq_flags {
 	VIRTCHNL2_TXQ_ENABLE_MISS_COMPL		= BIT(0),
+	VIRTCHNL2_TXQ_LARGE_COMPLQ              = BIT(1),
 };
 
 /**
@@ -429,22 +440,22 @@ enum virtchnl2_event_codes {
 };
 
 /**
- * enum virtchnl2_queue_type - Various queue types
- * @VIRTCHNL2_QUEUE_TYPE_TX: TX queue type
- * @VIRTCHNL2_QUEUE_TYPE_RX: RX queue type
- * @VIRTCHNL2_QUEUE_TYPE_TX_COMPLETION: TX completion queue type
- * @VIRTCHNL2_QUEUE_TYPE_RX_BUFFER: RX buffer queue type
- * @VIRTCHNL2_QUEUE_TYPE_CONFIG_TX: Config TX queue type
- * @VIRTCHNL2_QUEUE_TYPE_CONFIG_RX: Config RX queue type
- * @VIRTCHNL2_QUEUE_TYPE_P2P_TX: P2P TX queue type
- * @VIRTCHNL2_QUEUE_TYPE_P2P_RX: P2P RX queue type
- * @VIRTCHNL2_QUEUE_TYPE_P2P_TX_COMPLETION: P2P TX completion queue type
- * @VIRTCHNL2_QUEUE_TYPE_P2P_RX_BUFFER: P2P RX buffer queue type
- * @VIRTCHNL2_QUEUE_TYPE_MBX_TX: TX mailbox queue type
- * @VIRTCHNL2_QUEUE_TYPE_MBX_RX: RX mailbox queue type
+ * enum virtchnl2_queue_type - Various queue types.
+ * @VIRTCHNL2_QUEUE_TYPE_TX: TX queue type.
+ * @VIRTCHNL2_QUEUE_TYPE_RX: RX queue type.
+ * @VIRTCHNL2_QUEUE_TYPE_TX_COMPLETION: TX completion queue type.
+ * @VIRTCHNL2_QUEUE_TYPE_RX_BUFFER: RX buffer queue type.
+ * @VIRTCHNL2_QUEUE_TYPE_CONFIG_TX: Config TX queue type.
+ * @VIRTCHNL2_QUEUE_TYPE_CONFIG_RX: Config RX queue type.
+ * @VIRTCHNL2_QUEUE_TYPE_P2P_TX: P2P TX queue type.
+ * @VIRTCHNL2_QUEUE_TYPE_P2P_RX: P2P RX queue type.
+ * @VIRTCHNL2_QUEUE_TYPE_P2P_TX_COMPLETION: P2P TX completion queue type.
+ * @VIRTCHNL2_QUEUE_TYPE_P2P_RX_BUFFER: P2P RX buffer queue type.
+ * @VIRTCHNL2_QUEUE_TYPE_MBX_TX: TX mailbox queue type.
+ * @VIRTCHNL2_QUEUE_TYPE_MBX_RX: RX mailbox queue type.
  *
  * Transmit and Receive queue types are valid in single as well as split queue
- * models. With Split Queue model, 2 additional types are introduced which are
+ * models. With Split Queue model, 2 additional types are introduced -
  * TX_COMPLETION and RX_BUFFER. In split queue model, receive corresponds to
  * the queue where hardware posts completions.
  */
@@ -696,7 +707,7 @@ VIRTCHNL2_CHECK_STRUCT_LEN(8, virtchnl2_version_info);
  * @max_sg_bufs_per_tx_pkt: Max number of scatter gather buffers that can be
  *			    sent per transmit packet without needing to be
  *			    linearized.
- * @reserved: Reserved field
+ * @reserved: Reserved.
  * @max_adis: Max number of ADIs
  * @oem_cp_ver_major: OEM CP major version number
  * @oem_cp_ver_minor: OEM CP minor version number
@@ -844,11 +855,12 @@ enum virtchnl2_vport_flags {
  * @vport_id: Vport id. CP populates this field on response.
  * @default_mac_addr: Default MAC address.
  * @vport_flags: See enum virtchnl2_vport_flags.
- * @rx_desc_ids: See enum virtchnl2_rx_desc_id_bitmasks.
- * @tx_desc_ids: See enum virtchnl2_tx_desc_ids.
+ * @rx_desc_ids: See VIRTCHNL2_RX_DESC_IDS definitions.
+ * @tx_desc_ids: See VIRTCHNL2_TX_DESC_IDS definitions.
  * @reserved: Reserved bytes and cannot be used.
+
  * @inline_flow_types: Bit mask of supported inline-flow-steering
- *  flow types (See enum virtchnl2_flow_types)
+ *  flow types (See enum virtchnl2_flow_types).
  * @sideband_flow_types: Bit mask of supported sideband-flow-steering
  *  flow types (See enum virtchnl2_flow_types).
  * @sideband_flow_actions: Bit mask of supported action types
@@ -880,6 +892,7 @@ struct virtchnl2_create_vport {
 	__le16 num_rx_bufq;
 	__le16 default_rx_q;
 	__le16 vport_index;
+	/* CP populates the following fields on response */
 	__le16 max_mtu;
 	__le32 vport_id;
 	u8 default_mac_addr[ETH_ALEN];
@@ -935,7 +948,9 @@ VIRTCHNL2_CHECK_STRUCT_LEN(8, virtchnl2_vport);
  * @peer_type: Valid only if queue type is VIRTCHNL2_QUEUE_TYPE_MAILBOX_TX
  * @peer_rx_queue_id: Valid only if queue type is CONFIG_TX and used to deliver
  *		      messages for the respective CONFIG_TX queue.
- * @pad: Padding.
+ * @large_ring_len: Valid only for type VIRTCHNL2_QUEUE_TYPE_TX_COMPLETION. Used
+ *		    to increase number of completion queue descriptors beyond
+ *		    U16_MAX to support more packets in flight.
  * @egress_pasid: Egress PASID info.
  * @egress_hdr_pasid: Egress HDR passid.
  * @egress_buf_pasid: Egress buf passid.
@@ -953,7 +968,7 @@ struct virtchnl2_txq_info {
 	__le16 tx_compl_queue_id;
 	__le16 peer_type;
 	__le16 peer_rx_queue_id;
-	u8 pad[4];
+	__le32 large_ring_len;
 	__le32 egress_pasid;
 	__le32 egress_hdr_pasid;
 	__le32 egress_buf_pasid;
@@ -1064,13 +1079,13 @@ struct virtchnl2_config_rx_queues {
 VIRTCHNL2_CHECK_STRUCT_VAR_LEN(112, virtchnl2_config_rx_queues, qinfo);
 
 /**
- * struct virtchnl2_add_queues - Data for VIRTCHNL2_OP_ADD_QUEUES.
+ * struct virtchnl2_add_queues - data for VIRTCHNL2_OP_ADD_QUEUES.
  * @vport_id: Vport id.
- * @num_tx_q: Number of Tx qieues.
+ * @num_tx_q: Number of Tx queues.
  * @num_tx_complq: Number of Tx completion queues.
  * @num_rx_q:  Number of Rx queues.
  * @num_rx_bufq:  Number of Rx buffer queues.
- * @mbx_q_index: Mailbox queue index for allocation
+ * @mbx_q_index: Mailbox queue index for allocation.
  * @pad: Padding.
  * @chunks: Chunks of contiguous queues.
  *
@@ -1288,7 +1303,6 @@ VIRTCHNL2_CHECK_STRUCT_LEN(32, virtchnl2_vector_chunk);
 struct virtchnl2_vector_chunks {
 	__le16 num_vchunks;
 	u8 pad[14];
-
 	struct virtchnl2_vector_chunk vchunks[];
 };
 VIRTCHNL2_CHECK_STRUCT_VAR_LEN(48, virtchnl2_vector_chunks, vchunks);
@@ -1310,7 +1324,6 @@ VIRTCHNL2_CHECK_STRUCT_VAR_LEN(48, virtchnl2_vector_chunks, vchunks);
 struct virtchnl2_alloc_vectors {
 	__le16 num_vectors;
 	u8 pad[14];
-
 	struct virtchnl2_vector_chunks vchunks;
 };
 VIRTCHNL2_CHECK_STRUCT_VAR_LEN(64, virtchnl2_alloc_vectors, vchunks.vchunks);
@@ -1331,7 +1344,6 @@ VIRTCHNL2_CHECK_STRUCT_VAR_LEN(64, virtchnl2_alloc_vectors, vchunks.vchunks);
  */
 struct virtchnl2_rss_lut {
 	__le32 vport_id;
-
 	__le16 lut_entries_start;
 	__le16 lut_entries;
 	u8 pad[4];
@@ -1488,15 +1500,14 @@ VIRTCHNL2_CHECK_STRUCT_VAR_LEN(8, virtchnl2_ptype, proto_id);
  * @start_ptype_id: Starting ptype ID.
  * @num_ptypes: Number of packet types from start_ptype_id.
  * @pad: Padding for future extensions.
- *
  * The total number of supported packet types is based on the descriptor type.
  * For the flex descriptor, it is 1024 (10-bit ptype), and for the base
  * descriptor, it is 256 (8-bit ptype). Send this message to the CP by
  * populating the 'start_ptype_id' and the 'num_ptypes'. CP responds with the
  * 'start_ptype_id', 'num_ptypes', and the array of ptype (virtchnl2_ptype) that
- * are added at the end of the 'virtchnl2_get_ptype_info' message.
- * (Note: There is no specific field for the ptypes but are added at the end of
- * the ptype info message. PF/VF is expected to extract the ptypes accordingly.
+ * are added at the end of the 'virtchnl2_get_ptype_info' message (Note: There
+ * is no specific field for the ptypes but are added at the end of the
+ * ptype info message. PF/VF is expected to extract the ptypes accordingly.
  * Reason for doing this is because compiler doesn't allow nested flexible
  * array fields).
  *
@@ -1529,7 +1540,7 @@ VIRTCHNL2_CHECK_STRUCT_LEN(8, virtchnl2_get_ptype_info);
  * @rx_broadcast: Received broadcast packets.
  * @rx_discards: Discarded packets on receive.
  * @rx_errors: Receive errors.
- * @rx_unknown_protocol: Unlnown protocol.
+ * @rx_unknown_protocol: Unknown protocol.
  * @tx_bytes: Transmitted bytes.
  * @tx_unicast: Transmitted unicast packets.
  * @tx_multicast: Transmitted multicast packets.
@@ -1658,9 +1669,7 @@ VIRTCHNL2_CHECK_STRUCT_LEN(736, virtchnl2_port_stats);
 struct virtchnl2_event {
 	__le32 event;
 	__le32 link_speed;
-
 	__le32 vport_id;
-
 	u8 link_status;
 	u8 pad;
 	__le16 adi_id;
@@ -1681,7 +1690,6 @@ VIRTCHNL2_CHECK_STRUCT_LEN(16, virtchnl2_event);
  */
 struct virtchnl2_rss_key {
 	__le32 vport_id;
-
 	__le16 key_len;
 	u8 pad;
 	u8 key[];
@@ -1732,7 +1740,6 @@ VIRTCHNL2_CHECK_STRUCT_VAR_LEN(24, virtchnl2_queue_chunks, chunks);
 struct virtchnl2_del_ena_dis_queues {
 	__le32 vport_id;
 	u8 pad[4];
-
 	struct virtchnl2_queue_chunks chunks;
 };
 VIRTCHNL2_CHECK_STRUCT_VAR_LEN(32, virtchnl2_del_ena_dis_queues, chunks.chunks);
@@ -1774,10 +1781,8 @@ VIRTCHNL2_CHECK_STRUCT_LEN(24, virtchnl2_queue_vector);
  */
 struct virtchnl2_queue_vector_maps {
 	__le32 vport_id;
-
 	__le16 num_qv_maps;
 	u8 pad[10];
-
 	struct virtchnl2_queue_vector qv_maps[];
 };
 VIRTCHNL2_CHECK_STRUCT_VAR_LEN(40, virtchnl2_queue_vector_maps, qv_maps);
@@ -1828,10 +1833,8 @@ VIRTCHNL2_CHECK_STRUCT_LEN(8, virtchnl2_mac_addr);
  */
 struct virtchnl2_mac_addr_list {
 	__le32 vport_id;
-
 	__le16 num_mac_addr;
 	u8 pad[2];
-
 	struct virtchnl2_mac_addr mac_addr_list[];
 };
 VIRTCHNL2_CHECK_STRUCT_VAR_LEN(16, virtchnl2_mac_addr_list, mac_addr_list);
@@ -2197,6 +2200,70 @@ struct virtchnl2_get_lan_memory_regions {
 };
 VIRTCHNL2_CHECK_STRUCT_VAR_LEN(24, virtchnl2_get_lan_memory_regions, mem_reg);
 
+/**
+ * enum virtchnl2_vlan_caps - VLAN capabilities
+ */
+enum virtchnl2_vlan_caps {
+	VIRTCHNL2_VLAN_ETHERTYPE_8100			= BIT(0),
+};
+
+/**
+ * struct virtchnl2_vlan_supported_caps - Supported VLAN caps
+ * @outer: Outer VLAN caps bitmap, see enum virtchnl2_vlan_caps
+ * @pad: Padding
+ */
+struct virtchnl2_vlan_supported_caps {
+	__le32 outer;
+	u8 pad[12];
+};
+VIRTCHNL2_CHECK_STRUCT_LEN(16, virtchnl2_vlan_supported_caps);
+
+/**
+ * struct virtchnl2_vlan_get_caps - Get VLAN capabilities
+ * @stripping: Supported VLAN stripping capabilities
+ * @insertion: Supported VLAN insertion capabilities
+ * @ethertypes: Supported ethertypes, see enum virtchnl2_vlan_caps
+ * @pad: Padding
+ *
+ * PF/VF sends this message to learn the VLAN capabilities supported by
+ * the device Control Plane. It should fill the ethertypes field with all the
+ * supported VLAN ethertypes. CP populates these fields based on the supported
+ * VLAN capabilities.
+ *
+ * Associated with VIRTCHNL2_OP_GET_VLAN_CAPS.
+ */
+struct virtchnl2_vlan_get_caps {
+	struct virtchnl2_vlan_supported_caps strip;
+	struct virtchnl2_vlan_supported_caps insert;
+	__le32 ethertypes;
+	u8 pad[44];
+};
+VIRTCHNL2_CHECK_STRUCT_LEN(80, virtchnl2_vlan_get_caps);
+
+/**
+ * struct virtchnl2_vlan_setting - Enable/disable VLAN insertion or stripping
+ * @vport_id: Vport identifier
+ * @outer_ethertype: Ethertype of the outer VLAN to toggle
+ * @pad: Padding
+ *
+ * PF/VF sends this message to enable/disable VLAN insertion or stripping
+ * support. To toggle, PF/VF sets the required ethertype in the outer ethertype
+ * field per message. Supported ethertypes info is learnt via VLAN capability
+ * negotiation.
+ *
+ * Associated with:
+ * VIRTCHNL2_OP_ENABLE_VLAN_STRIPPING,
+ * VIRTCHNL2_OP_DISABLE_VLAN_STRIPPING,
+ * VIRTCHNL2_OP_ENABLE_VLAN_INSERTION,
+ * VIRTCHNL2_OP_DISABLE_VLAN_INSERTION
+ */
+struct virtchnl2_vlan_setting {
+	__le32 vport_id;
+	__le32 outer_ethertype;
+	u8 pad[24];
+};
+VIRTCHNL2_CHECK_STRUCT_LEN(32, virtchnl2_vlan_setting);
+
 static inline const char *virtchnl2_op_str(__le32 v_opcode)
 {
 	switch (v_opcode) {
@@ -2292,6 +2359,16 @@ static inline const char *virtchnl2_op_str(__le32 v_opcode)
 		return "VIRTCHNL2_OP_PTP_GET_VPORT_TX_TSTAMP_CAPS";
 	case VIRTCHNL2_OP_GET_LAN_MEMORY_REGIONS:
 		return "VIRTCHNL2_OP_GET_LAN_MEMORY_REGIONS";
+	case VIRTCHNL2_OP_GET_VLAN_CAPS:
+		return "VIRTCHNL2_OP_GET_VLAN_CAPS";
+	case VIRTCHNL2_OP_ENABLE_VLAN_STRIPPING:
+		return "VIRTCHNL2_OP_ENABLE_VLAN_STRIPPING";
+	case VIRTCHNL2_OP_DISABLE_VLAN_STRIPPING:
+		return "VIRTCHNL2_OP_DISABLE_VLAN_STRIPPING";
+	case VIRTCHNL2_OP_ENABLE_VLAN_INSERTION:
+		return "VIRTCHNL2_OP_ENABLE_VLAN_INSERTION";
+	case VIRTCHNL2_OP_DISABLE_VLAN_INSERTION:
+		return "VIRTCHNL2_OP_DISABLE_VLAN_INSERTION";
 	case VIRTCHNL2_OP_GET_OEM_CAPS:
 		return "VIRTCHNL2_OP_GET_OEM_CAPS";
 	default:
@@ -2654,6 +2731,15 @@ virtchnl2_vc_validate_vf_msg(struct virtchnl2_version_info *ver, u32 v_opcode,
 		if (!is_flex_array)
 			valid_len -= sizeof(struct virtchnl2_mem_region);
 
+		break;
+	case VIRTCHNL2_OP_GET_VLAN_CAPS:
+		valid_len = sizeof(struct virtchnl2_vlan_get_caps);
+		break;
+	case VIRTCHNL2_OP_ENABLE_VLAN_STRIPPING:
+	case VIRTCHNL2_OP_DISABLE_VLAN_STRIPPING:
+	case VIRTCHNL2_OP_ENABLE_VLAN_INSERTION:
+	case VIRTCHNL2_OP_DISABLE_VLAN_INSERTION:
+		valid_len = sizeof(struct virtchnl2_vlan_setting);
 		break;
 	/* These are always errors coming from the VF. */
 	case VIRTCHNL2_OP_EVENT:

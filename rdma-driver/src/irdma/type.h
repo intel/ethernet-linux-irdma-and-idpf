@@ -518,8 +518,8 @@ struct irdma_sc_ceq {
 	struct irdma_sc_dev *dev;
 	struct irdma_ceqe *ceqe_base;
 	void *pbl_list;
-	u32 ceq_id;
 	u32 elem_cnt;
+	u16 ceq_id;
 	struct irdma_ring ceq_ring;
 	u8 pbl_chunk_size;
 	u8 tph_val;
@@ -544,8 +544,8 @@ struct irdma_sc_cq {
 	struct irdma_sc_vsi *vsi;
 	void *pbl_list;
 	void *back_cq;
-	u32 ceq_id;
 	u32 shadow_read_threshold;
+	u16 ceq_id;
 	u8 pbl_chunk_size;
 	u8 cq_type;
 	u8 tph_val;
@@ -810,6 +810,7 @@ struct irdma_sc_dev {
 	u8 xf_multiplier;
 	u8 min_ird;
 	bool host_mem_mrte:1;
+	bool periodic_flush:1;
 	struct mutex vchnl_mutex;
 	int (*ws_add)(struct irdma_sc_vsi *vsi, u8 user_pri);
 	void (*ws_remove)(struct irdma_sc_vsi *vsi, u8 user_pri);
@@ -876,8 +877,8 @@ struct irdma_modify_srq_info {
 struct irdma_set_interrupt_info {
 	u32 hmc_fcn_id;
 	u32 ceq_agent_interrupt_index;
-	u32 ceq_id;
 	u32 aeq_agent_interrupt_index;
+	u16 ceq_id;
 	u8 use_hmc_fcn_id;
 	u8 set_ceq_int;
 	u8 set_aeq_int;
@@ -1018,7 +1019,7 @@ struct irdma_ceq_init_info {
 	u64 *ceqe_base;
 	void *pbl_list;
 	u32 elem_cnt;
-	u32 ceq_id;
+	u16 ceq_id;
 	bool virtual_map:1;
 	bool tph_en:1;
 	bool itr_no_expire:1;
@@ -1049,8 +1050,8 @@ struct irdma_ccq_init_info {
 	__le64 *shadow_area;
 	void *pbl_list;
 	u32 num_elem;
-	u32 ceq_id;
 	u32 shadow_read_threshold;
+	u16 ceq_id;
 	bool ceqe_mask:1;
 	bool ceq_id_valid:1;
 	bool avoid_mem_cflct:1;
@@ -1293,9 +1294,7 @@ struct irdma_reg_ns_stag_info {
 	bool use_hmc_fcn_index:1;
 	u16 hmc_fcn_index;
 	bool all_memory:1;
-	bool pasid_valid:1;
 	u8 remote_atomics_en;
-	u32 pasid;
 	bool non_cached:1;
 	u8 placement_type;
 };
@@ -1376,8 +1375,8 @@ struct irdma_cq_init_info {
 	struct irdma_sc_dev *dev;
 	u64 cq_base_pa;
 	u64 shadow_area_pa;
-	u32 ceq_id;
 	u32 shadow_read_threshold;
+	u16 ceq_id;
 	u8 pbl_chunk_size;
 	u32 first_pm_pbl_idx;
 	bool virtual_map:1;

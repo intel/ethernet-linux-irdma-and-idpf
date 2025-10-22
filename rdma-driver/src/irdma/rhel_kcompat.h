@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2020 - 2024 Intel Corporation */
+/* Copyright (c) 2020 - 2025 Intel Corporation */
 #ifndef RHEL_KCOMPAT_H
 #define RHEL_KCOMPAT_H
 
@@ -36,6 +36,7 @@
 #define QUERY_GID_ROCE_V2
 #define QUERY_PKEY_V2
 #define QUERY_PORT_V2
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_2
 #define REG_USER_MR_DMABUF_VER_2
 #define SET_DMABUF
@@ -99,8 +100,9 @@
 #define QUERY_GID_ROCE_V2
 #define QUERY_PKEY_V2
 #define QUERY_PORT_V2
-#define REREG_MR_VER_2
 #define REG_USER_MR_DMABUF_VER_2
+#define REG_USER_MR_VER_1
+#define REREG_MR_VER_2
 #define SET_DMABUF
 #define ROCE_PORT_IMMUTABLE_V2
 #define RDMA_MMAP_DB_SUPPORT
@@ -161,8 +163,9 @@
 #define QUERY_GID_ROCE_V2
 #define QUERY_PKEY_V2
 #define QUERY_PORT_V2
-#define REREG_MR_VER_2
 #define REG_USER_MR_DMABUF_VER_1
+#define REG_USER_MR_VER_1
+#define REREG_MR_VER_2
 #define SET_DMABUF
 #define ROCE_PORT_IMMUTABLE_V2
 #define RDMA_MMAP_DB_SUPPORT
@@ -222,8 +225,9 @@
 #define QUERY_GID_ROCE_V2
 #define QUERY_PKEY_V2
 #define QUERY_PORT_V2
-#define REREG_MR_VER_2
 #define REG_USER_MR_DMABUF_VER_1
+#define REG_USER_MR_VER_1
+#define REREG_MR_VER_2
 #define SET_DMABUF
 #define ROCE_PORT_IMMUTABLE_V2
 #define RDMA_MMAP_DB_SUPPORT
@@ -284,6 +288,7 @@
 #define QUERY_GID_ROCE_V2
 #define QUERY_PKEY_V2
 #define QUERY_PORT_V2
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_2
 #define ROCE_PORT_IMMUTABLE_V2
 #define RDMA_MMAP_DB_SUPPORT
@@ -344,6 +349,7 @@
 #define QUERY_GID_ROCE_V2
 #define QUERY_PKEY_V2
 #define QUERY_PORT_V2
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_2
 #define ROCE_PORT_IMMUTABLE_V2
 #define RDMA_MMAP_DB_SUPPORT
@@ -404,6 +410,7 @@
 #define QUERY_GID_ROCE_V2
 #define QUERY_PKEY_V2
 #define QUERY_PORT_V2
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_2
 #define ROCE_PORT_IMMUTABLE_V2
 #define RDMA_MMAP_DB_SUPPORT
@@ -465,6 +472,7 @@
 #define QUERY_GID_ROCE_V2
 #define QUERY_PKEY_V2
 #define QUERY_PORT_V2
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_2
 #define ROCE_PORT_IMMUTABLE_V2
 #define RDMA_MMAP_DB_SUPPORT
@@ -527,6 +535,7 @@
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_2
 #define ROCE_PORT_IMMUTABLE_V1
 #define RDMA_MMAP_DB_SUPPORT
@@ -589,6 +598,7 @@
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_1
 #define ROCE_PORT_IMMUTABLE_V1
 #define RDMA_MMAP_DB_SUPPORT
@@ -654,6 +664,7 @@
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_1
 #define ROCE_PORT_IMMUTABLE_V1
 #define RDMA_MMAP_DB_SUPPORT
@@ -726,6 +737,7 @@ enum ib_port_phys_state {
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_1
 #define ROCE_PORT_IMMUTABLE_V1
 #define SET_BEST_PAGE_SZ_V1
@@ -801,6 +813,7 @@ enum ib_port_phys_state {
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_1
 #define ROCE_PORT_IMMUTABLE_V1
 #define SET_BEST_PAGE_SZ_V2
@@ -874,6 +887,7 @@ enum ib_port_phys_state {
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_1
 #define ROCE_PORT_IMMUTABLE_V1
 #define SET_BEST_PAGE_SZ_V1
@@ -950,6 +964,7 @@ enum ib_port_phys_state {
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_1
 #define ROCE_PORT_IMMUTABLE_V1
 #define SET_BEST_PAGE_SZ_V1
@@ -1030,6 +1045,7 @@ enum ib_port_phys_state {
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_1
 #define ROCE_PORT_IMMUTABLE_V1
 #define SET_BEST_PAGE_SZ_V1
@@ -1114,6 +1130,7 @@ enum ib_port_phys_state {
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_1
 #define ROCE_PORT_IMMUTABLE_V1
 #define SET_BEST_PAGE_SZ_V1
@@ -1213,6 +1230,7 @@ int irdma_del_gid(struct ib_device *device,
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_1
 #define ROCE_PORT_IMMUTABLE_V1
 #define SET_BEST_PAGE_SZ_V1
@@ -1315,6 +1333,7 @@ int irdma_del_gid(struct ib_device *device,
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_1
 #define ROCE_PORT_IMMUTABLE_V1
 #define SET_BEST_PAGE_SZ_V1
@@ -1418,6 +1437,7 @@ int irdma_del_gid(struct ib_device *device,
 #define QUERY_GID_ROCE_V1
 #define QUERY_PKEY_V1
 #define QUERY_PORT_V1
+#define REG_USER_MR_VER_1
 #define REREG_MR_VER_1
 #define ROCE_PORT_IMMUTABLE_V1
 #define SET_BEST_PAGE_SZ_V1

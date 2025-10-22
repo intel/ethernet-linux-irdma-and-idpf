@@ -121,8 +121,6 @@ static void idpf_remove(struct pci_dev *pdev)
 #if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)
 	if (adapter->dev_ops.vdcm_deinit)
 		adapter->dev_ops.vdcm_deinit(pdev);
-	kfree(adapter->adi_info.priv_info);
-	adapter->adi_info.priv_info = NULL;
 
 #endif /* CONFIG_VFIO_MDEV && HAVE_PASID_SUPPORT */
 #ifdef DEVLINK_ENABLED
@@ -136,8 +134,12 @@ static void idpf_remove(struct pci_dev *pdev)
 	idpf_vport_init_unlock(adapter);
 
 	/* Shut down the per-adapter virtchnl transactions */
-	idpf_vc_xn_shutdown(&adapter->vcxn_mngr);
+	idpf_vc_xn_shutdown(adapter->vcxn_mngr);
 
+#if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)
+	xa_destroy(&adapter->adi_info.priv_info);
+
+#endif /* CONFIG_VFIO_MDEV && HAVE_PASID_SUPPORT */
 	/* Be a good citizen and leave the device clean on exit */
 	adapter->dev_ops.reg_ops.trigger_reset(adapter, IDPF_HR_FUNC_RESET);
 	idpf_deinit_dflt_mbx(adapter);
@@ -178,6 +180,8 @@ destroy_wqs:
 	adapter->vport_config = NULL;
 	kfree(adapter->netdevs);
 	adapter->netdevs = NULL;
+	kfree(adapter->vcxn_mngr);
+	adapter->vcxn_mngr = NULL;
 
 	mutex_destroy(&adapter->vport_init_lock);
 	mutex_destroy(&adapter->vport_cfg_lock);
@@ -349,7 +353,7 @@ static int idpf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		break;
 	default:
 		err = -ENODEV;
-		dev_err(dev, "Unexpected dev ID 0x%x in idpf probe\n",
+		dev_err(&pdev->dev, "Unexpected dev ID 0x%x in idpf probe\n",
 			ent->device);
 		goto err_free;
 	}
@@ -395,11 +399,24 @@ static int idpf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pci_set_master(pdev);
 	pci_set_drvdata(pdev, adapter);
 
+	if (!adapter->vcxn_mngr) {
+		adapter->vcxn_mngr = kzalloc(sizeof(*adapter->vcxn_mngr),
+					     GFP_KERNEL);
+		if (!adapter->vcxn_mngr) {
+			err = -ENOMEM;
+			goto err_free;
+		}
+	}
+
 	/* Initialize the per-adapter virtchnl transactions. */
-	idpf_init_vc_xn_completion(&adapter->vcxn_mngr);
-	idpf_vc_xn_init(&adapter->vcxn_mngr);
+	idpf_init_vc_xn_completion(adapter->vcxn_mngr);
+	idpf_vc_xn_init(adapter->vcxn_mngr);
 	init_completion(&adapter->corer_done);
 
+#if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)
+	xa_init(&adapter->adi_info.priv_info);
+
+#endif /* CONFIG_VFIO_MDEV && HAVE_PASID_SUPPORT */
 	adapter->init_wq = alloc_workqueue("%s-%s-init",
 					   WQ_UNBOUND | WQ_MEM_RECLAIM, 0,
 					   dev_driver_string(dev),
@@ -525,8 +542,8 @@ int idpf_reset_recover(struct idpf_adapter *adapter)
 		return err;
 	}
 
-	if (!adapter->vcxn_mngr.active)
-		idpf_vc_xn_init(&adapter->vcxn_mngr);
+	if (!adapter->vcxn_mngr->active)
+		idpf_vc_xn_init(adapter->vcxn_mngr);
 
 	queue_delayed_work(adapter->serv_wq, &adapter->serv_task,
 			   msecs_to_jiffies(5 * (adapter->pdev->devfn & 0x07)));
@@ -594,7 +611,7 @@ static void idpf_reset_prepare(struct idpf_adapter *adapter)
 	idpf_device_detach(adapter);
 
 	idpf_netdev_stop_all(adapter);
-	idpf_vc_xn_shutdown(&adapter->vcxn_mngr);
+	idpf_vc_xn_shutdown(adapter->vcxn_mngr);
 
 	idpf_idc_event(&adapter->rdma_data, IIDC_EVENT_WARN_RESET);
 	idpf_set_vport_state(adapter);
@@ -687,6 +704,7 @@ static void idpf_pci_err_resume(struct pci_dev *pdev)
 	}
 
 	err = idpf_reset_recover(adapter);
+
 	if (err)
 		dev_err(&adapter->pdev->dev, "Failed to recover after PCI reset\n");
 

@@ -3,6 +3,7 @@
 
 #include "idpf.h"
 #include "idpf_virtchnl.h"
+#include "idpf_ptp.h"
 
 static const struct net_device_ops idpf_netdev_ops_splitq;
 static const struct net_device_ops idpf_netdev_ops_singleq;
@@ -163,22 +164,6 @@ static int idpf_mb_intr_req_irq(struct idpf_adapter *adapter)
 	}
 	set_bit(IDPF_MB_INTR_MODE, adapter->flags);
 	return 0;
-}
-
-/**
- * idpf_set_mb_vec_id - Set vector index for mailbox
- * @adapter: adapter structure to access the vector chunks
- *
- * The first vector id in the requested vector chunks from the CP is for
- * the mailbox
- */
-static void idpf_set_mb_vec_id(struct idpf_adapter *adapter)
-{
-	if (adapter->req_vec_chunks)
-		adapter->mb_vector.v_idx =
-			le16_to_cpu(adapter->caps.mailbox_vector_id);
-	else
-		adapter->mb_vector.v_idx = 0;
 }
 
 /**
@@ -409,7 +394,7 @@ int idpf_intr_req(struct idpf_adapter *adapter)
 		goto free_rdma_msix;
 	}
 
-	idpf_set_mb_vec_id(adapter);
+	adapter->mb_vector.v_idx = le16_to_cpu(adapter->caps.mailbox_vector_id);
 
 	vecids = kcalloc(v_actual, sizeof(u16), GFP_KERNEL);
 	if (!vecids) {
@@ -778,6 +763,32 @@ void idpf_device_detach(struct idpf_adapter *adapter)
 }
 
 /**
+ * idpf_get_vlan_features - Get supported VLAN features based on capabilities
+ * @adapter: private structure to get the VLAN capabilities
+ *
+ * Return: %0 if VLAN is not supported, else return supported VLAN features.
+ */
+static netdev_features_t idpf_get_vlan_features(struct idpf_adapter *adapter)
+{
+	struct virtchnl2_vlan_supported_caps *insert;
+	struct virtchnl2_vlan_supported_caps *strip;
+	netdev_features_t vlano_features = 0;
+
+	if (!idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS, VIRTCHNL2_CAP_VLAN))
+		return 0;
+
+	strip = &adapter->vlan_caps.strip;
+	insert = &adapter->vlan_caps.insert;
+
+	if (le32_to_cpu(strip->outer) & VIRTCHNL2_VLAN_ETHERTYPE_8100)
+		vlano_features = NETIF_F_HW_VLAN_CTAG_RX;
+	if (le32_to_cpu(insert->outer) & VIRTCHNL2_VLAN_ETHERTYPE_8100)
+		vlano_features |= NETIF_F_HW_VLAN_CTAG_TX;
+
+	return vlano_features;
+}
+
+/**
  * idpf_cfg_netdev - Allocate, configure and register a netdev
  * @vport: main vport structure
  *
@@ -790,6 +801,7 @@ static int idpf_cfg_netdev(struct idpf_vport *vport)
 	netdev_features_t other_offloads = 0;
 	netdev_features_t csum_offloads = 0;
 	netdev_features_t tso_offloads = 0;
+	netdev_features_t vlano_features;
 	netdev_features_t dflt_features;
 	struct idpf_netdev_priv *np;
 	struct net_device *netdev;
@@ -894,8 +906,10 @@ static int idpf_cfg_netdev(struct idpf_vport *vport)
 	if (idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS, VIRTCHNL2_CAP_LOOPBACK))
 		other_offloads |= NETIF_F_LOOPBACK;
 
+	vlano_features = idpf_get_vlan_features(adapter);
 	netdev->features |= dflt_features | csum_offloads | tso_offloads;
-	netdev->hw_features |=  netdev->features | other_offloads;
+	netdev->hw_features |=  netdev->features | other_offloads |
+				vlano_features;
 	netdev->vlan_features |= netdev->features | other_offloads;
 	netdev->hw_enc_features |= dflt_features | other_offloads;
 
@@ -1022,7 +1036,7 @@ static void idpf_vport_stop(struct idpf_vport *vport)
 	idpf_remove_features(vport);
 
 	idpf_vport_intr_deinit(vport, &vgrp->intr_grp);
-	idpf_vport_queue_rel_all(vport, &vgrp->q_grp);
+	idpf_vport_queues_rel(vport, &vgrp->q_grp);
 	idpf_vport_intr_rel(vgrp);
 	np->active = false;
 }
@@ -1365,19 +1379,6 @@ void idpf_statistics_task(struct work_struct *work)
 }
 
 /**
- * idpf_ptp_tstamp_task - Delayed task to handle Tx tstamps
- * @work: work_struct handle
- */
-void idpf_ptp_tstamp_task(struct work_struct *work)
-{
-	struct idpf_vport *vport;
-
-	vport = container_of(work, struct idpf_vport, tstamp_task);
-
-	idpf_ptp_get_tx_tstamp_mb(vport);
-}
-
-/**
  * idpf_mbx_task - Delayed task to handle mailbox responses
  * @work: work_struct handle
  */
@@ -1456,6 +1457,7 @@ static int idpf_set_real_num_queues(struct idpf_vport *vport)
 						    q_grp->num_txq - vport->num_xdp_txq);
 	else
 #endif /* HAVE_XDP_SUPPORT */
+
 	return netif_set_real_num_tx_queues(vport->netdev, q_grp->num_txq);
 }
 
@@ -1514,8 +1516,8 @@ static int idpf_vport_xdp_init(struct idpf_vport *vport,
 	if (!idpf_xdp_is_prog_ena(vport))
 		goto exit_xdp_init;
 
-	for (i = vport->xdp_txq_offset; i < q_grp->num_txq; i++) {
-		set_bit(__IDPF_Q_XDP, q_grp->txqs[i]->flags);
+	for (i = vport->xdp_txq_offset; i < vport->num_txq; i++) {
+		set_bit(__IDPF_Q_XDP, vport->txqs[i]->flags);
 
 		/* For AF_XDP we are assuming that the queue id received from
 		 * the user space is mapped to the pair of queues:
@@ -1524,7 +1526,7 @@ static int idpf_vport_xdp_init(struct idpf_vport *vport,
 		 *  - XDP Tx queue where queue id is mapped to the queue index,
 		 *    considering the XDP offset (q->idx + vport->xdp_txq_offset).
 		 */
-		idpf_get_xsk_pool(q_grp->txqs[i], true);
+		idpf_get_xsk_pool(vport->txqs[i], true);
 	}
 
 #endif /* HAVE_NETDEV_BPF_XSK_POOL */
@@ -1656,7 +1658,7 @@ unmap_queue_vectors:
 intr_deinit:
 	idpf_vport_intr_deinit(vport, &vgrp->intr_grp);
 queues_rel:
-	idpf_vport_queue_rel_all(vport, q_grp);
+	idpf_vport_queues_rel(vport, q_grp);
 intr_rel:
 	idpf_vport_intr_rel(vgrp);
 
@@ -1732,11 +1734,6 @@ void idpf_init_task(struct work_struct *work)
 	if (err)
 		goto handle_err;
 
-	if (!vport->idx) {
-		err = idpf_idc_init(adapter);
-		if (err)
-			goto handle_err;
-	}
 
 	if (test_and_clear_bit(IDPF_VPORT_UP_REQUESTED, vport_config->flags)) {
 		idpf_vport_cfg_lock(adapter);
@@ -1773,6 +1770,10 @@ void idpf_init_task(struct work_struct *work)
 			netif_device_attach(netdev);
 		}
 	}
+
+	err = idpf_idc_init(adapter);
+	if (err)
+		goto handle_err;
 
 	/* As all the required vports are created, clear the reset flag
 	 * unconditionally here in case we were in reset and the link was down.
@@ -1954,8 +1955,7 @@ int idpf_check_reset_complete(struct idpf_adapter *adapter)
 		 * register for us yet and 0xFFFFFFFF is not a valid value for
 		 * the register, so treat that as invalid.
 		 */
-		if (reg_val != 0xFFFFFFFF &&
-		    (reg_val & adapter->reset_reg.rstat_m) == IDPF_RSTAT_COMPLETE)
+		if (reg_val != 0xFFFFFFFF && (reg_val & adapter->reset_reg.rstat_m))
 			return 0;
 
 		usleep_range(5000, 10000);
@@ -2020,7 +2020,7 @@ static int idpf_wait_on_reset_detection(struct idpf_adapter *adapter)
  * reallocate. Also reinitialize the mailbox. Return 0 on success,
  * negative on failure.
  */
-int idpf_init_hard_reset(struct idpf_adapter *adapter)
+static int idpf_init_hard_reset(struct idpf_adapter *adapter)
 {
 	struct idpf_reg_ops *reg_ops = &adapter->dev_ops.reg_ops;
 	struct device *dev = idpf_adapter_to_dev(adapter);
@@ -2058,7 +2058,7 @@ int idpf_init_hard_reset(struct idpf_adapter *adapter)
 	/* Wait for reset to complete */
 	err = idpf_check_reset_complete(adapter);
 	if (err) {
-		dev_err(dev, "The driver was unable to contact the device's firmware. Check that the FW is running. Driver state=0x%x\n",
+		dev_err(dev, "The driver was unable to contact the device's firmware. Check that the FW is running. Driver state= 0x%x\n",
 			adapter->state);
 		goto unlock_mutex;
 	}
@@ -2103,7 +2103,7 @@ void idpf_vc_event_task(struct work_struct *work)
 	return;
 
 func_reset:
-	idpf_vc_xn_shutdown(&adapter->vcxn_mngr);
+	idpf_vc_xn_shutdown(adapter->vcxn_mngr);
 drv_load:
 	set_bit(IDPF_HR_RESET_IN_PROG, adapter->flags);
 	idpf_init_hard_reset(adapter);
@@ -2142,7 +2142,6 @@ int idpf_initiate_soft_reset(struct idpf_vport *vport,
 	struct idpf_adapter *adapter = vport->adapter;
 	struct idpf_vport_config *vport_config;
 	struct idpf_rss_data *rss_data;
-	bool alloc_vec_indexes = false;
 	struct idpf_vport *new_vport;
 	struct idpf_q_grp *new_q_grp;
 	struct idpf_q_grp *q_grp;
@@ -2161,6 +2160,7 @@ int idpf_initiate_soft_reset(struct idpf_vport *vport,
 	 * changes. Once the allocation of the new resources is done, stop the
 	 * existing vport and copy the configuration to the main vport. If an
 	 * error occurred, the existing vport will be untouched.
+	 *
 	 */
 	new_vport = kzalloc(sizeof(*vport), GFP_KERNEL);
 	if (!new_vport)
@@ -2178,7 +2178,6 @@ int idpf_initiate_soft_reset(struct idpf_vport *vport,
 	switch (reset_cause) {
 	case IDPF_SR_Q_CHANGE:
 		idpf_vport_adjust_qs(new_vport);
-		alloc_vec_indexes = true;
 		break;
 	case IDPF_SR_Q_DESC_CHANGE:
 		/* Update queue parameters before allocating resources */
@@ -2224,7 +2223,7 @@ int idpf_initiate_soft_reset(struct idpf_vport *vport,
 		break;
 	}
 
-	/* We're passing in vport here because we need it's wait_queue
+	/* We're passing in vport here because we need its wait_queue
 	 * to send a message and it should be getting all the vport
 	 * config data out of the adapter but we need to be careful not
 	 * to add code to add_queues to change the vport config within
@@ -2242,7 +2241,7 @@ int idpf_initiate_soft_reset(struct idpf_vport *vport,
 	 */
 	memcpy(vport, new_vport, offsetof(struct idpf_vport, sw_marker_wq));
 
-	if (alloc_vec_indexes)
+	if (reset_cause == IDPF_SR_Q_CHANGE)
 		idpf_vport_alloc_vec_indexes(vport, &vport->dflt_grp);
 
 	err = idpf_set_real_num_queues(vport);
@@ -2271,6 +2270,7 @@ err_open:
 		idpf_vport_open(vport);
 free_vport:
 	kfree(new_vport);
+
 	return err;
 }
 
@@ -2469,7 +2469,12 @@ static int idpf_set_features(struct net_device *netdev,
 	if (changed & NETIF_F_LOOPBACK) {
 		netdev->features ^= NETIF_F_LOOPBACK;
 		err = idpf_send_ena_dis_loopback_msg(vport);
+		if (err)
+			goto unlock_mutex;
 	}
+
+	if (changed & IDPF_VLAN_OFFLOAD_FEATURES)
+		err = idpf_set_vlan_features(vport, changed);
 
 unlock_mutex:
 	idpf_vport_cfg_unlock(adapter);
@@ -2694,7 +2699,6 @@ static int idpf_change_tx_sch_mode(struct idpf_vport *vport,
 static int idpf_offload_txtime(struct idpf_vport *vport,
 			       struct tc_etf_qopt_offload *qopt)
 {
-	struct idpf_q_grp *q_grp = &vport->dflt_grp.q_grp;
 	struct idpf_vport_user_config_data *config_data;
 	struct idpf_adapter *adapter = vport->adapter;
 	struct idpf_queue *tx_q;
@@ -2702,7 +2706,7 @@ static int idpf_offload_txtime(struct idpf_vport *vport,
 	if (!idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS, VIRTCHNL2_CAP_EDT))
 		return -EOPNOTSUPP;
 
-	if (qopt->queue < 0 || qopt->queue > q_grp->num_txq)
+	if (qopt->queue < 0 || qopt->queue > vport->num_txq)
 		return -EINVAL;
 
 	config_data = &adapter->vport_config[vport->idx]->user_config;
@@ -2712,7 +2716,7 @@ static int idpf_offload_txtime(struct idpf_vport *vport,
 	else
 		clear_bit(qopt->queue, config_data->etf_qenable);
 
-	tx_q = q_grp->txqs[qopt->queue];
+	tx_q = vport->txqs[qopt->queue];
 
 	if (idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS,
 			    VIRTCHNL2_CAP_SPLITQ_QSCHED))
@@ -2891,13 +2895,13 @@ idpf_xdp_setup_prog(struct idpf_netdev_priv *np, struct bpf_prog *prog,
 			goto release_vport_queues;
 		}
 	} else {
-		idpf_vport_queue_rel_all(vport, q_grp);
+		idpf_vport_queues_rel(vport, q_grp);
 	}
 
 	return err;
 
 release_vport_queues:
-	idpf_vport_queue_rel_all(vport, q_grp);
+	idpf_vport_queues_rel(vport, q_grp);
 
 	return err;
 }
@@ -3021,15 +3025,14 @@ static int idpf_eth_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 {
 	struct idpf_netdev_priv *np = netdev_priv(netdev);
 	struct idpf_adapter *adapter = np->adapter;
-	enum idpf_ptp_access access;
 	struct idpf_vport *vport;
 	int err;
 
 	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
-	access = vport->adapter->ptp.tx_tstamp_access;
-	if (access == IDPF_PTP_NONE || !vport->tx_tstamp_caps || !np->active) {
+	if ((!idpf_ptp_is_vport_tx_tstamp_ena(vport) &&
+	     !idpf_ptp_is_vport_rx_tstamp_ena(vport)) || !np->active) {
 		err = -EOPNOTSUPP;
 		goto free_vport;
 	}
