@@ -222,6 +222,103 @@ void irdma_user_mmap_entry_del_hash(struct irdma_user_mmap_entry *entry)
 }
 
 #endif /* RDMA_MMAP_DB_SUPPORT */
+static void irdma_mmap_release(struct kref *ref)
+{
+	struct irdma_mmap_info *info = container_of(ref, struct irdma_mmap_info, ref);
+
+	vfree(info->buf);
+	kfree(info);
+}
+
+static void irdma_vma_open(struct vm_area_struct *vma)
+{
+	struct irdma_mmap_info *info = vma->vm_private_data;
+
+	kref_get(&info->ref);
+}
+
+static void irdma_vma_close(struct vm_area_struct *vma)
+{
+	struct irdma_mmap_info *info = vma->vm_private_data;
+
+	kref_put(&info->ref, irdma_mmap_release);
+}
+
+static const struct vm_operations_struct irdma_vm_ops = {
+	.open = irdma_vma_open,
+	.close = irdma_vma_close,
+};
+
+static int irdma_mmap_kmem(struct ib_ucontext *context, struct vm_area_struct *vma)
+{
+	struct irdma_ucontext *ucontext;
+	int ret;
+	void *buf;
+	unsigned long size = vma->vm_end - vma->vm_start;
+	struct irdma_mmap_info *info;
+
+	ucontext = to_ucontext(context);
+
+	info = kzalloc(sizeof(*info), GFP_KERNEL);
+	if (!info)
+		return -ENOMEM;
+
+	buf = vmalloc_user(size);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto err_info;
+	}
+	info->context = context;
+	info->buf = buf;
+	info->size = size;
+	kref_init(&info->ref);
+
+	ret = remap_vmalloc_range(vma, buf, 0);
+	if (ret) {
+		ibdev_dbg(&ucontext->iwdev->ibdev, "VERBS: failed to remap buf: %d\n", ret);
+		goto err_buf;
+	}
+
+	vma->vm_ops = &irdma_vm_ops;
+	vma->vm_private_data = info;
+	irdma_vma_open(vma);
+	/* Need to decrement the refcount to 1 due to the irdma_vma_open call */
+	kref_put(&info->ref, irdma_mmap_release);
+
+	return 0;
+
+err_buf:
+	vfree(buf);
+err_info:
+	kfree(info);
+
+	return ret;
+}
+
+static int irdma_get_command(unsigned long offset)
+{
+	return (offset >> IRDMA_MMAP_CMD_SHIFT) & IRDMA_MMAP_CMD_MASK;
+}
+
+static int irdma_mmap_command(struct ib_ucontext *context, struct vm_area_struct *vma)
+{
+	unsigned long command;
+	int ret;
+
+	command = irdma_get_command(vma->vm_pgoff);
+	switch (command) {
+	case IRDMA_MMAP_GET_KMEM:
+		ret = irdma_mmap_kmem(context, vma);
+		break;
+
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
 /**
  * irdma_mmap - user memory map
  * @context: context created during alloc
@@ -249,7 +346,7 @@ static int irdma_mmap(struct ib_ucontext *context, struct vm_area_struct *vma)
 		ibdev_dbg(&ucontext->iwdev->ibdev,
 			  "VERBS: pgoff[0x%lx] does not have valid entry\n",
 			  vma->vm_pgoff);
-		return -EINVAL;
+		return irdma_mmap_command(context, vma);
 	}
 
 	entry = to_irdma_mmap_entry(rdma_entry);
@@ -259,7 +356,7 @@ static int irdma_mmap(struct ib_ucontext *context, struct vm_area_struct *vma)
 		ibdev_dbg(&ucontext->iwdev->ibdev,
 			  "VERBS: pgoff[0x%lx] does not have valid entry\n",
 			  vma->vm_pgoff);
-		return -EINVAL;
+		return irdma_mmap_command(context, vma);
 	}
 #endif
 	ibdev_dbg(&ucontext->iwdev->ibdev,
@@ -1238,8 +1335,6 @@ int irdma_modify_qp_roce(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 				ctx_info->remote_atomics_en = true;
 	}
 
-	wait_event(iwqp->mod_qp_waitq, !atomic_read(&iwqp->hw_mod_qp_pend));
-
 	ibdev_dbg(&iwdev->ibdev,
 		  "VERBS: caller: %pS qp_id=%d to_ibqpstate=%d ibqpstate=%d irdma_qpstate=%d attr_mask=0x%x\n",
 		  __builtin_return_address(0), ibqp->qp_num, attr->qp_state,
@@ -1773,6 +1868,7 @@ static int irdma_resize_cq(struct ib_cq *ibcq, int entries,
 	struct irdma_cq_buf *cq_buf = NULL;
 	unsigned long flags;
 	int ret;
+	u8 cqe_size;
 
 	iwdev = to_iwdev(ibcq->device);
 	rf = iwdev->rf;
@@ -1788,13 +1884,16 @@ static int irdma_resize_cq(struct ib_cq *ibcq, int entries,
 		return -EINVAL;
 
 	if (!iwcq->user_mode) {
-		entries++;
+		entries += 2;
 		if (!iwcq->sc_cq.cq_uk.avoid_mem_cflct &&
 		    dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_2)
 			entries *= 2;
 
 		if (entries & 1)
 			entries += 1; /* cq size must be an even number */
+		cqe_size = iwcq->sc_cq.cq_uk.avoid_mem_cflct ? 64 : 32;
+		if (entries * cqe_size == IRDMA_HW_PAGE_SIZE)
+			entries += 2;
 	}
 
 	info.cq_size = max_t(int, entries, 4);
@@ -2065,8 +2164,8 @@ static int irdma_setup_kmode_srq(struct irdma_device *iwdev,
 	ukinfo->srq_size = depth >> shift;
 	ukinfo->shadow_area = mem->va + ring_size;
 
-	info->shadow_area_pa = info->srq_pa + ring_size;
 	info->srq_pa = mem->pa;
+	info->shadow_area_pa = info->srq_pa + ring_size;
 
 	return 0;
 }
@@ -2172,6 +2271,7 @@ static struct ib_srq *irdma_create_srq(struct ib_pd *ibpd,
 	info.vsi = &iwdev->vsi;
 	info.pd = &iwpd->sc_pd;
 
+	iwsrq->sc_srq.srq_uk.lock = &iwsrq->lock;
 	err_code = irdma_sc_srq_init(&iwsrq->sc_srq, &info);
 	if (err_code)
 		goto free_dmem;

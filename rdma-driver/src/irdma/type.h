@@ -526,9 +526,6 @@ struct irdma_sc_ceq {
 	u32 first_pm_pbl_idx;
 	u8 polarity;
 	struct irdma_sc_vsi *vsi;
-	struct irdma_sc_cq **reg_cq;
-	u32 reg_cq_size;
-	spinlock_t req_cq_lock; /* protect access to reg_cq array */
 	bool virtual_map:1;
 	bool tph_en:1;
 	bool itr_no_expire:1;
@@ -659,6 +656,8 @@ struct irdma_hmc_fpm_misc {
 	u32 timer_bucket;
 	u32 rrf_block_size;
 	u32 ooiscf_block_size;
+	struct irdma_dma_mem fw_scratch_buf0;
+	struct irdma_dma_mem fw_scratch_buf1;
 };
 
 struct irdma_vchnl_if {

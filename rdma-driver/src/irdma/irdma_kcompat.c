@@ -960,7 +960,7 @@ static int irdma_create_ah_wait(struct irdma_pci_f *rf,
 		 *       We are in an atomic context here, so we might as well check in
 		 *       a tight loop.
 		 */
-		while (!READ_ONCE(cqp_request->request_done)) {
+		while (!atomic_read(&cqp_request->request_done)) {
 			u64 tmp;
 			u64 curr_jiffies;
 
@@ -2921,6 +2921,7 @@ struct ib_cq *irdma_create_cq(struct ib_device *ibdev,
 	int err_code;
 	int entries = attr->cqe;
 	bool cqe_64byte_ena;
+	u8 cqe_size;
 
 #if defined(CREATE_CQ_VER_3) || defined(CREATE_CQ_VER_4)
 	err_code = cq_validate_flags(attr->flags, dev->hw_attrs.uk_attrs.hw_rev);
@@ -2962,6 +2963,7 @@ struct ib_cq *irdma_create_cq(struct ib_device *ibdev,
 	ukinfo->cq_id = cq_num;
 	iwcq->cq_num = cq_num;
 	cqe_64byte_ena = (dev->hw_attrs.uk_attrs.feature_flags & IRDMA_FEATURE_64_BYTE_CQE) ? true : false;
+	cqe_size = cqe_64byte_ena ? 64 : 32;
 	ukinfo->avoid_mem_cflct = cqe_64byte_ena;
 	iwcq->ibcq.cqe = info.cq_uk_init_info.cq_size;
 	atomic_set(&iwcq->armed, 0);
@@ -3038,11 +3040,13 @@ struct ib_cq *irdma_create_cq(struct ib_device *ibdev,
 			goto cq_free_rsrc;
 		}
 
-		entries++;
+		entries += 2;
 		if (!cqe_64byte_ena && dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_2)
 			entries *= 2;
 		if (entries & 1)
 			entries += 1; /* cq size must be an even number */
+		if (entries * cqe_size == IRDMA_HW_PAGE_SIZE)
+			entries += 2;
 		ukinfo->cq_size = entries;
 
 		if (cqe_64byte_ena)

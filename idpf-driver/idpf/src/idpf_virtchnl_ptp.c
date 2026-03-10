@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2025 Intel Corporation */
+/* Copyright (C) 2019-2026 Intel Corporation */
 
 #include "idpf.h"
 #include "idpf_virtchnl.h"
@@ -17,31 +17,32 @@ int idpf_ptp_get_caps(struct idpf_adapter *adapter)
 {
 	struct virtchnl2_ptp_cross_time_reg_offsets cross_tstamp_offsets;
 	struct virtchnl2_ptp_clk_adj_reg_offsets clk_adj_offsets;
-	struct virtchnl2_ptp_get_caps send_ptp_caps_msg = { };
+	struct virtchnl2_ptp_get_caps send_ptp_caps_msg = {
+		.caps = cpu_to_le32(VIRTCHNL2_CAP_PTP_GET_DEVICE_CLK_TIME |
+				    VIRTCHNL2_CAP_PTP_GET_DEVICE_CLK_TIME_MB |
+				    VIRTCHNL2_CAP_PTP_GET_CROSS_TIME |
+				    VIRTCHNL2_CAP_PTP_GET_CROSS_TIME_MB |
+				    VIRTCHNL2_CAP_PTP_SET_DEVICE_CLK_TIME |
+				    VIRTCHNL2_CAP_PTP_SET_DEVICE_CLK_TIME_MB |
+				    VIRTCHNL2_CAP_PTP_ADJ_DEVICE_CLK_MB |
+				    VIRTCHNL2_CAP_PTP_TX_TSTAMPS_MB |
+				    VIRTCHNL2_CAP_PTP_ADJ_DEVICE_CLK |
+				    VIRTCHNL2_CAP_PTP_TX_TSTAMPS)
+	};
 	struct virtchnl2_ptp_clk_reg_offsets clock_offsets;
 	struct virtchnl2_ptp_get_caps *recv_ptp_caps_msg;
-	struct idpf_vc_xn_params xn_params = { };
+	struct idpf_vc_xn_params xn_params = {
+		.vc_op = VIRTCHNL2_OP_PTP_GET_CAPS,
+		.send_buf.iov_base = &send_ptp_caps_msg,
+		.send_buf.iov_len = sizeof(send_ptp_caps_msg),
+		.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC,
+	};
 	struct idpf_ptp_secondary_mbx *scnd_mbx;
 	struct idpf_ptp *ptp = adapter->ptp;
 	enum idpf_ptp_access access_type;
-	int reply_sz, err = 0;
 	u32 temp_offset;
+	int reply_sz;
 
-	send_ptp_caps_msg.caps = cpu_to_le32(VIRTCHNL2_CAP_PTP_GET_DEVICE_CLK_TIME |
-					     VIRTCHNL2_CAP_PTP_GET_DEVICE_CLK_TIME_MB |
-					     VIRTCHNL2_CAP_PTP_GET_CROSS_TIME |
-					     VIRTCHNL2_CAP_PTP_GET_CROSS_TIME_MB |
-					     VIRTCHNL2_CAP_PTP_SET_DEVICE_CLK_TIME |
-					     VIRTCHNL2_CAP_PTP_SET_DEVICE_CLK_TIME_MB |
-					     VIRTCHNL2_CAP_PTP_ADJ_DEVICE_CLK |
-					     VIRTCHNL2_CAP_PTP_ADJ_DEVICE_CLK_MB |
-					     VIRTCHNL2_CAP_PTP_TX_TSTAMPS |
-					     VIRTCHNL2_CAP_PTP_TX_TSTAMPS_MB);
-
-	xn_params.vc_op = VIRTCHNL2_OP_PTP_GET_CAPS;
-	xn_params.send_buf.iov_base = &send_ptp_caps_msg;
-	xn_params.send_buf.iov_len = sizeof(send_ptp_caps_msg);
-	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 	recv_ptp_caps_msg = kzalloc(sizeof(struct virtchnl2_ptp_get_caps),
 				    GFP_KERNEL);
 	if (!recv_ptp_caps_msg)
@@ -51,13 +52,10 @@ int idpf_ptp_get_caps(struct idpf_adapter *adapter)
 	xn_params.recv_buf.iov_len = sizeof(*recv_ptp_caps_msg);
 
 	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
-	if (reply_sz < 0) {
-		err = reply_sz;
-		goto free_mem;
-	} else if (reply_sz != sizeof(*recv_ptp_caps_msg)) {
-		err = -EIO;
-		goto free_mem;
-	}
+	if (reply_sz < 0)
+		return reply_sz;
+	else if (reply_sz != sizeof(*recv_ptp_caps_msg))
+		return -EIO;
 
 	ptp->caps = le32_to_cpu(recv_ptp_caps_msg->caps);
 	ptp->base_incval = le64_to_cpu(recv_ptp_caps_msg->base_incval);
@@ -116,7 +114,7 @@ cross_tstamp:
 discipline_clock:
 	access_type = ptp->adj_dev_clk_time_access;
 	if (access_type != IDPF_PTP_DIRECT)
-		return err;
+		return 0;
 
 	clk_adj_offsets = recv_ptp_caps_msg->clk_adj_offsets;
 
@@ -146,10 +144,9 @@ discipline_clock:
 	temp_offset = le32_to_cpu(clk_adj_offsets.phy_clk_shadj_h);
 	ptp->dev_clk_regs.phy_shadj_h = idpf_get_reg_addr(adapter, temp_offset);
 
-free_mem:
 	kfree(recv_ptp_caps_msg);
 
-	return err;
+	return 0;
 }
 
 /**
@@ -164,17 +161,17 @@ free_mem:
 int idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
 			      struct idpf_ptp_dev_timers *dev_clk_time)
 {
-	struct virtchnl2_ptp_get_dev_clk_time get_dev_clk_time_msg = { };
-	struct idpf_vc_xn_params xn_params = { };
+	struct virtchnl2_ptp_get_dev_clk_time get_dev_clk_time_msg;
+	struct idpf_vc_xn_params xn_params = {
+		.vc_op = VIRTCHNL2_OP_PTP_GET_DEV_CLK_TIME,
+		.send_buf.iov_base = &get_dev_clk_time_msg,
+		.send_buf.iov_len = sizeof(get_dev_clk_time_msg),
+		.recv_buf.iov_base = &get_dev_clk_time_msg,
+		.recv_buf.iov_len = sizeof(get_dev_clk_time_msg),
+		.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC,
+	};
 	int reply_sz;
 	u64 dev_time;
-
-	xn_params.vc_op = VIRTCHNL2_OP_PTP_GET_DEV_CLK_TIME;
-	xn_params.send_buf.iov_base = &get_dev_clk_time_msg;
-	xn_params.send_buf.iov_len = sizeof(get_dev_clk_time_msg);
-	xn_params.recv_buf.iov_base = &get_dev_clk_time_msg;
-	xn_params.recv_buf.iov_len = sizeof(get_dev_clk_time_msg);
-	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
 	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
@@ -202,15 +199,15 @@ int idpf_ptp_get_cross_time(struct idpf_adapter *adapter,
 			    struct idpf_ptp_dev_timers *cross_time)
 {
 	struct virtchnl2_ptp_get_cross_time cross_time_msg = { };
-	struct idpf_vc_xn_params xn_params = { };
+	struct idpf_vc_xn_params xn_params = {
+		.vc_op = VIRTCHNL2_OP_PTP_GET_CROSS_TIME,
+		.send_buf.iov_base = &cross_time_msg,
+		.send_buf.iov_len = sizeof(cross_time_msg),
+		.recv_buf.iov_base = &cross_time_msg,
+		.recv_buf.iov_len = sizeof(cross_time_msg),
+		.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC,
+	};
 	int reply_sz;
-
-	xn_params.vc_op = VIRTCHNL2_OP_PTP_GET_CROSS_TIME;
-	xn_params.send_buf.iov_base = &cross_time_msg;
-	xn_params.send_buf.iov_len = sizeof(cross_time_msg);
-	xn_params.recv_buf.iov_base = &cross_time_msg;
-	xn_params.recv_buf.iov_len = sizeof(cross_time_msg);
-	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
 	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
@@ -236,17 +233,17 @@ int idpf_ptp_get_cross_time(struct idpf_adapter *adapter,
 int idpf_ptp_set_dev_clk_time(struct idpf_adapter *adapter, u64 time)
 {
 	struct virtchnl2_ptp_set_dev_clk_time set_dev_clk_time_msg = { };
-	struct idpf_vc_xn_params xn_params = { };
+	struct idpf_vc_xn_params xn_params = {
+		.vc_op = VIRTCHNL2_OP_PTP_SET_DEV_CLK_TIME,
+		.send_buf.iov_base = &set_dev_clk_time_msg,
+		.send_buf.iov_len = sizeof(set_dev_clk_time_msg),
+		.recv_buf.iov_base = &set_dev_clk_time_msg,
+		.recv_buf.iov_len = sizeof(set_dev_clk_time_msg),
+		.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC,
+	};
 	int reply_sz;
 
 	set_dev_clk_time_msg.dev_time_ns = cpu_to_le64(time);
-
-	xn_params.vc_op = VIRTCHNL2_OP_PTP_SET_DEV_CLK_TIME;
-	xn_params.send_buf.iov_base = &set_dev_clk_time_msg;
-	xn_params.send_buf.iov_len = sizeof(set_dev_clk_time_msg);
-	xn_params.recv_buf.iov_base = &set_dev_clk_time_msg;
-	xn_params.recv_buf.iov_len = sizeof(set_dev_clk_time_msg);
-	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
 	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
@@ -269,17 +266,17 @@ int idpf_ptp_set_dev_clk_time(struct idpf_adapter *adapter, u64 time)
 int idpf_ptp_adj_dev_clk_time(struct idpf_adapter *adapter, s64 delta)
 {
 	struct virtchnl2_ptp_adj_dev_clk_time adj_dev_clk_time_msg = { };
-	struct idpf_vc_xn_params xn_params = { };
+	struct idpf_vc_xn_params xn_params = {
+		.vc_op = VIRTCHNL2_OP_PTP_ADJ_DEV_CLK_TIME,
+		.send_buf.iov_base = &adj_dev_clk_time_msg,
+		.send_buf.iov_len = sizeof(adj_dev_clk_time_msg),
+		.recv_buf.iov_base = &adj_dev_clk_time_msg,
+		.recv_buf.iov_len = sizeof(adj_dev_clk_time_msg),
+		.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC,
+	};
 	int reply_sz;
 
 	adj_dev_clk_time_msg.delta = cpu_to_le64(delta);
-
-	xn_params.vc_op = VIRTCHNL2_OP_PTP_ADJ_DEV_CLK_TIME;
-	xn_params.send_buf.iov_base = &adj_dev_clk_time_msg;
-	xn_params.send_buf.iov_len = sizeof(adj_dev_clk_time_msg);
-	xn_params.recv_buf.iov_base = &adj_dev_clk_time_msg;
-	xn_params.recv_buf.iov_len = sizeof(adj_dev_clk_time_msg);
-	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
 	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
@@ -303,17 +300,17 @@ int idpf_ptp_adj_dev_clk_time(struct idpf_adapter *adapter, s64 delta)
 int idpf_ptp_adj_dev_clk_fine(struct idpf_adapter *adapter, u64 incval)
 {
 	struct virtchnl2_ptp_adj_dev_clk_fine adj_dev_clk_fine_msg = { };
-	struct idpf_vc_xn_params xn_params = { };
+	struct idpf_vc_xn_params xn_params = {
+		.vc_op = VIRTCHNL2_OP_PTP_ADJ_DEV_CLK_FINE,
+		.send_buf.iov_base = &adj_dev_clk_fine_msg,
+		.send_buf.iov_len = sizeof(adj_dev_clk_fine_msg),
+		.recv_buf.iov_base = &adj_dev_clk_fine_msg,
+		.recv_buf.iov_len = sizeof(adj_dev_clk_fine_msg),
+		.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC,
+	};
 	int reply_sz;
 
 	adj_dev_clk_fine_msg.incval = cpu_to_le64(incval);
-
-	xn_params.vc_op = VIRTCHNL2_OP_PTP_ADJ_DEV_CLK_FINE;
-	xn_params.send_buf.iov_base = &adj_dev_clk_fine_msg;
-	xn_params.send_buf.iov_len = sizeof(adj_dev_clk_fine_msg);
-	xn_params.recv_buf.iov_base = &adj_dev_clk_fine_msg;
-	xn_params.recv_buf.iov_len = sizeof(adj_dev_clk_fine_msg);
-	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;
 
 	reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 	if (reply_sz < 0)
@@ -531,6 +528,12 @@ idpf_ptp_get_tstamp_value(struct idpf_vport *vport,
 	list_add(&ptp_tx_tstamp->list_member,
 		 &tx_tstamp_caps->latches_free);
 
+#ifdef HAVE_ETHTOOL_GET_TS_STATS
+	u64_stats_update_begin(&vport->tstamp_stats.stats_sync);
+	u64_stats_inc(&vport->tstamp_stats.packets);
+	u64_stats_update_end(&vport->tstamp_stats.stats_sync);
+
+#endif /* HAVE_ETHTOOL_GET_TS_STATS */
 	return 0;
 }
 

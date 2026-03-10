@@ -289,6 +289,13 @@ struct irdma_qp {
 	bool suspend_pending:1;
 };
 
+struct irdma_mmap_info {
+	struct ib_ucontext *context;
+	struct kref ref;
+	void *buf;
+	size_t size;
+};
+
 enum irdma_mmap_flag {
 	IRDMA_MMAP_IO_NC,
 	IRDMA_MMAP_IO_WC,

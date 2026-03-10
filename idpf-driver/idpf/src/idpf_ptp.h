@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2025 Intel Corporation */
+/* Copyright (C) 2019-2026 Intel Corporation */
 
 #ifndef _IDPF_PTP_H_
 #define _IDPF_PTP_H_
@@ -33,10 +33,10 @@ struct idpf_ptp_cmd {
  * @incval_h: high part of the increment value register
  * @shadj_l: low part of the shadow adjust register
  * @shadj_h: high part of the shadow adjust register
- * phy_incval_l: low part of the PHY increment value register
- * phy_incval_h: high part of the PHY increment value register
- * phy_shadj_l: low part of the PHY shadow adjust register
- * phy_shadj_h: high part of the PHY shadow adjust register
+ * @phy_incval_l: low part of the PHY increment value register
+ * @phy_incval_h: high part of the PHY increment value register
+ * @phy_shadj_l: low part of the PHY shadow adjust register
+ * @phy_shadj_h: high part of the PHY shadow adjust register
  * @cmd: PTP command register
  * @phy_cmd: PHY command register
  * @cmd_sync: PTP command synchronization register
@@ -178,7 +178,7 @@ struct idpf_ptp_vport_tx_tstamp_caps {
  * @set_dev_clk_time_access: access type for setting the device clock time
  * @adj_dev_clk_time_access: access type for the adjusting the device clock
  * @tx_tstamp_access: access type for the Tx timestamp value read
- * @rsv: Reserved fields
+ * @rsv: reserved bits
  * @secondary_mbx: parameters for using dedicated PTP mailbox
  * @read_dev_clk_lock: spinlock protecting access to the device clock read
  *		       operation executed by the HW latch
@@ -275,11 +275,11 @@ static inline bool idpf_ptp_is_vport_rx_tstamp_ena(struct idpf_vport *vport)
 }
 
 #if IS_ENABLED(CONFIG_PTP_1588_CLOCK)
-int idpf_ptp_get_caps(struct idpf_adapter *adapter);
-bool idpf_ptp_get_txq_tstamp_capability(struct idpf_queue *txq);
 int idpf_ptp_init(struct idpf_adapter *adapter);
 void idpf_ptp_release(struct idpf_adapter *adapter);
+int idpf_ptp_get_caps(struct idpf_adapter *adapter);
 void idpf_ptp_get_features_access(const struct idpf_adapter *adapter);
+bool idpf_ptp_get_txq_tstamp_capability(struct idpf_queue *txq);
 int idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
 			      struct idpf_ptp_dev_timers *dev_clk_time);
 int idpf_ptp_get_cross_time(struct idpf_adapter *adapter,
@@ -334,17 +334,6 @@ static inline u64 idpf_ptp_tstamp_extend_32b_to_64b(u64 cached_phc_time,
 }
 
 #else /* IS_ENABLED(CONFIG_PTP_1588_CLOCK) */
-static inline int idpf_ptp_get_caps(struct idpf_adapter *adapter)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline bool
-idpf_ptp_get_txq_tstamp_capability(struct idpf_queue *txq)
-{
-	return false;
-}
-
 static inline int idpf_ptp_init(struct idpf_adapter *adapter)
 {
 	return -EOPNOTSUPP;
@@ -352,23 +341,36 @@ static inline int idpf_ptp_init(struct idpf_adapter *adapter)
 
 static inline void idpf_ptp_release(struct idpf_adapter *adapter) { }
 
+static inline int idpf_ptp_get_caps(struct idpf_adapter *adapter)
+{
+	return -EOPNOTSUPP;
+}
+
 static inline void
 idpf_ptp_get_features_access(const struct idpf_adapter *adapter) { }
 
+static inline bool
+idpf_ptp_get_txq_tstamp_capability(struct idpf_queue *txq)
+{
+	return false;
+}
+
+static inline int
+idpf_ptp_get_cross_time(struct idpf_adapter *adapter,
+			struct idpf_ptp_dev_timers *cross_time)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
+idpf_ptp_set_dev_clk_time(struct idpf_adapter *adapter,
+			  u64 time)
+{
+	return -EOPNOTSUPP;
+}
+
 static inline int idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
 					    struct idpf_ptp_dev_timers *dev_clk_time)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline int idpf_ptp_get_cross_time(struct idpf_adapter *adapter,
-					  struct idpf_ptp_dev_timers *cross_time)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline int idpf_ptp_set_dev_clk_time(struct idpf_adapter *adapter,
-					    u64 time)
 {
 	return -EOPNOTSUPP;
 }
@@ -436,4 +438,4 @@ static inline int idpf_tx_tstamp(struct idpf_queue *tx_q, struct sk_buff *skb,
 static inline void
 idpf_tx_set_tstamp_desc(union idpf_flex_tx_ctx_desc *ctx_desc, u32 idx) { }
 #endif /* IS_ENABLED(CONFIG_PTP_1588_CLOCK) */
-#endif /* _IDPF_PTP_H_ */
+#endif /* _IDPF_PTP_H */

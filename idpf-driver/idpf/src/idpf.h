@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2025 Intel Corporation */
+/* Copyright (C) 2019-2026 Intel Corporation */
 
 #ifndef _IDPF_H_
 #define _IDPF_H_
@@ -55,7 +55,7 @@ struct idpf_rss_data;
 #endif /* CONFIG_IOMMU_BYPASS */
 
 #define IDPF_DRV_NAME "idpf"
-#define IDPF_DRV_VER "0.0.659"
+#define IDPF_DRV_VER "1.0.2"
 
 #define IDPF_M(m, s)	((m) << (s))
 
@@ -362,6 +362,23 @@ enum idpf_vport_flags {
 	IDPF_VPORT_FLAGS_NBITS,
 };
 
+#ifdef HAVE_ETHTOOL_GET_TS_STATS
+/**
+ * struct idpf_tstamp_stats - Tx timestamp statistics
+ * @stats_sync: See struct u64_stats_sync
+ * @packets: Number of packets successfully timestamped by the hardware
+ * @discarded: Number of Tx skbs discarded due to cached PHC
+ *	       being too old to correctly extend timestamp
+ * @flushed: Number of Tx skbs flushed due to interface closed
+ */
+struct idpf_tstamp_stats {
+	struct u64_stats_sync stats_sync;
+	u64_stats_t packets;
+	u64_stats_t discarded;
+	u64_stats_t flushed;
+};
+#endif /* HAVE_ETHTOOL_GET_TS_STATS */
+
 #ifdef IDPF_ADD_PROBES
 struct idpf_extra_stats {
 	u64_stats_t tx_tcp_segs;
@@ -419,9 +436,12 @@ struct idpf_port_stats {
  * @txq_desc_count: TX queue descriptor count
  * @complq_desc_count: Completion queue descriptor count
  * @txq_model: Split queue or single queue queuing model
- * @bufq_per_rxq: Number of buffer queues per RX queue
+ * @num_bufqs_per_qgrp: Buffer queues per RX queue in a given grouping
  * @num_bufq: Number of allocated buffer queues
  * @num_rxq: Number of allocated RX queues
+ * @num_rxq_grp: Number of allocated RX queue groups
+ * @rxq_grps: Total number of RX groups. Number of groups * number of RX per
+ *	      group will yield total number of RX queues.
  * @rxq_desc_count: RX queue descriptor count. *MUST* have enough descriptors
  *                  to complete all buffer descriptors for all buffer queues in
  *                  the worst case.
@@ -441,19 +461,18 @@ struct idpf_q_grp {
 	u32 txq_desc_count;
 	u32 complq_desc_count;
 	u16 txq_model;
-	u16 bufq_per_rxq;
+	u8 num_bufqs_per_qgrp;
 	u16 num_bufq;
 
 	u16 num_rxq;
+	u16 num_rxq_grp;
+	struct idpf_rxq_group *rxq_grps;
 	u32 rxq_desc_count;
-	u32 bufq_desc_count[IDPF_MAX_BUFQS_PER_RXQ];
-	u32 bufq_size[IDPF_MAX_BUFQS_PER_RXQ];
+	u32 bufq_desc_count[IDPF_MAX_BUFQS_PER_RXQ_GRP];
+	u32 bufq_size[IDPF_MAX_BUFQS_PER_RXQ_GRP];
 	u16 rxq_model;
 	bool base_rxd;
 
-	struct idpf_queue **rxqs;
-	struct idpf_queue *bufqs;
-	struct idpf_sw_queue *refillqs;
 };
 
 /**
@@ -522,6 +541,9 @@ struct idpf_vgrp {
  * @tx_tstamp_caps: Capabilities negotiated for TX timestamping
  * @tstamp_config: The TX tstamp config
  * @tstamp_task: TX timestamping task
+#ifdef HAVE_ETHTOOL_GET_TS_STATS
+ * @tstamp_stats: TX timestamping statistics
+#endif
  * @finish_reset_task: finish vport's soft reset task
  */
 struct idpf_vport {
@@ -568,6 +590,9 @@ struct idpf_vport {
 	struct idpf_ptp_vport_tx_tstamp_caps *tx_tstamp_caps;
 	struct hwtstamp_config tstamp_config;
 	struct work_struct tstamp_task;
+#ifdef HAVE_ETHTOOL_GET_TS_STATS
+	struct idpf_tstamp_stats tstamp_stats;
+#endif /* HAVE_ETHTOOL_GET_TS_STATS */
 	struct work_struct finish_reset_task;
 };
 
@@ -839,7 +864,7 @@ struct idpf_iommu_bypass {
  * @sf_id: Unique integer corresponding to a subfunc
  * @sf_cnt: Count of active subfunctions
 #endif
- * @ptp: pointer to PTP structure
+ * @ptp: Storage for PTP-related data
  * @tx_compl_tstamp_gran_s: Number of left bit shifts to convert Tx completion
  *			    descriptor timestamp in nanoseconds.
  * @corer_done: Used to track the completion of CORER
@@ -918,6 +943,7 @@ struct idpf_adapter {
 	unsigned short sf_id;
 	unsigned short sf_cnt;
 #endif /* DEVLINK_ENABLED */
+
 	struct idpf_ptp *ptp;
 	u32 tx_compl_tstamp_gran_s;
 	struct completion corer_done;
@@ -1190,18 +1216,6 @@ static inline u16 idpf_get_max_tx_hdr_size(struct idpf_adapter *adapter)
 
 #endif /* HAVE_NDO_FEATURES_CHECK */
 /**
- * idpf_rx_bufq_offset - Translate an RX idx and bufq idx for true offset
- * @q_grp: Queue resources
- * @rx_idx: RX queue index
- * @bufq_idx: Buffer queue index
- */
-static inline int idpf_rx_bufq_offset(struct idpf_q_grp *q_grp, int rx_idx,
-				      int bufq_idx)
-{
-	return q_grp->bufq_per_rxq * rx_idx + bufq_idx;
-}
-
-/**
  * idpf_vport_init_lock -Acquire the init/deinit control lock. It
  * controls and protect initialization, re-initialization and
  * deinitialization code flow and its resources.
@@ -1328,6 +1342,13 @@ int idpf_idc_vc_receive(struct idpf_rdma_data *rdma_data, u32 f_id, const u8 *ms
 			u16 msg_size);
 void idpf_idc_event(struct idpf_rdma_data *rdma_data,
 		    enum iidc_event_type event_type);
+/**
+ * idpf_is_feature_ena - Determine if a particular feature is enabled
+ * @vport: Vport to check
+ * @feature: Netdev flag to check
+ *
+ * Returns true or false if a particular feature is enabled.
+ */
 static inline bool idpf_is_feature_ena(struct idpf_vport *vport,
 				       netdev_features_t feature)
 {

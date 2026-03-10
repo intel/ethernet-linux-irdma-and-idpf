@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-only
-# Copyright (C) 2019-2025 Intel Corporation
+# Copyright (C) 2019-2026 Intel Corporation
 
 set -Eeuo pipefail
 
@@ -74,6 +74,24 @@ function gen-bitfield() {
 	gen NEED_BITFIELD_FIELD_MAX if macro FIELD_MAX absent in "$bf"
 }
 
+function gen-cleanup() {
+	ch='include/linux/cleanup.h'
+	dh='include/net/devlink.h'
+	mh='include/linux/mutex.h'
+	sh='include/linux/spinlock.h'
+	slabh='include/linux/slab.h'
+	rcuh='include/linux/rcupdate.h'
+	gen NEED_DEFINE_FREE if macro DEFINE_FREE absent in "$ch"
+	gen NEED___DEFINE_CLASS_IS_CONDITIONAL if macro __DEFINE_CLASS_IS_CONDITIONAL absent in "$ch"
+	gen NEED_DEFINE_GUARD_MUTEX if invocation of macro DEFINE_GUARD absent or lacks mutex_lock in "$mh"
+	gen NEED_LOCK_GUARD_FOR_RCU if invocation of macro DEFINE_LOCK_GUARD_0 absent or lacks rcu in "$rcuh"
+	gen NEED_DEFINE_FREE_KFREE if invocation of macro DEFINE_FREE absent or lacks kfree in "$slabh"
+	gen NEED_DEFINE_FREE_KVFREE if invocation of macro DEFINE_FREE absent or lacks kvfree in "$slabh"
+	gen NEED_LOCK_GUARD_FOR_SPINLOCK if invocation of macro DEFINE_LOCK_GUARD_1 absent or lacks spinlock in "$sh"
+	gen NEED_LOCK_GUARD_FOR_SPINLOCK_BH if invocation of macro DEFINE_LOCK_GUARD_1 absent or lacks spinlock_bh in "$sh"
+	gen NEED_DEFINE_GUARD_DEVLINK if invocation of macro DEFINE_GUARD absent or lacks devl_lock in "$dh"
+}
+
 function gen-device() {
 	dh='include/linux/device.h'
 	dph='include/linux/dev_printk.h'
@@ -92,6 +110,7 @@ function gen-devlink() {
 	gen HAVE_DEVLINK_HEALTH_OPS_EXTACK if method dump of devlink_health_reporter_ops matches extack in "$dh"
 	gen HAVE_DEVLINK_INFO_DRIVER_NAME_PUT if fun devlink_info_driver_name_put in "$dh"
 	gen HAVE_DEVLINK_PARAMS if method validate of devlink_param matches extack in "$dh"
+	gen HAVE_DEVLINK_PARAMS_GET_EXTACK if method get of devlink_param matches extack in "$dh"
 	gen HAVE_DEVLINK_PARAMS_PUBLISH if fun devlink_params_publish in "$dh"
 	gen HAVE_DEVLINK_PARAMS_SET_EXTACK if method set of devlink_param matches extack in "$dh"
 	gen HAVE_DEVLINK_PORT_NEW if method port_new of devlink_ops in "$dh"
@@ -127,6 +146,7 @@ function gen-devlink() {
 	gen NEED_DEVLINK_TO_DEV if fun devlink_to_dev absent in "$dh"
 	gen NEED_DEVLINK_UNLOCKED_RESOURCE if fun devl_resource_size_get absent in "$dh"
 	gen NEED_DEVL_HEALTH_REPORTER_CREATE if fun devl_health_reporter_create absent in "$dh"
+	gen NEED_DEVL_HEALTH_REPORTER_CREATE_REMOVE_GRACEFUL_PERIOD if fun devl_health_reporter_create matches graceful_period in "$dh"
 	gen NEED_DEVL_LOCK if fun devl_lock absent in "$dh"
 	gen NEED_DEVL_PARAMS_REGISTER if fun devl_params_register absent in "$dh"
 	gen NEED_DEVL_PORT_REGISTER if fun devl_port_register absent in "$dh"
@@ -161,6 +181,7 @@ function gen-dpll() {
 	gen HAVE_DPLL_ESYNC if method esync_get of dpll_pin_ops in "$dh"
 	gen HAVE_DPLL_LOCK_STATUS_ERROR if method lock_status_get of dpll_device_ops matches status_error in "$dh"
 	gen HAVE_DPLL_PHASE_OFFSET if method phase_offset_get of dpll_pin_ops in "$dh"
+	gen HAVE_DPLL_PHASE_OFFSET_MONITOR if method phase_offset_monitor_set of dpll_device_ops in "$dh"
 	gen NEED_DPLL_NETDEV_PIN_SET if fun dpll_netdev_pin_set absent in "$dh"
 }
 
@@ -172,7 +193,9 @@ function gen-ethtool() {
 	unlgeth='include/uapi/linux/ethtool_netlink_generated.h'
 	gen HAVE_ETHTOOL_COALESCE_EXTACK if method get_coalesce of ethtool_ops matches 'struct kernel_ethtool_coalesce \\*' in "$eth"
 	gen HAVE_ETHTOOL_EXTENDED_RINGPARAMS if method get_ringparam of ethtool_ops matches 'struct kernel_ethtool_ringparam \\*' in "$eth"
+	gen HAVE_ETHTOOL_FEC_HIST if method get_fec_stats of ethtool_ops matches 'struct ethtool_fec_hist \\*' in "$eth"
 	gen HAVE_ETHTOOL_GET_FEC_STATS_OPS if struct ethtool_ops matches '\\*get_fec_stats' in "$eth"
+	gen HAVE_ETHTOOL_GET_TS_STATS if struct ethtool_ops matches '\\*get_ts_stats' in "$eth"
 	gen HAVE_ETHTOOL_KEEE if struct ethtool_keee in "$eth"
 	gen HAVE_ETHTOOL_KERNEL_TS_INFO if struct kernel_ethtool_ts_info in "$eth"
 	gen HAVE_ETHTOOL_LINK_EXT_STATS if struct ethtool_ops matches '\\*get_link_ext_stats' in "$eth"
@@ -277,8 +300,10 @@ function gen-gnss() {
 	gen NEED_CLASS_CREATE_WITHOUT_OWNER if string "$NEED_CLASS_CREATE" equals 1
 
 	HAVE_GNSS_MODULE=0
-	if ! config_has CONFIG_SUSE_KERNEL && check struct gnss_device in "$gh" ; then
-		HAVE_GNSS_MODULE=1
+	if check struct gnss_device in "$gh" ; then
+		if ! config_has CONFIG_SUSE_KERNEL || config_has CONFIG_SUSE_PRODUCT_SLFO ; then
+			HAVE_GNSS_MODULE=1
+		fi
 	fi
 	gen HAVE_GNSS_MODULE if string "$HAVE_GNSS_MODULE" equals 1
 
@@ -436,6 +461,7 @@ function gen-other() {
 	ush='include/linux/u64_stats_sync.h'
 	fsh='include/linux/fortify-string.h'
 	cth='include/linux/compiler_types.h'
+	ch='include/linux/compiler.h'
 	gen HAVE_X86_STEPPING if struct cpuinfo_x86 matches x86_stepping in arch/x86/include/asm/processor.h
 	gen HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING if fun pci_enable_pcie_error_reporting in "$pciaerh"
 	gen NEED_PCI_AER_CLEAR_NONFATAL_STATUS if fun pci_aer_clear_nonfatal_status absent in "$pciaerh"
@@ -444,7 +470,7 @@ function gen-other() {
 	gen NEED_BITMAP_TO_ARR32 if fun bitmap_to_arr32 absent in include/linux/bitmap.h
 	gen NEED_ASSIGN_BIT if fun assign_bit absent in include/linux/bitops.h
 	gen NEED_STATIC_ASSERT if macro static_assert absent in include/linux/build_bug.h
-	gen NEED_CLEANUP_API if macro __free absent in include/linux/cleanup.h
+	gen NEED____ADDRESSABLE if macro ___ADDRESSABLE absent in "$ch"
 	# special case for kernels 6.2 - 6.6 and __struct_size macro
 	# there is an implicit dependency on CONFIG_FORTIFY_SOURCE config option and inclusion
 	# of 'forify-string.h' header (which includes that macro definition).
@@ -500,6 +526,8 @@ function gen-other() {
 	gen HAVE_MDEV_REGISTER_PARENT if fun mdev_register_parent in include/linux/mdev.h
 	gen HAVE_VM_FLAGS_API if fun vm_flags_init in include/linux/mm.h
 	gen HAVE_NL_SET_ERR_MSG_FMT if macro NL_SET_ERR_MSG_FMT in include/linux/netlink.h
+	gen NEED_DEFINE_SIMPLE_DEV_OPS if macro DEFINE_SIMPLE_DEV_OPS absent in include/linux/pm.h
+	gen NEED_PM_SLEEP_PTR if macro pm_sleep_ptr absent in include/linux/pm.h
 	gen NEED_DEV_PM_DOMAIN_ATTACH if fun dev_pm_domain_attach absent in include/linux/pm_domain.h include/linux/pm.h
 	gen NEED_DEV_PM_DOMAIN_DETACH if fun dev_pm_domain_detach absent in include/linux/pm_domain.h include/linux/pm.h
 	gen NEED_RADIX_TREE_EMPTY if fun radix_tree_empty absent in include/linux/radix-tree.h
@@ -518,6 +546,7 @@ function gen-other() {
 	gen NEED_STR_ENABLED_DISABLED if fun str_enabled_disabled absent in include/linux/string_choices.h include/linux/string_helpers.h
 	gen HAVE_STRING_HELPERS_H if enum string_size_units in include/linux/string_helpers.h
 	gen NEED_SYSFS_EMIT if fun sysfs_emit absent in include/linux/sysfs.h
+	gen HAVE_NON_CONST_CYCLECOUNTER if method read of cyclecounter lacks const in include/linux/timecounter.h
 	gen NEED_TIMER_CONTAINER_OF if macro timer_container_of absent in include/linux/timer.h
 	gen NEED_TIMER_DELETE if fun timer_delete absent in include/linux/timer.h
 	gen HAVE_TRACE_ENABLED_SUPPORT if implementation of macro __DECLARE_TRACE matches 'trace_##name##_enabled' in include/linux/tracepoint.h
@@ -567,6 +596,7 @@ function gen-all() {
 	fi
 	gen-aux
 	gen-bitfield
+	gen-cleanup
 	gen-device
 	gen-devres
 	gen-dma

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2025 Intel Corporation */
+/* Copyright (C) 2019-2026 Intel Corporation */
 
 #include "idpf.h"
 #include "idpf_virtchnl.h"
@@ -46,7 +46,6 @@ static int idpf_adi_reset(struct idpf_adi *adi)
 void idpf_notify_adi_reset(struct idpf_adapter *adapter, u16 adi_id,
 			   bool reset)
 {
-	struct device *dev = idpf_adapter_to_dev(adapter);
 	struct idpf_adi_priv *priv;
 
 	priv = xa_load(&adapter->adi_info.priv_info, adi_id);
