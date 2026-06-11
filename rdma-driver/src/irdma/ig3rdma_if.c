@@ -3,14 +3,8 @@
 /* Copyright (c) 2023 - 2024 Intel Corporation */
 
 #include "main.h"
+#include "iidc_rdma_idpf.h"
 #include "ig3rdma_hw.h"
-
-extern unsigned int rdma_key;
-
-static const struct auxiliary_device_id ig3rdma_auxiliary_id_table[] = {
-	{.name = "idpf.8086.rdma.core", },
-	{},
-};
 
 static struct irdma_vchnl_if ig3rdma_vchnl_if_req = {
 	.vchnl_recv = irdma_vchnl_req_recv,
@@ -49,10 +43,12 @@ static void ig3rdma_idc_core_event_handler(struct iidc_core_dev_info *cdev_info,
 {
 	struct irdma_pci_f *rf = auxiliary_get_drvdata(cdev_info->adev);
 
-	if (*event->type & BIT(IIDC_EVENT_WARN_RESET)) {
+	if (*event->type & BIT(IIDC_EVENT_WARN_RESET))
+	{
 		rf->reset = true;
 		rf->sc_dev.vchnl_up = false;
-		pr_debug("%s: Received event warn reset", __func__);
+		irdma_rblog_pr_debug("%s: Received event warn reset",
+				     __func__);
 	}
 }
 
@@ -104,7 +100,7 @@ static int ig3rdma_cfg_regions(struct irdma_hw *hw,
 }
 
 static int ig3rdma_vchnl_init(struct irdma_pci_f *rf,
-			    struct iidc_core_dev_info *cdev_info, u8 *rdma_ver)
+			      struct iidc_core_dev_info *cdev_info, u8 *rdma_ver)
 {
 	struct iidc_rdma_priv_dev_info *iidc_priv = cdev_info->iidc_priv;
 	struct irdma_vchnl_init_info virt_info = {};
@@ -118,10 +114,9 @@ static int ig3rdma_vchnl_init(struct irdma_pci_f *rf,
 	mutex_init(&rf->sc_dev.vchnl_mutex);
 
 	virt_info.hw_rev = gen;
-	virt_info.is_pf =
-		(iidc_priv->ftype == IIDC_FUNCTION_TYPE_PF) ? true : false;
-	virt_info.privileged = false;
 	virt_info.vchnl_if = &ig3rdma_vchnl_if_req;
+	virt_info.is_pf = !iidc_priv->ftype;
+	virt_info.privileged = false;
 	virt_info.vchnl_wq = rf->vchnl_wq;
 	ret = irdma_sc_vchnl_init(&rf->sc_dev, &virt_info);
 	if (ret) {
@@ -133,8 +128,19 @@ static int ig3rdma_vchnl_init(struct irdma_pci_f *rf,
 	return 0;
 }
 
+/**
+ * ig3rdma_request_reset - Request a reset
+ * @rf: RDMA PCI function
+ */
+static void ig3rdma_request_reset(struct irdma_pci_f *rf)
+{
+	irdma_rblog_ibdev_warn(&rf->iwdev->ibdev, "Requesting a reset\n");
+	rf->sc_dev.vchnl_up = false;
+	rf->idpf_idc_request_reset_func(rf->cdev, IIDC_CORER);
+}
+
 static int ig3rdma_core_fill_device_info(struct irdma_pci_f *rf,
-				  struct iidc_core_dev_info *cdev_info)
+					 struct iidc_core_dev_info *cdev_info)
 {
 	struct iidc_rdma_priv_dev_info *iidc_priv = cdev_info->iidc_priv;
 	int err;
@@ -161,8 +167,8 @@ static int ig3rdma_core_fill_device_info(struct irdma_pci_f *rf,
 	if (rf->rdma_ver == IRDMA_GEN_3 && cdev_info->pdev->revision < MEV_PCI_VER_C0) {
 #define IRDMA_MEV_B0_RDMA_KEY	0xb
 		if (rdma_key != IRDMA_MEV_B0_RDMA_KEY) {
-			dev_err(rf->hw.device,
-				"IRDMA: Invalid RDMA key used for B0\n");
+			irdma_rblog_dev_err(rf->hw.device,
+					    "IRDMA: Invalid RDMA key used for B0\n");
 			return -EINVAL;
 		}
 	}
@@ -180,26 +186,29 @@ static int ig3rdma_core_fill_device_info(struct irdma_pci_f *rf,
 	rf->protocol_used = IRDMA_ROCE_PROTOCOL_ONLY;
 
 	rf->rsrc_profile = IRDMA_HMC_PROFILE_DEFAULT;
-	rf->gen_ops.request_reset = irdma_request_reset;
+	rf->gen_ops.request_reset = ig3rdma_request_reset;
 	/* Can override limits_sel, protocol_used */
 	irdma_set_rf_user_cfg_params(rf);
 
 	rf->rca_config = irdma_rca_config;
-	pr_info("RCA: cfg=%x\n", irdma_rca_config);
+	if (irdma_rca_ena)
+		irdma_rblog_pr_info("RCA: cfg=0x%x\n", irdma_rca_config);
 
-	dev_info(rf->hw.device, "%s: feature_cap 0x%016llx\n",
-		 __func__, rf->sc_dev.vc_caps.feature_cap);
+	irdma_rblog_dev_info(rf->hw.device, "%s: feature_cap 0x%016llx\n",
+			     __func__, rf->sc_dev.vc_caps.feature_cap);
 	if (FIELD_GET(IRDMA_NEED_PERIODIC_FLUSH_BIT, rf->sc_dev.vc_caps.feature_cap)) {
-		dev_info(rf->hw.device, "%s: periodic flush enabled\n", __func__);
+		irdma_rblog_dev_info(rf->hw.device,
+				     "%s: periodic flush enabled\n", __func__);
 		rf->sc_dev.periodic_flush = true;
 	} else {
-		dev_info(rf->hw.device, "%s: periodic flush disabled\n", __func__);
+		irdma_rblog_dev_info(rf->hw.device,
+				     "%s: periodic flush disabled\n",
+				     __func__);
 		rf->sc_dev.periodic_flush = false;
 	}
 
 	return 0;
 }
-
 
 static void irdma_poll_cq3(struct irdma_pci_f *rf)
 {
@@ -269,7 +278,8 @@ static int poll_thread(void *context)
 	return 0;
 }
 
-static int ig3rdma_probe(struct auxiliary_device *aux_dev, const struct auxiliary_device_id *id)
+static int ig3rdma_core_probe(struct auxiliary_device *aux_dev,
+			 const struct auxiliary_device_id *id)
 {
 	struct iidc_auxiliary_dev *iidc_adev = container_of(aux_dev,
 							    struct iidc_auxiliary_dev,
@@ -277,6 +287,27 @@ static int ig3rdma_probe(struct auxiliary_device *aux_dev, const struct auxiliar
 	struct iidc_core_dev_info *cdev_info = iidc_adev->cdev_info;
 	struct irdma_pci_f *rf;
 	int err;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0)
+	if (cdev_info->ver.major != IIDC_MAJOR_VER) {
+		irdma_rblog_pr_info("irdma: RDMA/LAN interface version mismatch (Expected %0d.%0d Received %0d.%0d). Unable to initialize RDMA.\n",
+				    IIDC_MAJOR_VER, IIDC_MINOR_VER,
+				    cdev_info->ver.major,
+				    cdev_info->ver.minor);
+		irdma_rblog_pr_info("irdma: Please update both LAN and RDMA drivers from same release for interface compatibility\n");
+		return -EINVAL;
+	}
+	if (cdev_info->ver.minor != IIDC_MINOR_VER)
+		irdma_rblog_pr_info("probe: minor version mismatch: expected %0d.%0d caller specified %0d.%0d\n",
+				    IIDC_MAJOR_VER, IIDC_MINOR_VER,
+				    cdev_info->ver.major,
+				    cdev_info->ver.minor);
+	irdma_rblog_pr_info("probe: cdev_info=%p, cdev_info->dev.aux_dev.bus->number=%d msix_count=%d ftype=%d ver.major=%d ver.minor=%d\n",
+			    cdev_info, cdev_info->pdev->bus->number,
+			    ((struct iidc_rdma_priv_dev_info *)cdev_info->iidc_priv)->msix_count,
+			    cdev_info->ftype, cdev_info->ver.major,
+			    cdev_info->ver.minor);
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0) */
 
 	rf = kzalloc(sizeof(*rf), GFP_KERNEL);
 	if (!rf)
@@ -299,8 +330,10 @@ static int ig3rdma_probe(struct auxiliary_device *aux_dev, const struct auxiliar
 		rf->poll_thread =
 			kthread_run(poll_thread, rf, "dpc polling thread");
 
-	dev_info(rf->hw.device, "%s:INIT: Gen[%d] PF[%d] device probe success\n",
-		 __func__, rf->rdma_ver, PCI_FUNC(rf->pcidev->devfn));
+	irdma_rblog_dev_info(rf->hw.device,
+			     "%s:INIT: Gen[%d] PF[%d] device probe success\n",
+			     __func__, rf->rdma_ver,
+			     PCI_FUNC(rf->pcidev->devfn));
 
 	auxiliary_set_drvdata(aux_dev, rf);
 
@@ -322,9 +355,9 @@ err_get_exported_symbols:
 }
 
 #ifdef HAVE_AUXILIARY_DRIVER_INT_REMOVE
-static int ig3rdma_remove(struct auxiliary_device *aux_dev)
+static int ig3rdma_core_remove(struct auxiliary_device *aux_dev)
 #else /* HAVE_AUXILIARY_DRIVER_INT_REMOVE */
-static void ig3rdma_remove(struct auxiliary_device *aux_dev)
+static void ig3rdma_core_remove(struct auxiliary_device *aux_dev)
 #endif /* HAVE_AUXILIARY_DRIVER_INT_REMOVE */
 {
 	struct irdma_pci_f *rf = auxiliary_get_drvdata(aux_dev);
@@ -342,27 +375,33 @@ static void ig3rdma_remove(struct auxiliary_device *aux_dev)
 	ig3rdma_put_exported_symbols(rf);
 	kfree(rf);
 
-	pr_debug("INIT: Gen[%d] func[%d] device remove success\n",
-		 rdma_ver, PCI_FUNC(cdev_info->pdev->devfn));
+	irdma_rblog_pr_debug("INIT: Gen[%d] func[%d] device remove success\n",
+			     rdma_ver, PCI_FUNC(cdev_info->pdev->devfn));
 #ifdef HAVE_AUXILIARY_DRIVER_INT_REMOVE
 	return 0;
 #endif /* HAVE_AUXILIARY_DRIVER_INT_REMOVE */
 }
 
-MODULE_DEVICE_TABLE(auxiliary, ig3rdma_auxiliary_id_table);
+static const struct auxiliary_device_id ig3rdma_core_auxiliary_id_table[] = {
+	{.name = "idpf.8086.rdma.core", },
+	{},
+};
 
-struct iidc_auxiliary_drv ig3rdma_auxiliary_drv = {
+MODULE_DEVICE_TABLE(auxiliary, ig3rdma_core_auxiliary_id_table);
+
+struct iidc_auxiliary_drv ig3rdma_core_auxiliary_drv = {
 	.adrv = {
 	    .name = "core",
-	    .id_table = ig3rdma_auxiliary_id_table,
-	    .probe = ig3rdma_probe,
-	    .remove = ig3rdma_remove,
+	    .id_table = ig3rdma_core_auxiliary_id_table,
+	    .probe = ig3rdma_core_probe,
+	    .remove = ig3rdma_core_remove,
 	},
 	.event_handler = ig3rdma_idc_core_event_handler,
 	.vc_receive = irdma_vchnl_receive,
 };
 
-static int ig3rdma_vport_probe(struct auxiliary_device *aux_dev, const struct auxiliary_device_id *id)
+static int ig3rdma_vport_probe(struct auxiliary_device *aux_dev,
+			       const struct auxiliary_device_id *id)
 {
 	struct iidc_rdma_vport_auxiliary_dev *idc_adev =
 		container_of(aux_dev, struct iidc_rdma_vport_auxiliary_dev, adev);
@@ -419,8 +458,10 @@ static int ig3rdma_vport_probe(struct auxiliary_device *aux_dev, const struct au
 	if (err)
 		goto err_ibreg;
 
-	ibdev_dbg(&iwdev->ibdev, "INIT: Gen[%d] PF[%d] vport_id[%d] vport probe success\n",
-		  rf->rdma_ver, PCI_FUNC(rf->pcidev->devfn), iwdev->vport_id);
+	irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+			      "INIT: Gen[%d] PF[%d] vport_id[%d] vport probe success\n",
+			      rf->rdma_ver, PCI_FUNC(rf->pcidev->devfn),
+			      iwdev->vport_id);
 
 	auxiliary_set_drvdata(aux_dev, iwdev);
 
@@ -456,11 +497,11 @@ static void ig3rdma_vport_remove(struct auxiliary_device *aux_dev)
 		container_of(aux_dev, struct iidc_rdma_vport_auxiliary_dev, adev);
 	struct irdma_device *iwdev = auxiliary_get_drvdata(aux_dev);
 
-	ibdev_dbg(&iwdev->ibdev,
-		  "INIT: Gen[%d] dev_name = %s, core_dev_name = %s, netdev=%s\n",
-		  iwdev->rf->rdma_ver, dev_name(&aux_dev->dev),
-		  dev_name(&idc_adev->vdev_info->core_adev->dev),
-		  netdev_name(idc_adev->vdev_info->netdev));
+	irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+			      "INIT: Gen[%d] dev_name = %s, core_dev_name = %s, netdev=%s\n",
+			      iwdev->rf->rdma_ver, dev_name(&aux_dev->dev),
+			      dev_name(&idc_adev->vdev_info->core_adev->dev),
+			      netdev_name(idc_adev->vdev_info->netdev));
 
 	irdma_ib_unregister_device(iwdev);
 	irdma_unregister_notifiers(iwdev);
@@ -479,7 +520,8 @@ static void ig3rdma_idc_vport_event_handler(struct iidc_rdma_vport_dev_info *cde
 	struct irdma_l2params l2params = {};
 
 	if (*event->type & BIT(IIDC_EVENT_AFTER_MTU_CHANGE)) {
-		ibdev_dbg(&iwdev->ibdev, "CLNT: new MTU = %d\n", iwdev->netdev->mtu);
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev, "CLNT: new MTU = %d\n",
+				      iwdev->netdev->mtu);
 		if (iwdev->vsi.mtu != iwdev->netdev->mtu) {
 			l2params.mtu = iwdev->netdev->mtu;
 			l2params.mtu_changed = true;
@@ -487,7 +529,8 @@ static void ig3rdma_idc_vport_event_handler(struct iidc_rdma_vport_dev_info *cde
 			irdma_change_l2params(&iwdev->vsi, &l2params);
 		}
 	} else {
-		ibdev_dbg(&iwdev->ibdev, "Got event 0x%08lx\n", *event->type);
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev, "Got event 0x%08lx\n",
+				      *event->type);
 	}
 }
 

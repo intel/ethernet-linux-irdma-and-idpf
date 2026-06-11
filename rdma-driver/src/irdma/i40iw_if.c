@@ -67,7 +67,8 @@ static void i40iw_close(struct i40e_info *cdev_info, struct i40e_client *client,
 	irdma_deinit_device(iwdev);
 	ib_dealloc_device(&iwdev->ibdev);
 #endif /* IB_DEALLOC_DRIVER_SUPPORT */
-	pr_debug("INIT: Gen1 PF[%d] close complete\n", PCI_FUNC(cdev_info->pcidev->devfn));
+	irdma_rblog_pr_debug("INIT: Gen1 PF[%d] close complete\n",
+			     PCI_FUNC(cdev_info->pcidev->devfn));
 }
 
 static void i40iw_request_reset(struct irdma_pci_f *rf)
@@ -182,8 +183,9 @@ static int i40iw_open(struct i40e_info *cdev_info, struct i40e_client *client)
 #ifdef CONFIG_DEBUG_FS
 	irdma_dbg_pf_init(hdl);
 #endif
-	ibdev_dbg(&iwdev->ibdev, "INIT: Gen1 PF[%d] open success\n",
-		  PCI_FUNC(rf->pcidev->devfn));
+	irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+			      "INIT: Gen1 PF[%d] open success\n",
+			      PCI_FUNC(rf->pcidev->devfn));
 
 	return 0;
 
@@ -226,11 +228,13 @@ static int i40iw_probe(struct auxiliary_device *aux_dev, const struct auxiliary_
 
 	if (cdev_info->version.major != I40E_CLIENT_VERSION_MAJOR ||
 	    cdev_info->version.minor != I40E_CLIENT_VERSION_MINOR) {
-		pr_err("version mismatch:\n");
-		pr_err("expected major ver %d, caller specified major ver %d\n",
-		       I40E_CLIENT_VERSION_MAJOR, cdev_info->version.major);
-		pr_err("expected minor ver %d, caller specified minor ver %d\n",
-		       I40E_CLIENT_VERSION_MINOR, cdev_info->version.minor);
+		irdma_rblog_pr_err("version mismatch:\n");
+		irdma_rblog_pr_err("expected major ver %d, caller specified major ver %d\n",
+				   I40E_CLIENT_VERSION_MAJOR,
+				   cdev_info->version.major);
+		irdma_rblog_pr_err("expected minor ver %d, caller specified minor ver %d\n",
+				   I40E_CLIENT_VERSION_MINOR,
+				   cdev_info->version.minor);
 		return -EINVAL;
 	}
 

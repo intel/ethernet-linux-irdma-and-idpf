@@ -36,6 +36,8 @@ void irdma_hw_stats_read_all(struct irdma_vsi_pestat *stats,
 			     const u64 *hw_stats_regs);
 int irdma_cqp_ws_node_cmd(struct irdma_sc_dev *dev, u8 cmd,
 			  struct irdma_ws_node_info *node_info);
+int irdma_cqp_ws_move_cmd(struct irdma_sc_dev *dev,
+			  struct irdma_ws_move_node_info *node_move_info);
 #if IS_ENABLED(CONFIG_CONFIGFS_FS)
 int irdma_cqp_up_map_cmd(struct irdma_sc_dev *dev, u8 cmd,
 			 struct irdma_up_info *map_info);
@@ -44,8 +46,6 @@ int irdma_cqp_ceq_cmd(struct irdma_sc_dev *dev, struct irdma_sc_ceq *sc_ceq,
 		      u8 op);
 int irdma_cqp_aeq_cmd(struct irdma_sc_dev *dev, struct irdma_sc_aeq *sc_aeq,
 		      u8 op);
-int irdma_cqp_stats_inst_cmd(struct irdma_sc_vsi *vsi, u8 cmd,
-			     struct irdma_stats_inst_info *stats_info);
 void irdma_update_stats(struct irdma_dev_hw_stats *hw_stats,
 			struct irdma_gather_stats *gather_stats,
 			struct irdma_gather_stats *last_gather_stats,

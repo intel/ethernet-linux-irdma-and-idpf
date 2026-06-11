@@ -34,6 +34,11 @@ struct idpf_vdcm_irq_ctx {
 	char *name;
 };
 
+struct idpf_vdcm_mmap_vma {
+	struct vm_area_struct *vma;
+	struct list_head vma_next;
+};
+
 /**
  * struct idpf_vdcm - Abstraction for VDCM
  *
@@ -60,7 +65,9 @@ struct idpf_vdcm {
 	struct device *parent_dev;
 	struct vfio_group *vfio_group;
 	u8 pci_cfg_space[IDPF_VDCM_CFG_SIZE];
+	struct mutex vma_lock;		/* protects access to vma_list */
 	struct mutex igate;		/* protects access to interrupt */
+	struct list_head vma_list;
 
 	struct mutex ref_lock; /* lock to protect refcnt */
 	int refcnt;
@@ -105,7 +112,7 @@ struct idpf_adi {
 	int (*get_sparse_mmap_area)(struct idpf_adi *adi, u64 index,
 				    u64 *offset, u64 *size);
 	int (*get_sparse_mmap_hpa)(struct idpf_adi *adi, u32 index, u64 pg_off,
-				   u64 *addr);
+				   u64 size, u64 *addr);
 	int (*get_adi_index)(struct idpf_adi *adi);
 	int (*set_adi_index)(struct idpf_adi *adi, u16 adi_index);
 };

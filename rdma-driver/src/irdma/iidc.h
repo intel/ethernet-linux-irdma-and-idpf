@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB-only */
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (C) 2019-2026 Intel Corporation */
 
 #ifndef _IIDC_H_
@@ -231,12 +231,12 @@ struct iidc_core_dev_info {
 	 */
 	void *iidc_priv;
 
+	struct iidc_ver_info ver;
 	/* KVA / Linear address corresponding to BAR0 of underlying
 	 * pci_device.
 	 */
 	u8 __iomem *hw_addr;
 	int cdev_info_id;
-	struct iidc_ver_info ver;
 
 	/* Opaque pointer for aux driver specific data tracking. This memory
 	 * will be alloc'd and freed by the auxiliary driver and used for

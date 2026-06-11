@@ -3,6 +3,12 @@
 #ifndef LINUX_KCOMPAT_H
 #define LINUX_KCOMPAT_H
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
+#ifndef HAVE_POLL_T
+#define HAVE_POLL_T
+#endif
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
 #define HAVE_XARRAY
 #endif
@@ -60,10 +66,8 @@
 #define CREATE_AH_VER_3
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 #define CREATE_AH_VER_1_2
-#define ETHER_COPY_VER_2
 #else
 #define CREATE_AH_VER_1_1
-#define ETHER_COPY_VER_1
 #endif
 
 /* DESTROY_AH */

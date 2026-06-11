@@ -8,9 +8,7 @@
 struct idpf_adapter;
 struct idpf_vport;
 struct idpf_vport_max_q;
-struct idpf_vgrp;
-struct idpf_q_grp;
-struct idpf_intr_grp;
+struct idpf_q_vec_rsrc;
 struct idpf_rss_data;
 
 /* Because of the header files order dependency in OOT, include kcompat.h first.
@@ -56,7 +54,7 @@ struct idpf_rss_data;
 #endif /* CONFIG_IOMMU_BYPASS */
 
 #define IDPF_DRV_NAME "idpf"
-#define IDPF_DRV_VER "1.0.6"
+#define IDPF_DRV_VER "1.0.11"
 
 #define IDPF_M(m, s)	((m) << (s))
 
@@ -283,7 +281,7 @@ struct idpf_reg_ops {
 	void (*ctlq_reg_init)(struct idpf_adapter *adapter,
 			      struct idpf_ctlq_create_info *cq);
 	int (*intr_reg_init)(struct idpf_vport *vport,
-			     struct idpf_intr_grp *intr_grp);
+			     struct idpf_q_vec_rsrc *rsrc);
 	void (*mb_intr_reg_init)(struct idpf_adapter *adapter);
 	void (*reset_reg_init)(struct idpf_adapter *adapter);
 	void (*oicr_reset_reg_init)(struct idpf_adapter *adapter);
@@ -432,73 +430,57 @@ struct idpf_port_stats {
 };
 
 /**
- * struct idpf_q_grp - Queue resource group
- * @num_txq: Number of allocated TX queues
- * @num_complq: Number of allocated completion queues
- * @num_txq_grp: Number of TX queue groups
- * @txq_grps: Array of TX queue groups
+ * struct idpf_q_vec_rsrc - handle for queue and vector resources
+ * @dev: device pointer for DMA mapping
+ * @q_vectors: array of queue vectors
+ * @q_vector_idxs: starting index of queue vectors
+ * @num_q_vectors: number of IRQ vectors allocated
+ * @txq_grps: array of TX queue groups
  * @txq_desc_count: TX queue descriptor count
- * @complq_desc_count: Completion queue descriptor count
- * @txq_model: Split queue or single queue queuing model
- * @num_bufqs_per_qgrp: Buffer queues per RX queue in a given grouping
- * @num_bufq: Number of allocated buffer queues
- * @num_rxq: Number of allocated RX queues
- * @num_rxq_grp: Number of allocated RX queue groups
- * @rxq_grps: Total number of RX groups. Number of groups * number of RX per
- *	      group will yield total number of RX queues.
+ * @complq_desc_count: completion queue descriptor count
+ * @txq_model: split queue or single queue queuing model
+ * @num_txq: number of allocated TX queues
+ * @num_complq: number of allocated completion queues
+ * @num_txq_grp: number of TX queue groups
+ * @num_rxq_grp: number of RX queues in a group
+ * @rxq_model: splitq queue or single queue queuing model
+ * @rxq_grps: total number of RX groups. Number of groups * number of RX per
+ *            group will yield total number of RX queues.
+ * @num_rxq: number of allocated RX queues
+ * @num_bufq: number of allocated buffer queues
  * @rxq_desc_count: RX queue descriptor count. *MUST* have enough descriptors
  *                  to complete all buffer descriptors for all buffer queues in
  *                  the worst case.
- * @bufq_desc_count: Buffer queue descriptor count
- * @bufq_size: Size of buffers in ring (e.g. 2K, 4K, etc)
- * @rxq_model: Splitq queue or single queue queuing model
- * @base_rxd: True if the driver should use base descriptors instead of flex
- * @rxqs: Array of RX queues
- * @bufqs: Array of buffer queues
- * @refillqs: Array of refill queues
+ * @bufq_desc_count: buffer queue descriptor count
+ * @num_bufqs_per_qgrp: buffer queues per RX queue in a given grouping
+ * @base_rxd: true if the driver should use base descriptors instead of flex
+ * @bufq_size: size of buffers in ring (e.g. 2K, 4K, etc)
  */
-struct idpf_q_grp {
-	u16 num_txq;
-	u16 num_complq;
-	u16 num_txq_grp;
-	struct idpf_txq_group *txq_grps;
-	u32 txq_desc_count;
-	u32 complq_desc_count;
-	u16 txq_model;
-	u8 num_bufqs_per_qgrp;
-	u16 num_bufq;
+struct idpf_q_vec_rsrc {
+	struct device		*dev;
+	struct idpf_q_vector	*q_vectors;
+	u16			*q_vector_idxs;
+	u16			num_q_vectors;
 
-	u16 num_rxq;
-	u16 num_rxq_grp;
-	struct idpf_rxq_group *rxq_grps;
-	u32 rxq_desc_count;
-	u32 bufq_desc_count[IDPF_MAX_BUFQS_PER_RXQ_GRP];
-	u32 bufq_size[IDPF_MAX_BUFQS_PER_RXQ_GRP];
-	u16 rxq_model;
-	bool base_rxd;
+	struct idpf_txq_group	*txq_grps;
+	u32			txq_desc_count;
+	u32			complq_desc_count;
+	u32			txq_model;
+	u16			num_txq;
+	u16			num_complq;
+	u16			num_txq_grp;
 
-};
+	u16			num_rxq_grp;
+	u32			rxq_model;
+	struct idpf_rxq_group	*rxq_grps;
+	u16			num_rxq;
+	u16			num_bufq;
+	u32			rxq_desc_count;
+	u32			bufq_desc_count[IDPF_MAX_BUFQS_PER_RXQ_GRP];
+	u8			num_bufqs_per_qgrp;
+	bool			base_rxd;
+	u32			bufq_size[IDPF_MAX_BUFQS_PER_RXQ_GRP];
 
-/**
- * struct idpf_intr_grp - Interrupt resource group
- * @num_q_vectors: Number of IRQ vectors allocated
- * @q_vectors: Array of queue vectors
- * @q_vector_idxs: Starting index of queue vectors
- */
-struct idpf_intr_grp {
-	u16 num_q_vectors;
-	struct idpf_q_vector *q_vectors;
-	u16 *q_vector_idxs;
-};
-
-/**
- * struct idpf_vgrp - Handle for queue and vector resources
- * @q_grp: Queue resources
- * @intr_grp: Interrupt resources
- */
-struct idpf_vgrp {
-	struct idpf_q_grp q_grp;
-	struct idpf_intr_grp intr_grp;
 };
 
 struct idpf_fsteer_fltr {
@@ -508,13 +490,11 @@ struct idpf_fsteer_fltr {
 
 /**
  * struct idpf_vport - Handle for netdevices and queue resources
- * @dflt_grp: Queue and interrupt resource group
+ * @dflt_qv_rsrc: Default queue and vector resources
  * @txqs: Array to store the copy of TX queues for the fast path access
  * @num_txq: Number of allocated TX queues for fast path access
- * @compln_clean_budget: Work budget for completion clean
  * @tw_ts_gran_s: TX timing wheel granularity
  * @tw_horizon: TX timing wheel horizon
- * @crc_enable: Enable CRC insertion offload
 #ifdef HAVE_XDP_SUPPORT
  * @num_xdp_txq: Number of XDP TX queues
  * @num_xdp_rxq: Number of XDP RX queues
@@ -528,7 +508,6 @@ struct idpf_fsteer_fltr {
 #endif
  * @xdp_prepare_tx_desc: Prepare XDP TX descriptor
 #endif
- * @rx_ptype_lkup: Lookup table for ptypes on RX
 #ifdef IDPF_ADD_PROBES
  * @ptype_stats: Ptype statistics
 #endif
@@ -537,15 +516,17 @@ struct idpf_fsteer_fltr {
  * @netdev: Associated net_device. Each vport should have one and only one
  *          associated netdev.
  * @flags: See enum idpf_vport_flags
- * @vport_type: Default SRIOV, SIOV, etc.
+ * @compln_clean_budget: Work budget for completion clean
  * @vport_id: Device given vport identifier
+ * @vport_type: Default SRIOV, SIOV, etc.
  * @idx: Software index in adapter vports struct
- * @default_vport: Use this vport if one isn't specified
  * @max_mtu: device given max possible MTU
  * @default_mac_addr: device will give a default MAC to use
  * @rx_itr_profile: RX profiles for Dynamic Interrupt Moderation
  * @tx_itr_profile: TX profiles for Dynamic Interrupt Moderation
  * @port_stats: per port csum, header split, and other offload stats
+ * @default_vport: Use this vport if one isn't specified
+ * @crc_enable: Enable CRC insertion offload
  * @link_up: True if link is up
  * @sw_marker_wq: Workqueue for marker packets
  * @tx_tstamp_caps: Capabilities negotiated for TX timestamping
@@ -556,13 +537,11 @@ struct idpf_fsteer_fltr {
 #endif
  */
 struct idpf_vport {
-	struct idpf_vgrp dflt_grp;
+	struct idpf_q_vec_rsrc dflt_qv_rsrc;
 	struct idpf_queue **txqs;
 	u16 num_txq;
-	u32 compln_clean_budget;
 	u16 tw_ts_gran_s;
 	u64 tw_horizon;
-	bool crc_enable;
 #ifdef HAVE_XDP_SUPPORT
 	int num_xdp_txq;
 	int num_xdp_rxq;
@@ -576,7 +555,6 @@ struct idpf_vport {
 				    u16 idx, u32 size,
 				    struct idpf_tx_splitq_params *params);
 #endif /* HAVE_XDP_SUPPORT */
-	struct idpf_rx_ptype_decoded rx_ptype_lkup[IDPF_RX_MAX_PTYPE];
 #ifdef IDPF_ADD_PROBES
 	u64_stats_t ptype_stats[IDPF_RX_MAX_PTYPE];
 #endif /* IDPF_ADD_PROBES */
@@ -586,15 +564,19 @@ struct idpf_vport {
 	struct idpf_adapter *adapter;
 	struct net_device *netdev;
 	DECLARE_BITMAP(flags, IDPF_VPORT_FLAGS_NBITS);
-	u16 vport_type;
+	u32 compln_clean_budget;
 	u32 vport_id;
+	u16 vport_type;
 	u16 idx;
-	bool default_vport;
+
 	u16 max_mtu;
 	u8 default_mac_addr[ETH_ALEN];
 	u16 rx_itr_profile[IDPF_DIM_PROFILE_SLOTS];
 	u16 tx_itr_profile[IDPF_DIM_PROFILE_SLOTS];
+
 	struct idpf_port_stats port_stats;
+	bool default_vport;
+	bool crc_enable;
 	bool link_up;
 	/* Everything below this will NOT be copied during soft reset */
 	wait_queue_head_t sw_marker_wq;
@@ -778,10 +760,37 @@ struct idpf_vec_affinity_config {
 #endif /* !HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
 
 /**
+ * struct idpf_queue_id_reg_chunk - individual queue ID and register chunk
+ * @qtail_reg_start: queue tail register offset
+ * @qtail_reg_spacing: queue tail register spacing
+ * @type: queue type of the queues in the chunk
+ * @start_queue_id: starting queue ID in the chunk
+ * @num_queues: number of queues in the chunk
+ */
+struct idpf_queue_id_reg_chunk {
+	u64 qtail_reg_start;
+	u32 qtail_reg_spacing;
+	u32 type;
+	u32 start_queue_id;
+	u32 num_queues;
+};
+
+/**
+ * struct idpf_queue_id_reg_info - queue ID and register chunk info received
+ *                                  over the mailbox
+ * @num_chunks: number of chunks
+ * @queue_chunks: array of chunks
+ */
+struct idpf_queue_id_reg_info {
+	u16 num_chunks;
+	struct idpf_queue_id_reg_chunk *queue_chunks;
+};
+
+/**
  * struct idpf_vport_config - Vport configuration data
  * @user_config: see struct idpf_vport_user_config_data
  * @max_q: Maximum possible queues
- * @req_qs_chunks: Queue chunk data for requested queues
+ * @qid_reg_info: Struct to store the queue ID and register info
  * @mac_filter_list_lock: Lock to protect mac filters
  * @flow_steer_list_lock: Lock to protect fsteer filters
  * @flags: See enum idpf_vport_config_flags
@@ -793,7 +802,7 @@ struct idpf_vport_config {
 #define MAX_NUM_VEC_AFFINTY	64
 	struct idpf_vec_affinity_config *affinity_config;
 #endif /* !HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
-	struct virtchnl2_add_queues *req_qs_chunks;
+	struct idpf_queue_id_reg_info qid_reg_info;
 	spinlock_t mac_filter_list_lock;
 	/* protects flow_steer_list */
 	spinlock_t flow_steer_list_lock;
@@ -852,6 +861,8 @@ struct idpf_iommu_bypass {
  * @netdevs: Associated Vport netdevs
  * @vport_params_recvd: Vport params received
  * @vport_ids: Array of device given vport identifiers
+ * @singleq_pt_lkup: Lookup table for singleq RX ptypes
+ * @splitq_pt_lkup: Lookup table for splitq RX ptypes
  * @vport_config: Vport config parameters
  * @max_vports: Maximum vports that can be allocated
  * @num_alloc_vports: Current number of vports allocated
@@ -877,8 +888,7 @@ struct idpf_iommu_bypass {
  * @req_tx_splitq: TX split or single queue model to request
  * @req_rx_splitq: RX split or single queue model to request
  * @crc_enable: Enable CRC insertion offload
- * @init_ctrl_lock: Lock to protect init, re-init, and deinit flow
- * @vport_cfg_lock: Lock to protect access to vports during alloc/dealloc/reset
+ * @vport_ctrl_lock: Lock to protect the vport control flow
  * @vector_lock: Lock to protect vector distribution
  * @queue_lock: Lock to protect queue distribution
 #ifdef DEVLINK_ENABLED
@@ -937,6 +947,9 @@ struct idpf_adapter {
 	struct virtchnl2_create_vport **vport_params_recvd;
 	u32 *vport_ids;
 
+	struct idpf_rx_ptype_decoded *singleq_pt_lkup;
+	struct idpf_rx_ptype_decoded *splitq_pt_lkup;
+
 	struct idpf_vport_config **vport_config;
 	u16 max_vports;
 	u16 num_alloc_vports;
@@ -965,8 +978,7 @@ struct idpf_adapter {
 	bool req_tx_splitq;
 	bool req_rx_splitq;
 	bool crc_enable;
-	struct mutex vport_init_lock;
-	struct mutex vport_cfg_lock;
+	struct mutex vport_ctrl_lock;
 	struct mutex vector_lock;
 	struct mutex queue_lock;
 #ifdef DEVLINK_ENABLED
@@ -1322,46 +1334,24 @@ static inline bool idpf_is_rca_enabled(struct idpf_adapter *adapter)
 
 #endif /* CONFIG_RCA_SUPPORT */
 /**
- * idpf_vport_init_lock -Acquire the init/deinit control lock. It
- * controls and protect initialization, re-initialization and
- * deinitialization code flow and its resources.
- * @adapter: private data struct
- *
- * This lock is only used by non-datapath code to protect.
- */
-static inline void idpf_vport_init_lock(struct idpf_adapter *adapter)
-{
-	mutex_lock(&adapter->vport_init_lock);
-}
-
-/**
- * idpf_vport_init_unlock - Release the init/deinit control lock
- * @adapter: private data struct
- */
-static inline void idpf_vport_init_unlock(struct idpf_adapter *adapter)
-{
-	mutex_unlock(&adapter->vport_init_lock);
-}
-
-/**
- * idpf_vport_cfg_lock -Acquire the vport control lock
+ * idpf_vport_ctrl_lock - Acquire the vport control lock
  * @adapter: private data struct
  *
  * This lock should be used by non-datapath code to protect against vport
  * destruction.
  */
-static inline void idpf_vport_cfg_lock(struct idpf_adapter *adapter)
+static inline void idpf_vport_ctrl_lock(struct idpf_adapter *adapter)
 {
-	mutex_lock(&adapter->vport_cfg_lock);
+	mutex_lock(&adapter->vport_ctrl_lock);
 }
 
 /**
- * idpf_vport_cfg_unlock - Release the vport control lock
+ * idpf_vport_ctrl_unlock - Release the vport control lock
  * @adapter: private data struct
  */
-static inline void idpf_vport_cfg_unlock(struct idpf_adapter *adapter)
+static inline void idpf_vport_ctrl_unlock(struct idpf_adapter *adapter)
 {
-	mutex_unlock(&adapter->vport_cfg_lock);
+	mutex_unlock(&adapter->vport_ctrl_lock);
 }
 
 void idpf_statistics_task(struct work_struct *work);
@@ -1371,7 +1361,8 @@ void idpf_mbx_task(struct work_struct *work);
 void idpf_vc_event_task(struct work_struct *work);
 void idpf_dev_ops_init(struct idpf_adapter *adapter);
 void idpf_vf_dev_ops_init(struct idpf_adapter *adapter);
-void idpf_vport_adjust_qs(struct idpf_vport *vport);
+void idpf_vport_adjust_qs(struct idpf_vport *vport,
+			  struct idpf_q_vec_rsrc *rsrc);
 int idpf_intr_req(struct idpf_adapter *adapter);
 void idpf_mb_intr_rel_irq(struct idpf_adapter *adapter);
 void idpf_intr_rel(struct idpf_adapter *adapter);
@@ -1386,9 +1377,9 @@ int idpf_req_rel_vector_indexes(struct idpf_adapter *adapter,
 				u16 *q_vector_idxs,
 				struct idpf_vector_info *vec_info);
 int idpf_vport_alloc_vec_indexes(struct idpf_vport *vport,
-				 struct idpf_vgrp *vgrp);
+				 struct idpf_q_vec_rsrc *rsrc);
 void idpf_vport_dealloc_vec_indexes(struct idpf_vport *vport,
-				    struct idpf_vgrp *vgrp);
+				    struct idpf_q_vec_rsrc *rsrc);
 void idpf_set_ethtool_ops(struct net_device *netdev);
 #if IS_ENABLED(CONFIG_ETHTOOL_NETLINK) && defined(HAVE_ETHTOOL_SUPPORT_TCP_DATA_SPLIT)
 u8 idpf_vport_get_hsplit(const struct idpf_vport *vport);
@@ -1399,7 +1390,7 @@ void idpf_vport_set_hsplit(struct idpf_vport *vport, bool ena);
 int idpf_idc_init(struct idpf_adapter *adapter);
 int idpf_idc_init_aux_core_dev(struct idpf_adapter *adapter,
 			       enum iidc_function_type ftype);
-void idpf_idc_deinit_core_aux_device(struct iidc_rdma_core_dev_info *cdev_info);
+void idpf_idc_deinit_core_aux_device(struct idpf_adapter *adapter);
 void idpf_idc_deinit_vport_aux_device(struct iidc_rdma_vport_dev_info *vdev_info);
 void idpf_idc_issue_reset_event(struct iidc_rdma_core_dev_info *cdev_info);
 void idpf_idc_vdev_mtu_event(struct iidc_rdma_vport_dev_info *vdev_info,
@@ -1411,24 +1402,15 @@ int idpf_vport_alloc_max_qs(struct idpf_adapter *adapter,
 			    struct idpf_vport_max_q *max_q);
 void idpf_vport_dealloc_max_qs(struct idpf_adapter *adapter,
 			       struct idpf_vport_max_q *max_q);
-int idpf_add_del_mac_filters(struct idpf_vport *vport,
-			     struct idpf_netdev_priv *np,
-			     bool add, bool async);
 int idpf_set_promiscuous(struct idpf_adapter *adapter,
 			 struct idpf_vport_user_config_data *config_data,
 			 u32 vport_id);
-struct virtchnl2_queue_reg_chunks *
-idpf_get_queue_reg_chunks(struct idpf_vport *vport);
 int idpf_vport_init(struct idpf_vport *vport, struct idpf_vport_max_q *max_q);
 void idpf_detach_and_close(struct idpf_adapter *adapter);
 void idpf_attach_and_open(struct idpf_adapter *adapter);
 int idpf_check_reset_complete(struct idpf_adapter *adapter);
 int idpf_reset_recover(struct idpf_adapter *adapter);
 bool idpf_is_reset_detected(struct idpf_adapter *adapter);
-int idpf_vport_queue_ids_init(struct idpf_q_grp *q_grp,
-			      struct virtchnl2_queue_reg_chunks *chunks);
-int idpf_queue_reg_init(struct idpf_vport *vport, struct idpf_q_grp *q_grp,
-			struct virtchnl2_queue_reg_chunks *chunks);
 int idpf_check_supported_desc_ids(struct idpf_vport *vport);
 void idpf_vport_intr_write_itr(struct idpf_q_vector *q_vector,
 			       u16 itr, bool tx);

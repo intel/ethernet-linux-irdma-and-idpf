@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
 #!/bin/bash
 
-
-
 # to be sourced
 
 # General shell helpers
@@ -60,7 +58,7 @@ function filter-out-bad-files() {
 # /STH/, /END/  - (awk), print all lines sice STH matched, up to END, inclusive
 
 # "Whitespace only"
-WB='[ \t\n]'
+WB='[ \t]'
 
 # Helpers below print the thing that is looked for, for further grep'ping/etc.
 # That simplifies process of excluding comments or spares us state machine impl.
@@ -95,7 +93,9 @@ function find-decl() {
 function find-fun-decl() {
 	test $# -ge 2
 	local what end
-	what="/$WB*([(]\*)?$1$WB*($|[()])/"
+	# match start of line, or previous word/pointer end. Allow return types.
+	# We use extended regex logic for safety. Ensure WB does not include newline.
+	what="/(^|[^a-zA-Z0-9_])$1[ \t]*($|[()])/"
 	end='/\);?$/'
 	shift
 	find-decl "$what" "$end" "$@"
@@ -126,7 +126,7 @@ function find-macro-decl() {
 	test $# -ge 2
 	local what end
 	# only unindented defines, only whole-word match
-	what="/^#define$WB+$1"'([ \t\(]|$)/'
+	what="/^#define$WB+$1"'([ \t(]|$)/'
 	end=1 # only first line; use find-macro-implementation-decl for full body
 	shift
 	find-decl "$what" "$end" "$@"
@@ -137,7 +137,7 @@ function find-macro-implementation-decl() {
 	test $# -ge 2
 	local what end
 	# only unindented defines, only whole-word match
-	what="/^#define$WB+$1"'([ \t\(]|$)/'
+	what="/^#define$WB+$1"'([ \t(]|$)/'
 	# full implementation, until a line not ending in a backslash.
 	# Does not handle macros with comments embedded within the definition.
 	end='/[^\\]$/'
@@ -155,7 +155,15 @@ function find-typedef-decl() {
 	shift
 	find-decl "$what" "$end" "$@"
 }
-
+# yield $1 variable/symbol declaration
+function find-variable-decl() {
+	test $# -ge 2
+	local what end
+	what="/$WB*$1$WB*(\[[0-9]*\])?$WB*(;|\[)/"
+	end=1
+	shift
+	find-decl "$what" "$end" "$@"
+}
 # gen() - DSL-like function to wrap around all the other
 #
 # syntax:
@@ -206,7 +214,7 @@ function gen() {
 	shift 3
 	[ "$if_kw" != if ] && die 21 "$src_line: 'if' keyword expected, '$if_kw' given"
 	case "$kind" in
-	fun|enum|struct|macro|typedef)
+	fun|enum|struct|macro|typedef|variable)
 		name="$1"
 		shift
 	;;

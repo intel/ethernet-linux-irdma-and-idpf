@@ -129,9 +129,9 @@ int irdma_sc_vchnl_init(struct irdma_sc_dev *dev,
 						      &dev->vchnl_ver);
 		}
 
-		ibdev_dbg(to_ibdev(dev),
-			  "DEV: Get Channel version ret = %d, version is %u\n",
-			  ret, dev->vchnl_ver);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "DEV: Get Channel version ret = %d, version is %u\n",
+				      ret, dev->vchnl_ver);
 
 		if (ret)
 			return ret;
@@ -218,8 +218,9 @@ static void irdma_vchnl_pf_send_resp(struct irdma_sc_dev *dev, u16 vf_id,
 	ret = irdma_vchnl_send_pf(dev, vf_id, resp_buf,
 				  vchnl_msg_resp->buf_len);
 	if (ret)
-		ibdev_dbg(to_ibdev(dev),
-		          "VIRT: virt channel send failed ret = %d\n", ret);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: virt channel send failed ret = %d\n",
+				      ret);
 }
 
 /**
@@ -277,9 +278,9 @@ static int irdma_pf_add_hmc_obj(struct irdma_vchnl_dev *vc_dev,
 
 	if (!pf_valid_hmc_rsrc_type(dev->hw_attrs.uk_attrs.hw_rev,
 				    hmc_obj->obj_type)) {
-		ibdev_dbg(to_ibdev(dev),
-			  "VIRT: invalid hmc_rsrc type detected. vf_id %d obj_type 0x%x\n",
-			  vc_dev->vf_id, hmc_obj->obj_type);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: invalid hmc_rsrc type detected. vf_id %d obj_type 0x%x\n",
+				      vc_dev->vf_id, hmc_obj->obj_type);
 		return -EINVAL;
 	}
 
@@ -291,9 +292,9 @@ static int irdma_pf_add_hmc_obj(struct irdma_vchnl_dev *vc_dev,
 				IRDMA_SD_TYPE_DIRECT;
 	info.start_idx = hmc_obj->start_index;
 	info.count = hmc_obj->obj_count;
-	ibdev_dbg(to_ibdev(vc_dev->pf_dev),
-		  "VIRT: IRDMA_VCHNL_OP_ADD_HMC_OBJ_RANGE.  Add %u type %u objects\n",
-		  info.count, info.rsrc_type);
+	irdma_rblog_ibdev_dbg(to_ibdev(vc_dev->pf_dev),
+			      "VIRT: IRDMA_VCHNL_OP_ADD_HMC_OBJ_RANGE.  Add %u type %u objects\n",
+			      info.count, info.rsrc_type);
 
 	return irdma_sc_create_hmc_obj(vc_dev->pf_dev, &info);
 }
@@ -315,9 +316,9 @@ static int irdma_pf_del_hmc_obj(struct irdma_vchnl_dev *vc_dev,
 
 	if (!pf_valid_hmc_rsrc_type(dev->hw_attrs.uk_attrs.hw_rev,
 				    hmc_obj->obj_type)) {
-		ibdev_dbg(to_ibdev(dev),
-			  "VIRT: invalid hmc_rsrc type detected. vf_id %d obj_type 0x%x\n",
-			  vc_dev->vf_id, hmc_obj->obj_type);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: invalid hmc_rsrc type detected. vf_id %d obj_type 0x%x\n",
+				      vc_dev->vf_id, hmc_obj->obj_type);
 		return -EINVAL;
 	}
 
@@ -326,9 +327,9 @@ static int irdma_pf_del_hmc_obj(struct irdma_vchnl_dev *vc_dev,
 	info.rsrc_type = (u32)hmc_obj->obj_type;
 	info.start_idx = hmc_obj->start_index;
 	info.count = hmc_obj->obj_count;
-	ibdev_dbg(to_ibdev(vc_dev->pf_dev),
-		  "VIRT: IRDMA_VCHNL_OP_DEL_HMC_OBJ_RANGE. Delete %u type %u objects\n",
-		  info.count, info.rsrc_type);
+	irdma_rblog_ibdev_dbg(to_ibdev(vc_dev->pf_dev),
+			      "VIRT: IRDMA_VCHNL_OP_DEL_HMC_OBJ_RANGE. Delete %u type %u objects\n",
+			      info.count, info.rsrc_type);
 
 	return irdma_sc_del_hmc_obj(vc_dev->pf_dev, &info, false);
 }
@@ -350,15 +351,16 @@ irdma_pf_manage_ws_node(struct irdma_vchnl_dev *vc_dev,
 	if (ws_node->user_pri >= IRDMA_MAX_USER_PRIORITY)
 		return -EINVAL;
 
-	ibdev_dbg(to_ibdev(vc_dev->pf_dev),
-		  "VIRT: IRDMA_VCHNL_OP_MANAGE_WS_NODE. Add %d vf_id %d\n",
-		  ws_node->add, vc_dev->vf_id);
+	irdma_rblog_ibdev_dbg(to_ibdev(vc_dev->pf_dev),
+			      "VIRT: IRDMA_VCHNL_OP_MANAGE_WS_NODE. Add %d vf_id %d\n",
+			      ws_node->add, vc_dev->vf_id);
 
 	if (ws_node->add) {
 		ret = vsi->dev->ws_add(vsi, ws_node->user_pri);
 		if (ret)
-			ibdev_dbg(to_ibdev(vc_dev->pf_dev),
-				  "VIRT: irdma_ws_add failed ret = %d\n", ret);
+			irdma_rblog_ibdev_dbg(to_ibdev(vc_dev->pf_dev),
+					      "VIRT: irdma_ws_add failed ret = %d\n",
+					      ret);
 		else
 			*qs_handle = vsi->qos[ws_node->user_pri].qs_handle[0];
 	} else {
@@ -544,9 +546,9 @@ static struct irdma_vchnl_dev *irdma_pf_get_vf_hmc_fcn(struct irdma_sc_dev *dev,
 	virt_mem.va = kzalloc(virt_mem.size, GFP_KERNEL);
 
 	if (!virt_mem.va) {
-		ibdev_dbg(to_ibdev(dev),
-			  "VIRT: VF%u Unable to allocate a VF device structure.\n",
-			  vf_id);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: VF%u Unable to allocate a VF device structure.\n",
+				      vf_id);
 		return NULL;
 	}
 
@@ -558,12 +560,15 @@ static struct irdma_vchnl_dev *irdma_pf_get_vf_hmc_fcn(struct irdma_sc_dev *dev,
 	vc_dev->pf_hmc_initialized = false;
 	vc_dev->hmc_info.hmc_obj = (struct irdma_hmc_obj_info *)(&vc_dev[1]);
 
-	ibdev_dbg(to_ibdev(dev), "VIRT: vc_dev %p, hmc_info %p, hmc_obj %p\n",
-		  vc_dev, &vc_dev->hmc_info, vc_dev->hmc_info.hmc_obj);
+	irdma_rblog_ibdev_dbg(to_ibdev(dev),
+			      "VIRT: vc_dev %p, hmc_info %p, hmc_obj %p\n",
+			      vc_dev, &vc_dev->hmc_info,
+			      vc_dev->hmc_info.hmc_obj);
 	vsi = irdma_update_vsi_ctx(dev, vc_dev, true);
 	if (!vsi) {
-		ibdev_dbg(to_ibdev(dev),
-			  "VIRT: VF%u failed updating vsi ctx .\n", vf_id);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: VF%u failed updating vsi ctx .\n",
+				      vf_id);
 		dev->vc_dev[vc_dev->iw_vf_idx] = NULL;
 		kfree(virt_mem.va);
 		return NULL;
@@ -583,15 +588,15 @@ static struct irdma_vchnl_dev *irdma_pf_get_vf_hmc_fcn(struct irdma_sc_dev *dev,
 		vc_dev->vf_vsi = NULL;
 		dev->vc_dev[vc_dev->iw_vf_idx] = NULL;
 		kfree(virt_mem.va);
-		ibdev_dbg(to_ibdev(dev),
-			  "VIRT: VF%u error CQP Get HMC Function operation.\n",
-			  vf_id);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: VF%u error CQP Get HMC Function operation.\n",
+				      vf_id);
 		return NULL;
 	}
 
-	ibdev_dbg(to_ibdev(dev), "VIRT: HMC Function allocated = 0x%08x\n",
-		  vc_dev->pmf_index);
-
+	irdma_rblog_ibdev_dbg(to_ibdev(dev),
+			      "VIRT: HMC Function allocated = 0x%08x\n",
+			      vc_dev->pmf_index);
 	/* Caller references vc_dev */
 	refcount_inc(&vc_dev->refcnt);
 	return vc_dev;
@@ -611,9 +616,9 @@ void irdma_pf_put_vf_hmc_fcn(struct irdma_sc_dev *dev,
 	hmc_fcn_info.free_fcn = true;
 	if (irdma_cqp_manage_hmc_fcn_cmd(dev, &hmc_fcn_info,
 					 &vc_dev->pmf_index))
-		ibdev_dbg(to_ibdev(dev),
-			  "VIRT: VF%u error CQP Free HMC Function operation.\n",
-			  vc_dev->vf_id);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: VF%u error CQP Free HMC Function operation.\n",
+				      vc_dev->vf_id);
 
 	irdma_remove_vc_dev(dev, vc_dev);
 
@@ -642,7 +647,8 @@ static void irdma_recv_pf_worker(struct work_struct *work)
 	u8 vlan_parse_en;
 	u32 vchnl_ver;
 
-	ibdev_dbg(to_ibdev(dev), "VIRT: opcode %u", vchnl_msg->op_code);
+	irdma_rblog_ibdev_dbg(to_ibdev(dev), "VIRT: opcode %u",
+			      vchnl_msg->op_code);
 	vc_dev = irdma_find_vc_dev(dev, vf_id);
 	if (vc_dev && vc_dev->reset_en)
 		goto free_work;
@@ -713,8 +719,9 @@ static void irdma_recv_pf_worker(struct work_struct *work)
 		 * Linux is always in double VLAN mode.
 		 */
 		vlan_parse_en = !vc_dev->port_vlan_en;
-		ibdev_dbg(to_ibdev(dev), "VIRT: vlan_parse_en = 0x%x\n",
-			  vlan_parse_en);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: vlan_parse_en = 0x%x\n",
+				      vlan_parse_en);
 
 		resp_param = &vlan_parse_en;
 		resp_len = sizeof(vlan_parse_en);
@@ -726,9 +733,11 @@ static void irdma_recv_pf_worker(struct work_struct *work)
 		resp_len = sizeof(caps);
 		resp_param = &caps;
 		break;
+
 	default:
-		ibdev_dbg(to_ibdev(dev), "VIRT: Invalid OpCode 0x%x\n",
-			  vchnl_msg->op_code);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: Invalid OpCode 0x%x\n",
+				      vchnl_msg->op_code);
 		resp_code = -EOPNOTSUPP;
 	}
 
@@ -798,13 +807,13 @@ static bool irdma_vchnl_pf_verify_msg(struct irdma_vchnl_op_buf *vchnl_msg,
 		if (len < sizeof(*vchnl_msg))
 			return false;
 		break;
-
 	default:
 		return false;
 	}
 
 	return true;
 }
+
 /**
  * irdma_vchnl_recv_pf - Receive PF virtual channel messages
  * @dev: RDMA device pointer
@@ -817,8 +826,9 @@ int irdma_vchnl_recv_pf(struct irdma_sc_dev *dev, u16 vf_id, u8 *msg, u16 len)
 	struct irdma_vchnl_work *work;
 	struct irdma_virt_mem workmem;
 
-	ibdev_dbg(to_ibdev(dev), "VIRT: VF%u: msg %p len %u chnl up %u",
-		  vf_id, msg, len, dev->vchnl_up);
+	irdma_rblog_ibdev_dbg(to_ibdev(dev),
+			      "VIRT: VF%u: msg %p len %u chnl up %u", vf_id,
+			      msg, len, dev->vchnl_up);
 
 	if (!msg ||
 	    !irdma_vchnl_pf_verify_msg((struct irdma_vchnl_op_buf *)msg, len))
@@ -874,6 +884,10 @@ static int irdma_vchnl_req_verify_resp(struct irdma_vchnl_req *vchnl_req,
 	case IRDMA_VCHNL_OP_ADD_VPORT:
 	case IRDMA_VCHNL_OP_DEL_VPORT:
 		break;
+	case IRDMA_VCHNL_OP_QUERY_HMC_FCN:
+		if (resp_len < sizeof(struct irdma_vchnl_resp_query_hmc_info))
+			return -EBADMSG;
+		break;
 	default:
 		return -EBADMSG;
 	}
@@ -910,8 +924,8 @@ static int irdma_alloc_vchnl_req_msg(struct irdma_vchnl_req *vchnl_req,
 	return 0;
 }
 
-static int irdma_vchnl_req_send_sync(struct irdma_sc_dev *dev,
-				     struct irdma_vchnl_req_init_info *info)
+int irdma_vchnl_req_send_sync(struct irdma_sc_dev *dev,
+			      struct irdma_vchnl_req_init_info *info)
 {
 	struct irdma_vchnl_req vchnl_req = {};
 	u16 resp_len = sizeof(dev->vc_recv_buf);
@@ -935,12 +949,14 @@ static int irdma_vchnl_req_send_sync(struct irdma_sc_dev *dev,
 	ret = irdma_vchnl_req_get_resp(dev, &vchnl_req);
 exit:
 	mutex_unlock(&dev->vchnl_mutex);
-	ibdev_dbg(to_ibdev(dev),
-		  "VIRT: virtual channel send %s caller: %pS ret=%d op=%u op_ver=%u req_len=%u parm_len=%u resp_len=%u\n",
-		  !ret ? "SUCCEEDS" : "FAILS", __builtin_return_address(0),
-		  ret, vchnl_req.vchnl_msg->op_code,
-		  vchnl_req.vchnl_msg->op_ver, vchnl_req.vchnl_msg->buf_len,
-		  vchnl_req.parm_len, vchnl_req.resp_len);
+	irdma_rblog_ibdev_dbg(to_ibdev(dev),
+			      "VIRT: virtual channel send %s caller: %pS ret=%d op=%u op_ver=%u req_len=%u parm_len=%u resp_len=%u\n",
+			      !ret ? "SUCCEEDS" : "FAILS",
+			      __builtin_return_address(0), ret,
+			      vchnl_req.vchnl_msg->op_code,
+			      vchnl_req.vchnl_msg->op_ver,
+			      vchnl_req.vchnl_msg->buf_len,
+			      vchnl_req.parm_len, vchnl_req.resp_len);
 	irdma_free_vchnl_req_msg(&vchnl_req);
 
 	return ret;
@@ -973,9 +989,10 @@ int irdma_vchnl_req_manage_push_pg(struct irdma_sc_dev *dev, bool add,
 	info.resp_parm = pg_idx;
 	info.resp_parm_len = sizeof(*pg_idx);
 
-	ibdev_dbg(to_ibdev(dev),
-		  "VIRT: Sending msg: manage_push_pg add = %d, idx %u, qsh %u\n",
-		  add_push_pg.add, add_push_pg.pg_idx, add_push_pg.qs_handle);
+	irdma_rblog_ibdev_dbg(to_ibdev(dev),
+			      "VIRT: Sending msg: manage_push_pg add = %d, idx %u, qsh %u\n",
+			      add_push_pg.add, add_push_pg.pg_idx,
+			      add_push_pg.qs_handle);
 
 	return irdma_vchnl_req_send_sync(dev, &info);
 }
@@ -1058,7 +1075,6 @@ int irdma_vchnl_req_get_reg_layout(struct irdma_sc_dev *dev)
 			continue;
 		}
 
-
 		/* Update the local HW struct */
 		if (irdma_rca_ena && dev->is_pf) {
 			hw_addr = dev->db_addr;
@@ -1070,15 +1086,12 @@ int irdma_vchnl_req_get_reg_layout(struct irdma_sc_dev *dev)
 					(hw_addr + reg_array[rindex].reg_offset +
 					 db_page_offset);
 		} else {
-			if (reg_idx == IRDMA_GLINT_DYN_CTL)
-				dev->hw_regs[reg_idx] =
-					ig3rdma_get_reg_addr(dev->hw, reg_array[rindex].reg_offset);
-			else
-				dev->hw_regs[reg_idx] =
-					ig3rdma_get_reg_addr(dev->hw, reg_array[rindex].reg_offset);
+			dev->hw_regs[reg_idx] = ig3rdma_get_reg_addr(dev->hw,
+							reg_array[rindex].reg_offset);
 		}
-		ibdev_dbg(to_ibdev(dev), "VIRT: hw_regs[%d] %lx\n", reg_idx,
-			  (uintptr_t)dev->hw_regs[reg_idx]);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: hw_regs[%d] %lx\n", reg_idx,
+				      (uintptr_t)dev->hw_regs[reg_idx]);
 		if (!dev->hw_regs[reg_idx])
 			return -EINVAL;
 	}
@@ -1119,9 +1132,9 @@ int irdma_vchnl_req_get_reg_layout(struct irdma_sc_dev *dev)
 		num_bits = regfld_array[rindex].fld_bits;
 		shift_cnt = regfld_array[rindex].fld_shift;
 		if ((num_bits + shift_cnt > 64) || !num_bits) {
-			ibdev_dbg(to_ibdev(dev),
-				  "ERR: Invalid field mask id %d bits %d shift %d",
-				  regfld_id, num_bits, shift_cnt);
+			irdma_rblog_ibdev_dbg(to_ibdev(dev),
+					      "ERR: Invalid field mask id %d bits %d shift %d",
+					      regfld_id, num_bits, shift_cnt);
 
 			continue;
 		}
@@ -1310,9 +1323,9 @@ int irdma_vchnl_req_get_ver(struct irdma_sc_dev *dev, u16 ver_req, u32 *ver_res)
 		return ret;
 
 	if (*ver_res < IRDMA_VCHNL_CHNL_VER_MIN) {
-		ibdev_dbg(to_ibdev(dev),
-			  "VIRT: %s unsupported vchnl version 0x%0x\n",
-			  __func__, *ver_res);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: %s unsupported vchnl version 0x%0x\n",
+				      __func__, *ver_res);
 		return -EOPNOTSUPP;
 	}
 
@@ -1450,11 +1463,54 @@ int irdma_vchnl_req_manage_ws_node(struct irdma_sc_dev *dev, bool add,
 		info.resp_parm_len = sizeof(*qs_handle);
 	}
 
-	ibdev_dbg(to_ibdev(dev),
-		  "VIRT: Sending message: manage_ws_node add = %d, user_pri = %d\n",
-		  ws_node.add, ws_node.user_pri);
+	irdma_rblog_ibdev_dbg(to_ibdev(dev),
+			      "VIRT: Sending message: manage_ws_node add = %d, user_pri = %d\n",
+			      ws_node.add, ws_node.user_pri);
 
 	return irdma_vchnl_req_send_sync(dev, &info);
+}
+
+/**
+ * irdma_vchnl_req_query_hmc_fcn - Query HMC Function
+ * @dev: RDMA device pointer
+ * @hmc_fcn_id: HMC function ID
+ * @hmc_info: PF/VF/HOST IDs for given HMC FCN
+ */
+int irdma_vchnl_req_query_hmc_fcn(struct irdma_sc_dev *dev, u16 hmc_fcn_id,
+				  struct irdma_vchnl_resp_query_hmc_info *hmc_info)
+{
+	struct irdma_vchnl_req_query_hmc_info req = {};
+	struct irdma_vchnl_resp_query_hmc_info resp = {};
+	struct irdma_vchnl_req_init_info info = {};
+	int ret;
+
+	irdma_rblog_ibdev_dbg(to_ibdev(dev), "VIRT: Query HMC FCN ID = %u\n",
+			      hmc_fcn_id);
+
+	if (!dev->vchnl_up)
+		return -EBUSY;
+
+	req.hmc_fcn_id = hmc_fcn_id;
+	info.op_code = IRDMA_VCHNL_OP_QUERY_HMC_FCN;
+	info.op_ver = IRDMA_VCHNL_OP_QUERY_HMC_FCN_V0;
+	info.req_parm_len = sizeof(req);
+	info.req_parm = &req;
+	info.resp_parm = &resp;
+	info.resp_parm_len = sizeof(resp);
+
+	ret = irdma_vchnl_req_send_sync(dev, &info);
+
+	if (ret)
+		return ret;
+
+	irdma_rblog_ibdev_dbg(to_ibdev(dev),
+			      "VIRT: Query HMC FCN ID %u host_id %u pf_id %u vf_id %u is_pf %u valid %u\n",
+			      hmc_fcn_id, resp.host_id, resp.pf_id,
+			      resp.vf_id, resp.is_pf, resp.valid);
+
+	memcpy(hmc_info, &resp, sizeof(resp));
+
+	return 0;
 }
 
 /**
@@ -1483,10 +1539,10 @@ int irdma_vchnl_req_add_hmc_objs(struct irdma_sc_dev *dev,
 	info.req_parm = &add_hmc_obj;
 	info.req_parm_len = sizeof(add_hmc_obj);
 
-	ibdev_dbg(to_ibdev(dev),
-		  "VIRT: Sending message: obj_type = %d, start_index = %d, obj_count = %d\n",
-		  add_hmc_obj.obj_type, add_hmc_obj.start_index,
-		  add_hmc_obj.obj_count);
+	irdma_rblog_ibdev_dbg(to_ibdev(dev),
+			      "VIRT: Sending message: obj_type = %d, start_index = %d, obj_count = %d\n",
+			      add_hmc_obj.obj_type, add_hmc_obj.start_index,
+			      add_hmc_obj.obj_count);
 
 	return irdma_vchnl_req_send_sync(dev, &info);
 }
@@ -1570,9 +1626,9 @@ int irdma_vchnl_req_get_caps(struct irdma_sc_dev *dev)
 
 	if (dev->vc_caps.hw_rev > IRDMA_GEN_MAX ||
 	    dev->vc_caps.hw_rev < IRDMA_GEN_2) {
-		ibdev_dbg(to_ibdev(dev),
-			  "ERR: %s unsupported hw_rev version 0x%0x\n",
-			  __func__, dev->vc_caps.hw_rev);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "ERR: %s unsupported hw_rev version 0x%0x\n",
+				      __func__, dev->vc_caps.hw_rev);
 		return -EOPNOTSUPP;
 	}
 
@@ -1593,8 +1649,8 @@ int irdma_vchnl_req_get_resp(struct irdma_sc_dev *dev,
 	int ret;
 
 	if ((uintptr_t)vchnl_req != (uintptr_t)vchnl_msg_resp->op_ctx) {
-		ibdev_dbg(to_ibdev(dev),
-			  "VIRT: error vchnl context value does not match\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: error vchnl context value does not match\n");
 		return -EBADMSG;
 	}
 
@@ -1612,8 +1668,9 @@ int irdma_vchnl_req_get_resp(struct irdma_sc_dev *dev,
 	if (vchnl_req->parm_len && vchnl_req->parm && resp_len) {
 		memcpy(vchnl_req->parm, vchnl_msg_resp->buf, resp_len);
 		vchnl_req->resp_len = resp_len;
-		ibdev_dbg(to_ibdev(dev), "VIRT: Got response, data size %u\n",
-			  resp_len);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: Got response, data size %u\n",
+				      resp_len);
 	}
 
 	return 0;

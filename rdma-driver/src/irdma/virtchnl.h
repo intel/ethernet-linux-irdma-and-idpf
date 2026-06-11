@@ -34,6 +34,7 @@
 #define IRDMA_VCHNL_OP_DEL_HMC_OBJ_RANGE_V0 0
 #define IRDMA_VCHNL_OP_MANAGE_WS_NODE_V0 0
 #define IRDMA_VCHNL_OP_VLAN_PARSING_V0 0
+#define IRDMA_VCHNL_OP_QUERY_HMC_FCN_V0 0
 
 #define IRDMA_VCHNL_INVALID_VF_IDX 0xFFFF
 
@@ -86,6 +87,8 @@ enum irdma_vchnl_ops {
 	IRDMA_VCHNL_OP_ADD_VPORT = 16,
 	IRDMA_VCHNL_OP_DEL_VPORT = 17,
 	IRDMA_VCHNL_OP_GET_MULTI_QS = 18,
+	IRDMA_VCHNL_OP_QUERY_HMC_FCN = 0x8000,
+
 };
 
 #pragma pack(push, 1)
@@ -132,6 +135,18 @@ struct irdma_vchnl_req_vport_info {
 
 struct irdma_vchnl_resp_vport_info {
 	u16 qs_handle[IRDMA_MAX_USER_PRIORITY];
+};
+
+struct irdma_vchnl_req_query_hmc_info {
+	u16 hmc_fcn_id;
+};
+
+struct irdma_vchnl_resp_query_hmc_info {
+	u16 vf_id;
+	u8 pf_id;
+	u8 host_id;
+	u8 is_pf;
+	u8 valid;
 };
 
 struct irdma_vchnl_op_buf {
@@ -233,6 +248,10 @@ int irdma_vchnl_req_manage_ws_node(struct irdma_sc_dev *dev, bool add,
 				   u8 user_pri, u16 *qs_handle);
 int irdma_vchnl_req_get_vlan_parsing_cfg(struct irdma_sc_dev *dev,
 					 u8 *vlan_parse_en);
+int irdma_vchnl_req_send_sync(struct irdma_sc_dev *dev,
+			      struct irdma_vchnl_req_init_info *info);
+int irdma_vchnl_req_query_hmc_fcn(struct irdma_sc_dev *dev, u16 hmc_fcn_id,
+				  struct irdma_vchnl_resp_query_hmc_info *hmc_info);
 int irdma_vchnl_send_sync(struct irdma_sc_dev *dev, u8 *msg, u16 len,
 			  u8 *recv_msg, u16 *recv_len);
 int irdma_vchnl_req_recv(struct irdma_sc_dev *dev, u16 vf_id, u8 *msg, u16 len);

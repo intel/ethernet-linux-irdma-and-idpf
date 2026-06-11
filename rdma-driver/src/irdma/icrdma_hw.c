@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2017 - 2023 Intel Corporation */
+/* Copyright (c) 2017 - 2026 Intel Corporation */
 #include "osdep.h"
 #include "type.h"
 #include "icrdma_hw.h"
@@ -357,8 +357,8 @@ static void irdma_check_flow_ctrl(struct irdma_sc_vsi *vsi, u8 user_prio, u8 tra
 		if (iwdev->roce_mode && !iwdev->override_rd_fence_rate)
 			iwdev->rd_fence_rate = IRDMA_READ_FENCE_RATE_NO_FC;
 		if (vsi->tc_print_warning[traffic_class]) {
-			pr_info("INFO: Flow control is disabled for this traffic class (%d) on this vsi.\n",
-				traffic_class);
+			irdma_rblog_pr_info("INFO: Flow control is disabled for this traffic class (%d) on this vsi.\n",
+					    traffic_class);
 			vsi->tc_print_warning[traffic_class] = false;
 		}
 	} else {
@@ -378,8 +378,8 @@ static void irdma_check_flow_ctrl(struct irdma_sc_vsi *vsi, u8 user_prio, u8 tra
 		if (!iwdev->override_rd_fence_rate)
 			iwdev->rd_fence_rate = IRDMA_READ_FENCE_RATE_FC;
 		if (vsi->tc_print_warning[traffic_class]) {
-			pr_info("INFO: Flow control is enabled for this traffic class (%d) on this vsi.\n",
-				traffic_class);
+			irdma_rblog_pr_info("INFO: Flow control is enabled for this traffic class (%d) on this vsi.\n",
+					    traffic_class);
 			vsi->tc_print_warning[traffic_class] = false;
 		}
 	}

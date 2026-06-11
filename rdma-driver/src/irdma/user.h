@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2015 - 2022 Intel Corporation */
+/* Copyright (c) 2015 - 2026 Intel Corporation */
 #ifndef IRDMA_USER_H
 #define IRDMA_USER_H
 
 #ifdef CONFIG_DEBUG_FS
 #define PRINT_CQES
-#endif
 
+#endif
 #define irdma_handle void *
 #define irdma_adapter_handle irdma_handle
 #define irdma_qp_handle irdma_handle
@@ -378,8 +378,10 @@ struct irdma_atomic_write {
 	u64 tagged_offset;
 	u64 remote_tagged_offset;
 	u64 write_data_bytes;
+	u64 inline_data;
 	u32 remote_stag;
 	u32 stag;
+	bool is_inline_data:1;
 };
 
 struct irdma_flush_mem_region {

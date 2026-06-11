@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2020 - 2025 Intel Corporation */
+/* Copyright (c) 2020 - 2026 Intel Corporation */
 #ifndef ORACLE_KCOMPAT_H
 #define ORACLE_KCOMPAT_H
 
@@ -45,7 +45,6 @@
 #define IW_PORT_IMMUTABLE_V2
 #define QUERY_GID_V2
 #define QUERY_PORT_V2
-
 
 /* IRDMA_ALLOC_MW */
 #define IRDMA_ALLOC_MW_VER_1
@@ -113,4 +112,3 @@ void irdma_dealloc_pd(struct ib_pd *ibpd, struct ib_udata *udata);
 #define REG_USER_MR_VER_1
 
 #endif /* ORACLE_KCOMPAT_H */
-

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2015 - 2023 Intel Corporation */
+/* Copyright (c) 2015 - 2026 Intel Corporation */
 #ifndef I40IW_HW_H
 #define I40IW_HW_H
 #define I40E_VFPE_CQPTAIL1            0x0000A000 /* Reset: VFR */

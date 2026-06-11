@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2016 - 2022 Intel Corporation */
+/* Copyright (c) 2016 - 2026 Intel Corporation */
 #include "osdep.h"
 #include "hmc.h"
 #include "defs.h"
@@ -77,7 +77,7 @@ int irdma_sc_access_ah(struct irdma_sc_cqp *cqp, struct irdma_ah_info *info,
 		FIELD_PREP(IRDMA_UDA_CQPSQ_MAV_AVIDX, info->ah_idx) |
 		FIELD_PREP(IRDMA_UDA_CQPSQ_MAV_INSERTVLANTAG, info->insert_vlan_tag));
 
-	print_hex_dump_debug("WQE: MANAGE_AH WQE", DUMP_PREFIX_OFFSET, 16, 8,
+	irdma_rblog_hex_dump("WQE: MANAGE_AH WQE", DUMP_PREFIX_OFFSET, 16, 8,
 			     wqe, IRDMA_CQP_WQE_SIZE * 8, false);
 	irdma_sc_cqp_post_sq(cqp);
 
@@ -123,13 +123,14 @@ int irdma_access_mcast_grp(struct irdma_sc_cqp *cqp,
 	__le64 *wqe;
 
 	if (info->mg_id >= IRDMA_UDA_MAX_FSI_MGS) {
-		ibdev_dbg(to_ibdev(cqp->dev), "WQE: mg_id out of range\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(cqp->dev),
+				      "WQE: mg_id out of range\n");
 		return -EINVAL;
 	}
 
 	wqe = irdma_sc_cqp_get_next_send_wqe(cqp, scratch);
 	if (!wqe) {
-		ibdev_dbg(to_ibdev(cqp->dev), "WQE: ring full\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(cqp->dev), "WQE: ring full\n");
 		return -ENOMEM;
 	}
 
@@ -164,9 +165,9 @@ int irdma_access_mcast_grp(struct irdma_sc_cqp *cqp,
 		      FIELD_PREP(IRDMA_UDA_CQPSQ_MG_VLANVALID, info->vlan_valid) |
 		      FIELD_PREP(IRDMA_UDA_CQPSQ_MG_IPV4VALID, info->ipv4_valid));
 
-	print_hex_dump_debug("WQE: MANAGE_MCG WQE", DUMP_PREFIX_OFFSET, 16, 8,
+	irdma_rblog_hex_dump("WQE: MANAGE_MCG WQE", DUMP_PREFIX_OFFSET, 16, 8,
 			     wqe, IRDMA_CQP_WQE_SIZE * 8, false);
-	print_hex_dump_debug("WQE: MCG_HOST CTX WQE", DUMP_PREFIX_OFFSET, 16,
+	irdma_rblog_hex_dump("WQE: MCG_HOST CTX WQE", DUMP_PREFIX_OFFSET, 16,
 			     8, info->dma_mem_mc.va,
 			     IRDMA_MAX_MGS_PER_CTX * 8, false);
 	irdma_sc_cqp_post_sq(cqp);

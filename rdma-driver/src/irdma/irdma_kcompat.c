@@ -352,9 +352,9 @@ int irdma_alloc_ucontext(struct ib_ucontext *uctx, struct ib_udata *udata)
 	return 0;
 
 ver_error:
-	ibdev_err(&iwdev->ibdev,
-		  "Invalid userspace driver version detected. Detected version %d, should be %d\n",
-		  req.userspace_ver, IRDMA_ABI_VER);
+	irdma_rblog_ibdev_err(&iwdev->ibdev,
+			      "Invalid userspace driver version detected. Detected version %d, should be %d\n",
+			      req.userspace_ver, IRDMA_ABI_VER);
 	return -EINVAL;
 }
 #endif
@@ -490,9 +490,9 @@ struct ib_ucontext *irdma_alloc_ucontext(struct ib_device *ibdev, struct ib_udat
 	return &ucontext->ibucontext;
 
 ver_error:
-	ibdev_err(&iwdev->ibdev,
-		  "Invalid userspace driver version detected. Detected version %d, should be %d\n",
-		  req.userspace_ver, IRDMA_ABI_VER);
+	irdma_rblog_ibdev_err(&iwdev->ibdev,
+			      "Invalid userspace driver version detected. Detected version %d, should be %d\n",
+			      req.userspace_ver, IRDMA_ABI_VER);
 	return ERR_PTR(-EINVAL);
 }
 #endif
@@ -950,7 +950,7 @@ static int irdma_create_ah_wait(struct irdma_pci_f *rf,
 				struct irdma_sc_ah *sc_ah, bool sleep)
 {
 	struct irdma_cqp_request *cqp_request;
-	int err;
+	int err = 0;
 
 	cqp_request = sc_ah->ah_info.cqp_request;
 
@@ -961,7 +961,7 @@ static int irdma_create_ah_wait(struct irdma_pci_f *rf,
 
 		if (poll_timeout_us_atomic(irdma_cqp_ce_handler(rf,
 								&rf->ccq.sc_cq),
-					   atomic_read(&sc_ah->ah_info.ah_valid),
+					   READ_ONCE(sc_ah->ah_info.ah_valid),
 					   1, tmout_ms * USEC_PER_MSEC, false)) {
 			err = -ETIMEDOUT;
 		} else if (cqp_request->compl_info.op_ret_val) {
@@ -969,9 +969,10 @@ static int irdma_create_ah_wait(struct irdma_pci_f *rf,
 		}
 
 		if (err) {
-			ibdev_err(&rf->iwdev->ibdev,
-				  "VERBS: CQP create AH error err = %d opt_ret_val = %d",
-				  err, cqp_request->compl_info.op_ret_val);
+			irdma_rblog_ibdev_err(&rf->iwdev->ibdev,
+					      "VERBS: CQP create AH error err = %d opt_ret_val = %d",
+					      err,
+					      cqp_request->compl_info.op_ret_val);
 			irdma_put_cqp_request(&rf->cqp, cqp_request);
 			if (err == -ETIMEDOUT && !rf->reset) {
 				rf->reset = true;
@@ -987,13 +988,14 @@ static int irdma_create_ah_wait(struct irdma_pci_f *rf,
 		do {
 			irdma_cqp_ce_handler(rf, &rf->ccq.sc_cq);
 			mdelay(1);
-		} while (!atomic_read(&cqp_request->request_done) && --cnt);
+		} while (!READ_ONCE(cqp_request->request_done) && --cnt);
 
 		if (!cnt || cqp_request->compl_info.op_ret_val) {
 			err = !cnt ? -ETIMEDOUT : -EINVAL;
-			ibdev_err(&rf->iwdev->ibdev,
-				  "CQP create AH error err = %d opt_ret_val = %d",
-				  err, cqp_request->compl_info.op_ret_val);
+			irdma_rblog_ibdev_err(&rf->iwdev->ibdev,
+					      "CQP create AH error err = %d opt_ret_val = %d",
+					      err,
+					      cqp_request->compl_info.op_ret_val);
 			irdma_put_cqp_request(&rf->cqp, cqp_request);
 			if (!cnt && !rf->reset) {
 				rf->reset = true;
@@ -1032,8 +1034,8 @@ static bool irdma_sleepable_ah_exists(struct irdma_device *iwdev,
 	hash_for_each_possible(iwdev->ah_hash_tbl, ah, list, key) {
 		/* Set ah_valid, ah_id the same so memcmp can work */
 		new_ah->sc_ah.ah_info.ah_idx = ah->sc_ah.ah_info.ah_idx;
-		atomic_set(&new_ah->sc_ah.ah_info.ah_valid,
-			   atomic_read(&ah->sc_ah.ah_info.ah_valid));
+		WRITE_ONCE(new_ah->sc_ah.ah_info.ah_valid,
+			   ah->sc_ah.ah_info.ah_valid);
 		if (skip_flow_label)
 			new_ah->sc_ah.ah_info.flow_label = ah->sc_ah.ah_info.flow_label;
 		if (!memcmp(&ah->sc_ah.ah_info, &new_ah->sc_ah.ah_info,
@@ -1043,7 +1045,7 @@ static bool irdma_sleepable_ah_exists(struct irdma_device *iwdev,
 			return true;
 		}
 	}
-	atomic_set(&new_ah->sc_ah.ah_info.ah_valid, false);
+	WRITE_ONCE(new_ah->sc_ah.ah_info.ah_valid, false);
 	new_ah->sc_ah.ah_info.ah_idx = save_ah_id;
 	if (skip_flow_label)
 		new_ah->sc_ah.ah_info.flow_label = save_flow_label;
@@ -1087,8 +1089,8 @@ static bool irdma_nosleep_ah_exists(struct irdma_device *iwdev,
 	hash_for_each_possible(iwdev->ah_nosleep_hash_tbl, ah, list, key) {
 		/* Set ah_valid, ah_id the same so memcmp can work */
 		new_ah->sc_ah.ah_info.ah_idx = ah->sc_ah.ah_info.ah_idx;
-		atomic_set(&new_ah->sc_ah.ah_info.ah_valid,
-			   atomic_read(&ah->sc_ah.ah_info.ah_valid));
+		WRITE_ONCE(new_ah->sc_ah.ah_info.ah_valid,
+			   ah->sc_ah.ah_info.ah_valid);
 		if (skip_flow_label)
 			new_ah->sc_ah.ah_info.flow_label = ah->sc_ah.ah_info.flow_label;
 		if (!memcmp(&ah->sc_ah.ah_info, &new_ah->sc_ah.ah_info,
@@ -1098,7 +1100,7 @@ static bool irdma_nosleep_ah_exists(struct irdma_device *iwdev,
 			return true;
 		}
 	}
-	atomic_set(&new_ah->sc_ah.ah_info.ah_valid, false);
+	WRITE_ONCE(new_ah->sc_ah.ah_info.ah_valid, false);
 	new_ah->sc_ah.ah_info.ah_idx = save_ah_id;
 	if (skip_flow_label)
 		new_ah->sc_ah.ah_info.flow_label = save_flow_label;
@@ -1159,14 +1161,23 @@ static bool irdma_ah_hash_delete(struct irdma_device *iwdev,
 }
 
 #define IRDMA_CREATE_AH_MIN_RESP_LEN offsetofend(struct irdma_create_ah_resp, rsvd)
-#if defined(CREATE_AH_VER_1_1) || defined(CREATE_AH_VER_1_2) || defined(CREATE_AH_VER_3) || defined(CREATE_AH_VER_4)
-static struct ib_ah *irdma_create_sleepable_ah(struct ib_pd *ibpd,
-					       struct rdma_ah_attr *attr,
-					       struct ib_udata *udata)
+#ifndef CREATE_AH_VER_0
+#if defined(CREATE_AH_VER_2) || defined(CREATE_AH_VER_5)
+static int irdma_create_sleepable_ah(struct ib_pd *ibpd,
+				     struct irdma_ah *ah,
+				     struct rdma_ah_attr *attr,
+				     bool sleep,
+				     struct ib_udata *udata)
+#else /* defined(CREATE_AH_VER_2) || defined(CREATE_AH_VER_5) */
+static int irdma_create_sleepable_ah(struct ib_pd *ibpd,
+				     struct irdma_ah *ah,
+				     struct rdma_ah_attr *attr,
+				     struct ib_udata *udata)
+
+#endif /* defined(CREATE_AH_VER_2) || defined(CREATE_AH_VER_5) */
 {
 	struct irdma_pd *pd = to_iwpd(ibpd);
 	struct irdma_device *iwdev = to_iwdev(ibpd->device);
-	struct irdma_ah *ah;
 #ifdef IB_GET_CACHED_GID
 	union ib_gid sgid;
 	struct ib_gid_attr sgid_attr;
@@ -1183,18 +1194,12 @@ static struct ib_ah *irdma_create_sleepable_ah(struct ib_pd *ibpd,
 	u8 dmac[ETH_ALEN];
 
 	if (udata && udata->outlen < IRDMA_CREATE_AH_MIN_RESP_LEN)
-		return ERR_PTR(-EINVAL);
+		return -EINVAL;
 
 	err = irdma_alloc_rsrc(rf, rf->allocated_ahs,
 			       rf->max_ah, &ah_id, &rf->next_ah);
 	if (err)
-		return ERR_PTR(err);
-
-	ah = kzalloc(sizeof(*ah), GFP_ATOMIC);
-	if (!ah) {
-		irdma_free_rsrc(rf, rf->allocated_ahs, ah_id);
-		return ERR_PTR(-ENOMEM);
-	}
+		return err;
 
 	ah->sleep = true;
 	ah->pd = pd;
@@ -1210,9 +1215,9 @@ static struct ib_ah *irdma_create_sleepable_ah(struct ib_pd *ibpd,
 				attr->grh.sgid_index, &sgid, &sgid_attr);
 	rcu_read_unlock();
 	if (err) {
-		ibdev_dbg(&iwdev->ibdev,
-			  "GID lookup at idx=%d with port=%d failed\n",
-			  attr->grh.sgid_index, attr->port_num);
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "VERBS: GID lookup at idx=%d with port=%d failed\n",
+				      attr->grh.sgid_index, attr->port_num);
 		err = -EINVAL;
 		goto err_gid_l2;
 	}
@@ -1233,13 +1238,21 @@ static struct ib_ah *irdma_create_sleepable_ah(struct ib_pd *ibpd,
 	ah_info = &sc_ah->ah_info;
 	ah_info->ah_idx = ah_id;
 	ah_info->pd_idx = pd->sc_pd.pd_id;
+#if defined(CREATE_AH_VER_2) || defined(CREATE_AH_VER_5)
+	err = rdma_read_gid_l2_fields(sgid_attr, &ah_info->vlan_tag,
+				      ah_info->mac_addr);
+
+	if (err)
+		goto err_gid_l2;
+#else
 	ether_addr_copy(ah_info->mac_addr, iwdev->netdev->dev_addr);
+#endif
 	if (attr->ah_flags & IB_AH_GRH) {
 		ah_info->flow_label = attr->grh.flow_label;
 		ah_info->hop_ttl = attr->grh.hop_limit;
 		ah_info->tc_tos = attr->grh.traffic_class;
 	}
-#if   defined(IB_RESOLVE_ETH_DMAC)
+#if defined(HPM_FBSD) || defined(IB_RESOLVE_ETH_DMAC)
 	if (udata) {
 		err = ib_resolve_eth_dmac(ibpd->device, attr);
 		if (err)
@@ -1274,7 +1287,8 @@ static struct ib_ah *irdma_create_sleepable_ah(struct ib_pd *ibpd,
 	err = irdma_ah_cqp_op(iwdev->rf, sc_ah, IRDMA_OP_AH_CREATE,
 			      true, NULL, sc_ah);
 	if (err) {
-		ibdev_dbg(&iwdev->ibdev, "VERBS: CQP-OP Create AH fail");
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "VERBS: CQP-OP Create AH fail");
 		goto err_ah_create;
 	}
 
@@ -1299,7 +1313,7 @@ exit:
 	}
 	mutex_unlock(&iwdev->ah_tbl_lock);
 
-	return &ah->ibah;
+	return 0;
 
 err_ah_create:
 	if (ah->parent_ah) {
@@ -1310,20 +1324,19 @@ err_ah_create:
 err_unlock:
 	mutex_unlock(&iwdev->ah_tbl_lock);
 err_gid_l2:
-	kfree(ah);
 	if (ah_id)
 		irdma_free_rsrc(iwdev->rf, iwdev->rf->allocated_ahs, ah_id);
 
-	return ERR_PTR(err);
+	return err;
 }
 
-static struct ib_ah *irdma_create_nosleep_ah(struct ib_pd *ibpd,
-					       struct rdma_ah_attr *attr,
-					       struct ib_udata *udata)
+static int irdma_create_nosleep_ah(struct ib_pd *ibpd,
+				   struct irdma_ah *ah,
+				   struct rdma_ah_attr *attr,
+				   struct ib_udata *udata)
 {
 	struct irdma_pd *pd = to_iwpd(ibpd);
 	struct irdma_device *iwdev = to_iwdev(ibpd->device);
-	struct irdma_ah *ah;
 #ifdef IB_GET_CACHED_GID
 	union ib_gid sgid;
 	struct ib_gid_attr sgid_attr;
@@ -1341,18 +1354,12 @@ static struct ib_ah *irdma_create_nosleep_ah(struct ib_pd *ibpd,
 	unsigned long flags;
 
 	if (udata && udata->outlen < IRDMA_CREATE_AH_MIN_RESP_LEN)
-		return ERR_PTR(-EINVAL);
+		return -EINVAL;
 
 	err = irdma_alloc_rsrc(rf, rf->allocated_ahs,
 			       rf->max_ah, &ah_id, &rf->next_ah);
 	if (err)
-		return ERR_PTR(err);
-
-	ah = kzalloc(sizeof(*ah), GFP_ATOMIC);
-	if (!ah) {
-		irdma_free_rsrc(rf, rf->allocated_ahs, ah_id);
-		return ERR_PTR(-ENOMEM);
-	}
+		return err;
 
 	ah->sleep = false;
 	ah->pd = pd;
@@ -1368,9 +1375,9 @@ static struct ib_ah *irdma_create_nosleep_ah(struct ib_pd *ibpd,
 				attr->grh.sgid_index, &sgid, &sgid_attr);
 	rcu_read_unlock();
 	if (err) {
-		ibdev_dbg(&iwdev->ibdev,
-			  "GID lookup at idx=%d with port=%d failed\n",
-			  attr->grh.sgid_index, attr->port_num);
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "VERBS: GID lookup at idx=%d with port=%d failed\n",
+				      attr->grh.sgid_index, attr->port_num);
 		err = -EINVAL;
 		goto err_gid_l2;
 	}
@@ -1391,13 +1398,21 @@ static struct ib_ah *irdma_create_nosleep_ah(struct ib_pd *ibpd,
 	ah_info = &sc_ah->ah_info;
 	ah_info->ah_idx = ah_id;
 	ah_info->pd_idx = pd->sc_pd.pd_id;
+#if defined(CREATE_AH_VER_2) || defined(CREATE_AH_VER_5)
+	err = rdma_read_gid_l2_fields(sgid_attr, &ah_info->vlan_tag,
+					      ah_info->mac_addr);
+
+	if (err)
+		goto err_gid_l2;
+#else
 	ether_addr_copy(ah_info->mac_addr, iwdev->netdev->dev_addr);
+#endif
 	if (attr->ah_flags & IB_AH_GRH) {
 		ah_info->flow_label = attr->grh.flow_label;
 		ah_info->hop_ttl = attr->grh.hop_limit;
 		ah_info->tc_tos = attr->grh.traffic_class;
 	}
-#if   defined(IB_RESOLVE_ETH_DMAC)
+#if defined(HPM_FBSD) || defined(IB_RESOLVE_ETH_DMAC)
 	if (udata) {
 		err = ib_resolve_eth_dmac(ibpd->device, attr);
 		if (err)
@@ -1437,7 +1452,8 @@ static struct ib_ah *irdma_create_nosleep_ah(struct ib_pd *ibpd,
 			      false, NULL, sc_ah);
 #endif
 	if (err) {
-		ibdev_dbg(&iwdev->ibdev, "VERBS: CQP-OP Create AH fail");
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "VERBS: CQP-OP Create AH fail");
 		goto err_ah_create;
 	}
 
@@ -1461,7 +1477,7 @@ exit:
 		}
 	}
 	spin_unlock_irqrestore(&iwdev->ah_nosleep_tbl_lock, flags);
-	return &ah->ibah;
+	return 0;
 
 err_ah_create:
 	if (ah->parent_ah) {
@@ -1472,13 +1488,12 @@ err_ah_create:
 err_unlock:
 	spin_unlock_irqrestore(&iwdev->ah_nosleep_tbl_lock, flags);
 err_gid_l2:
-	kfree(ah);
 	if (ah_id)
 		irdma_free_rsrc(iwdev->rf, iwdev->rf->allocated_ahs, ah_id);
 
-	return ERR_PTR(err);
+	return err;
 }
-#endif /*  CREATE_AH_VER_1_1 || CREATE_AH_VER_1_2 || CREATE_AH_VER_3 || CREATE_AH_VER_4 */
+#endif /* CREATE_AH_VER_0 */
 
 #ifdef CREATE_AH_VER_3
 /**
@@ -1496,16 +1511,25 @@ struct ib_ah *irdma_create_ah(struct ib_pd *ibpd,
 			      struct ib_udata *udata)
 {
 	bool sleep = (flags & RDMA_CREATE_AH_SLEEPABLE) != 0;
-	struct ib_ah *ah;
+	struct irdma_ah *ah;
+	int status = 0;
+
+	ah = kzalloc(sizeof(*ah), GFP_ATOMIC);
+	if (!ah)
+		return ERR_PTR(-ENOMEM);
 
 	if (sleep)
-		ah = irdma_create_sleepable_ah(ibpd, attr, udata);
+		status = irdma_create_sleepable_ah(ibpd, ah, attr, udata);
 	else
-		ah = irdma_create_nosleep_ah(ibpd, attr, udata);
+		status = irdma_create_nosleep_ah(ibpd, ah, attr, udata);
 
-	return ah;
+	if (status) {
+		kfree(ah);
+		return ERR_PTR(status);
+	}
+	return &ah->ibah;
 }
-#endif
+#endif /* CREATE_AH_VER_3 */
 #if defined(CREATE_AH_VER_1_2) || defined(CREATE_AH_VER_4)
 /**
  * irdma_create_ah - create address handle
@@ -1520,537 +1544,24 @@ struct ib_ah *irdma_create_ah(struct ib_pd *ibpd,
 			      struct ib_udata *udata)
 {
 	bool sleep = udata ? true : false;
-	struct ib_ah *ah;
+	struct irdma_ah *ah;
+	int status = 0;
+
+	ah = kzalloc(sizeof(*ah), GFP_ATOMIC);
+	if (!ah)
+		return ERR_PTR(-ENOMEM);
 
 	if (sleep)
-		ah = irdma_create_sleepable_ah(ibpd, attr, udata);
+		status = irdma_create_sleepable_ah(ibpd, ah, attr, udata);
 	else
-		ah = irdma_create_nosleep_ah(ibpd, attr, udata);
-
-	return ah;
+		status = irdma_create_nosleep_ah(ibpd, ah, attr, udata);
+	if (status) {
+		kfree(ah);
+		return ERR_PTR(status);
+	}
+	return &ah->ibah;
 }
 #endif /* CREATE_AH_VER_1_2 || CREATE_AH_VER_4 */
-
-#if defined(CREATE_AH_VER_2) || defined(CREATE_AH_VER_5)
-static int irdma_create_sleepable_ah(struct ib_ah *ib_ah,
-		    struct rdma_ah_attr *attr, u32 ah_flags,
-		    struct ib_udata *udata)
-{
-	struct irdma_pd *pd = to_iwpd(ib_ah->pd);
-	struct irdma_ah *ah = container_of(ib_ah, struct irdma_ah, ibah);
-	struct irdma_device *iwdev = to_iwdev(ib_ah->pd->device);
-	const struct ib_gid_attr *sgid_attr;
-	struct irdma_pci_f *rf = iwdev->rf;
-	struct irdma_sc_ah *sc_ah;
-	u32 ah_id = 0;
-	struct irdma_ah_info *ah_info;
-	struct irdma_create_ah_resp uresp = {};
-	union irdma_sockaddr sgid_addr, dgid_addr;
-	int err;
-	u8 dmac[ETH_ALEN];
-
-	if (udata && udata->outlen < IRDMA_CREATE_AH_MIN_RESP_LEN)
-		return -EINVAL;
-
-	err = irdma_alloc_rsrc(rf, rf->allocated_ahs,
-			       rf->max_ah, &ah_id, &rf->next_ah);
-
-	if (err)
-		return err;
-
-	ah->sleep = true;
-	ah->pd = pd;
-	sc_ah = &ah->sc_ah;
-	sc_ah->ah_info.ah_idx = ah_id;
-	sc_ah->ah_info.vsi = &iwdev->vsi;
-	irdma_sc_init_ah(&rf->sc_dev, sc_ah);
-	ah->sgid_index = attr->grh.sgid_index;
-	memcpy(&ah->dgid, &attr->grh.dgid, sizeof(ah->dgid));
-	sgid_attr = attr->grh.sgid_attr;
-
-	rdma_gid2ip((struct sockaddr *)&sgid_addr, &sgid_attr->gid);
-	rdma_gid2ip((struct sockaddr *)&dgid_addr, &attr->grh.dgid);
-	ah->av.attrs = *attr;
-	ah->av.net_type = kc_rdma_gid_attr_network_type(sgid_attr,
-							sgid_attr.gid_type,
-							&sgid);
-
-	ah_info = &sc_ah->ah_info;
-	ah_info->ah_idx = ah_id;
-	ah_info->pd_idx = pd->sc_pd.pd_id;
-	err = rdma_read_gid_l2_fields(sgid_attr, &ah_info->vlan_tag,
-				      ah_info->mac_addr);
-
-	if (err)
-		goto err_gid_l2;
-
-	if (attr->ah_flags & IB_AH_GRH) {
-		ah_info->flow_label = attr->grh.flow_label;
-		ah_info->hop_ttl = attr->grh.hop_limit;
-		ah_info->tc_tos = attr->grh.traffic_class;
-	}
-
-	ether_addr_copy(dmac, attr->roce.dmac);
-
-	irdma_fill_ah_info(ah_info, sgid_attr, &sgid_addr, &dgid_addr,
-			   dmac, ah->av.net_type);
-
-	err = irdma_create_ah_vlan_tag(iwdev, ah_info, sgid_attr, dmac);
-	if (err)
-		goto err_gid_l2;
-
-	mutex_lock(&iwdev->ah_tbl_lock);
-	if (irdma_sleepable_ah_exists(iwdev, ah)) {
-		irdma_free_rsrc(iwdev->rf, iwdev->rf->allocated_ahs,
-				ah_id);
-		ah_id = 0;
-#ifdef CONFIG_DEBUG_FS
-		iwdev->ah_reused++;
-#endif
-		goto exit;
-	}
-
-	err = irdma_ah_cqp_op(iwdev->rf, sc_ah, IRDMA_OP_AH_CREATE,
-			      true, NULL, sc_ah);
-	if (err) {
-		ibdev_dbg(&iwdev->ibdev, "CQP-OP Create AH fail");
-		goto err_ah_create;
-	}
-
-	err = irdma_create_ah_wait(rf, sc_ah, true);
-	if (err)
-		goto err_ah_create;
-
-exit:
-	if (udata) {
-		uresp.ah_id = ah->sc_ah.ah_info.ah_idx;
-		err = ib_copy_to_udata(udata, &uresp, min(sizeof(uresp), udata->outlen));
-		if (err) {
-			if (!ah->parent_ah ||
-			    (ah->parent_ah && refcount_dec_and_test(&ah->parent_ah->refcnt))) {
-				irdma_ah_cqp_op(iwdev->rf, &ah->sc_ah,
-						IRDMA_OP_AH_DESTROY, false, NULL, ah);
-				ah_id = ah->sc_ah.ah_info.ah_idx;
-				goto err_ah_create;
-			}
-			goto err_unlock;
-		}
-	}
-	mutex_unlock(&iwdev->ah_tbl_lock);
-	return 0;
-err_ah_create:
-	if (ah->parent_ah) {
-		hash_del(&ah->parent_ah->list);
-		kfree(ah->parent_ah);
-		iwdev->ah_list_cnt--;
-	}
-err_unlock:
-	mutex_unlock(&iwdev->ah_tbl_lock);
-err_gid_l2:
-	if (ah_id)
-		irdma_free_rsrc(iwdev->rf, iwdev->rf->allocated_ahs, ah_id);
-
-	return err;
-}
-
-static int irdma_create_nosleep_ah(struct ib_ah *ib_ah,
-		    struct rdma_ah_attr *attr, u32 ah_flags,
-		    struct ib_udata *udata)
-{
-	struct irdma_pd *pd = to_iwpd(ib_ah->pd);
-	struct irdma_ah *ah = container_of(ib_ah, struct irdma_ah, ibah);
-	struct irdma_device *iwdev = to_iwdev(ib_ah->pd->device);
-	const struct ib_gid_attr *sgid_attr;
-	struct irdma_pci_f *rf = iwdev->rf;
-	struct irdma_sc_ah *sc_ah;
-	u32 ah_id = 0;
-	struct irdma_ah_info *ah_info;
-	struct irdma_create_ah_resp uresp = {};
-	union irdma_sockaddr sgid_addr, dgid_addr;
-	int err;
-	u8 dmac[ETH_ALEN];
-	unsigned long flags;
-
-	if (udata && udata->outlen < IRDMA_CREATE_AH_MIN_RESP_LEN)
-		return -EINVAL;
-
-	err = irdma_alloc_rsrc(rf, rf->allocated_ahs,
-			       rf->max_ah, &ah_id, &rf->next_ah);
-
-	if (err)
-		return err;
-
-	ah->sleep = false;
-	ah->pd = pd;
-	sc_ah = &ah->sc_ah;
-	sc_ah->ah_info.ah_idx = ah_id;
-	sc_ah->ah_info.vsi = &iwdev->vsi;
-	irdma_sc_init_ah(&rf->sc_dev, sc_ah);
-	ah->sgid_index = attr->grh.sgid_index;
-	memcpy(&ah->dgid, &attr->grh.dgid, sizeof(ah->dgid));
-	sgid_attr = attr->grh.sgid_attr;
-
-	rdma_gid2ip((struct sockaddr *)&sgid_addr, &sgid_attr->gid);
-	rdma_gid2ip((struct sockaddr *)&dgid_addr, &attr->grh.dgid);
-	ah->av.attrs = *attr;
-	ah->av.net_type = kc_rdma_gid_attr_network_type(sgid_attr,
-							sgid_attr.gid_type,
-							&sgid);
-
-	ah_info = &sc_ah->ah_info;
-	ah_info->ah_idx = ah_id;
-	ah_info->pd_idx = pd->sc_pd.pd_id;
-	err = rdma_read_gid_l2_fields(sgid_attr, &ah_info->vlan_tag,
-				      ah_info->mac_addr);
-
-	if (err)
-		goto err_gid_l2;
-
-	if (attr->ah_flags & IB_AH_GRH) {
-		ah_info->flow_label = attr->grh.flow_label;
-		ah_info->hop_ttl = attr->grh.hop_limit;
-		ah_info->tc_tos = attr->grh.traffic_class;
-	}
-
-	ether_addr_copy(dmac, attr->roce.dmac);
-
-	irdma_fill_ah_info(ah_info, sgid_attr, &sgid_addr, &dgid_addr,
-			   dmac, ah->av.net_type);
-
-	err = irdma_create_ah_vlan_tag(iwdev, ah_info, sgid_attr, dmac);
-	if (err)
-		goto err_gid_l2;
-
-	spin_lock_irqsave(&iwdev->ah_nosleep_tbl_lock, flags);
-	if (irdma_nosleep_ah_exists(iwdev, ah)) {
-		irdma_free_rsrc(iwdev->rf, iwdev->rf->allocated_ahs,
-				ah_id);
-		ah_id = 0;
-#ifdef CONFIG_DEBUG_FS
-		iwdev->ah_nosleep_reused++;
-#endif
-		goto exit;
-	}
-
-#ifdef HAVE_POLL_TIMEOUT_US_ATOMIC
-	err = irdma_ah_cqp_op(iwdev->rf, sc_ah, IRDMA_OP_AH_CREATE,
-			      false, irdma_gsi_ud_qp_ah_cb, sc_ah);
-#else
-	err = irdma_ah_cqp_op(iwdev->rf, sc_ah, IRDMA_OP_AH_CREATE,
-			      false, NULL, sc_ah);
-#endif
-	if (err) {
-		ibdev_dbg(&iwdev->ibdev, "CQP-OP Create AH fail");
-		goto err_ah_create;
-	}
-
-	err = irdma_create_ah_wait(rf, sc_ah, false);
-	if (err)
-		goto err_ah_create;
-
-exit:
-	if (udata) {
-		uresp.ah_id = ah->sc_ah.ah_info.ah_idx;
-		err = ib_copy_to_udata(udata, &uresp, min(sizeof(uresp), udata->outlen));
-		if (err) {
-			if (!ah->parent_ah ||
-			    (ah->parent_ah && refcount_dec_and_test(&ah->parent_ah->refcnt))) {
-				irdma_ah_cqp_op(iwdev->rf, &ah->sc_ah,
-						IRDMA_OP_AH_DESTROY, false, NULL, ah);
-				ah_id = ah->sc_ah.ah_info.ah_idx;
-				goto err_ah_create;
-			}
-			goto err_unlock;
-		}
-	}
-	spin_unlock_irqrestore(&iwdev->ah_nosleep_tbl_lock, flags);
-	return 0;
-
-err_ah_create:
-	if (ah->parent_ah) {
-		hash_del(&ah->parent_ah->list);
-		kfree(ah->parent_ah);
-		iwdev->ah_list_cnt--;
-	}
-err_unlock:
-	spin_unlock_irqrestore(&iwdev->ah_nosleep_tbl_lock, flags);
-err_gid_l2:
-	if (ah_id)
-		irdma_free_rsrc(iwdev->rf, iwdev->rf->allocated_ahs, ah_id);
-
-	return err;
-}
-#endif /* defined(CREATE_AH_VER_2) || defined(CREATE_AH_VER_5) */
-
-#ifdef CREATE_AH_VER_6
-static int irdma_create_sleepable_ah(struct ib_ah *ib_ah,
-				     struct ib_ah_attr *attr, u32 flags,
-				     struct ib_udata *udata)
-{
-	struct irdma_pd *pd = to_iwpd(ib_ah->pd);
-	struct irdma_ah *ah = container_of(ib_ah, struct irdma_ah, ibah);
-	struct irdma_device *iwdev = to_iwdev(ib_ah->pd->device);
-	union ib_gid sgid;
-	struct ib_gid_attr sgid_attr;
-	struct irdma_pci_f *rf = iwdev->rf;
-	struct irdma_sc_ah *sc_ah;
-	u32 ah_id = 0;
-	struct irdma_ah_info *ah_info;
-	struct irdma_create_ah_resp uresp = {};
-	union irdma_sockaddr sgid_addr, dgid_addr;
-	int err;
-	u8 dmac[ETH_ALEN];
-
-	if (udata && udata->outlen < IRDMA_CREATE_AH_MIN_RESP_LEN)
-		return -EINVAL;
-
-	err = irdma_alloc_rsrc(rf, rf->allocated_ahs,
-			       rf->max_ah, &ah_id, &rf->next_ah);
-
-	if (err)
-		return err;
-
-	ah->sleep = true;
-	ah->pd = pd;
-	sc_ah = &ah->sc_ah;
-	sc_ah->ah_info.ah_idx = ah_id;
-	sc_ah->ah_info.vsi = &iwdev->vsi;
-	irdma_sc_init_ah(&rf->sc_dev, sc_ah);
-	ah->sgid_index = attr->grh.sgid_index;
-	memcpy(&ah->dgid, &attr->grh.dgid, sizeof(ah->dgid));
-	rcu_read_lock();
-	err = ib_get_cached_gid(&iwdev->ibdev, attr->port_num,
-				attr->grh.sgid_index, &sgid, &sgid_attr);
-	rcu_read_unlock();
-	if (err) {
-		ibdev_dbg(&iwdev->ibdev,
-			  "VERBS: GID lookup at idx=%d with port=%d failed\n",
-			  attr->grh.sgid_index, attr->port_num);
-		err = -EINVAL;
-		goto err_gid_l2;
-	}
-	rdma_gid2ip((struct sockaddr *)&sgid_addr, &sgid);
-	rdma_gid2ip((struct sockaddr *)&dgid_addr, &attr->grh.dgid);
-	ah->av.attrs = *attr;
-	ah->av.net_type = kc_rdma_gid_attr_network_type(sgid_attr,
-							sgid_attr.gid_type,
-							&sgid);
-
-	if (kc_deref_sgid_attr(sgid_attr))
-		dev_put(kc_deref_sgid_attr(sgid_attr));
-
-	ah_info = &sc_ah->ah_info;
-	ah_info->ah_idx = ah_id;
-	ah_info->pd_idx = pd->sc_pd.pd_id;
-	ether_addr_copy(ah_info->mac_addr, iwdev->netdev->dev_addr);
-
-	if (attr->ah_flags & IB_AH_GRH) {
-		ah_info->flow_label = attr->grh.flow_label;
-		ah_info->hop_ttl = attr->grh.hop_limit;
-		ah_info->tc_tos = attr->grh.traffic_class;
-	}
-
-	ether_addr_copy(dmac, attr->dmac);
-
-	irdma_fill_ah_info(ah_info, &sgid_attr, &sgid_addr, &dgid_addr,
-			   dmac, ah->av.net_type);
-
-	err = irdma_create_ah_vlan_tag(iwdev, ah_info, &sgid_attr, dmac);
-	if (err)
-		goto err_gid_l2;
-
-	mutex_lock(&iwdev->ah_tbl_lock);
-	if (irdma_sleepable_ah_exists(iwdev, ah)) {
-		irdma_free_rsrc(iwdev->rf, iwdev->rf->allocated_ahs,
-				ah_id);
-		ah_id = 0;
-#ifdef CONFIG_DEBUG_FS
-		iwdev->ah_reused++;
-#endif
-		goto exit;
-	}
-
-	err = irdma_ah_cqp_op(iwdev->rf, sc_ah, IRDMA_OP_AH_CREATE,
-			      true, NULL, sc_ah);
-	if (err) {
-		ibdev_dbg(&iwdev->ibdev, "CQP-OP Create AH fail");
-		goto err_ah_create;
-	}
-
-	err = irdma_create_ah_wait(rf, sc_ah, true);
-	if (err)
-		goto err_ah_create;
-
-exit:
-	if (udata) {
-		uresp.ah_id = ah->sc_ah.ah_info.ah_idx;
-		err = ib_copy_to_udata(udata, &uresp, min(sizeof(uresp), udata->outlen));
-		if (err) {
-			if (!ah->parent_ah ||
-			    (ah->parent_ah && refcount_dec_and_test(&ah->parent_ah->refcnt))) {
-				irdma_ah_cqp_op(iwdev->rf, &ah->sc_ah,
-						IRDMA_OP_AH_DESTROY, false, NULL, ah);
-				ah_id = ah->sc_ah.ah_info.ah_idx;
-				goto err_ah_create;
-			}
-			goto err_unlock;
-		}
-	}
-	mutex_unlock(&iwdev->ah_tbl_lock);
-
-	return 0;
-err_ah_create:
-	if (ah->parent_ah) {
-		hash_del(&ah->parent_ah->list);
-		kfree(ah->parent_ah);
-		iwdev->ah_list_cnt--;
-	}
-err_unlock:
-	mutex_unlock(&iwdev->ah_tbl_lock);
-err_gid_l2:
-	if (ah_id)
-		irdma_free_rsrc(iwdev->rf, iwdev->rf->allocated_ahs, ah_id);
-
-	return err;
-}
-
-static int irdma_create_nosleep_ah(struct ib_ah *ib_ah,
-				   struct ib_ah_attr *attr, u32 flags,
-				   struct ib_udata *udata)
-{
-	struct irdma_pd *pd = to_iwpd(ib_ah->pd);
-	struct irdma_ah *ah = container_of(ib_ah, struct irdma_ah, ibah);
-	struct irdma_device *iwdev = to_iwdev(ib_ah->pd->device);
-	union ib_gid sgid;
-	struct ib_gid_attr sgid_attr;
-	struct irdma_pci_f *rf = iwdev->rf;
-	struct irdma_sc_ah *sc_ah;
-	u32 ah_id = 0;
-	struct irdma_ah_info *ah_info;
-	struct irdma_create_ah_resp uresp = {};
-	union irdma_sockaddr sgid_addr, dgid_addr;
-	int err;
-	u8 dmac[ETH_ALEN];
-	unsigned long flags;
-
-	if (udata && udata->outlen < IRDMA_CREATE_AH_MIN_RESP_LEN)
-		return -EINVAL;
-
-	err = irdma_alloc_rsrc(rf, rf->allocated_ahs,
-			       rf->max_ah, &ah_id, &rf->next_ah);
-
-	if (err)
-		return err;
-
-	ah->sleep = false;
-	ah->pd = pd;
-	sc_ah = &ah->sc_ah;
-	sc_ah->ah_info.ah_idx = ah_id;
-	sc_ah->ah_info.vsi = &iwdev->vsi;
-	irdma_sc_init_ah(&rf->sc_dev, sc_ah);
-	ah->sgid_index = attr->grh.sgid_index;
-	memcpy(&ah->dgid, &attr->grh.dgid, sizeof(ah->dgid));
-	rcu_read_lock();
-	err = ib_get_cached_gid(&iwdev->ibdev, attr->port_num,
-				attr->grh.sgid_index, &sgid, &sgid_attr);
-	rcu_read_unlock();
-	if (err) {
-		ibdev_dbg(&iwdev->ibdev,
-			  "VERBS: GID lookup at idx=%d with port=%d failed\n",
-			  attr->grh.sgid_index, attr->port_num);
-		err = -EINVAL;
-		goto err_gid_l2;
-	}
-	rdma_gid2ip((struct sockaddr *)&sgid_addr, &sgid);
-	rdma_gid2ip((struct sockaddr *)&dgid_addr, &attr->grh.dgid);
-	ah->av.attrs = *attr;
-	ah->av.net_type = kc_rdma_gid_attr_network_type(sgid_attr,
-							sgid_attr.gid_type,
-							&sgid);
-
-	if (kc_deref_sgid_attr(sgid_attr))
-		dev_put(kc_deref_sgid_attr(sgid_attr));
-
-	ah_info = &sc_ah->ah_info;
-	ah_info->ah_idx = ah_id;
-	ah_info->pd_idx = pd->sc_pd.pd_id;
-	ether_addr_copy(ah_info->mac_addr, iwdev->netdev->dev_addr);
-
-	if (attr->ah_flags & IB_AH_GRH) {
-		ah_info->flow_label = attr->grh.flow_label;
-		ah_info->hop_ttl = attr->grh.hop_limit;
-		ah_info->tc_tos = attr->grh.traffic_class;
-	}
-
-	ether_addr_copy(dmac, attr->dmac);
-
-	irdma_fill_ah_info(ah_info, &sgid_attr, &sgid_addr, &dgid_addr,
-			   dmac, ah->av.net_type);
-
-	err = irdma_create_ah_vlan_tag(iwdev, ah_info, &sgid_attr, dmac);
-	if (err)
-		goto err_gid_l2;
-
-	spin_lock_irqsave(&iwdev->ah_nosleep_tbl_lock, flags);
-	if (irdma_nosleep_ah_exists(iwdev, ah)) {
-		irdma_free_rsrc(iwdev->rf, iwdev->rf->allocated_ahs,
-				ah_id);
-		ah_id = 0;
-#ifdef CONFIG_DEBUG_FS
-		iwdev->ah_nosleep_reused++;
-#endif
-		goto exit;
-	}
-
-#ifdef HAVE_POLL_TIMEOUT_US_ATOMIC
-	err = irdma_ah_cqp_op(iwdev->rf, sc_ah, IRDMA_OP_AH_CREATE,
-			      false, irdma_gsi_ud_qp_ah_cb, sc_ah);
-#else
-	err = irdma_ah_cqp_op(iwdev->rf, sc_ah, IRDMA_OP_AH_CREATE,
-			      false, NULL, sc_ah);
-#endif
-	if (err) {
-		ibdev_dbg(&iwdev->ibdev, "CQP-OP Create AH fail");
-		goto err_ah_create;
-	}
-
-	err = irdma_create_ah_wait(rf, sc_ah, false);
-	if (err)
-		goto err_ah_create;
-
-exit:
-	if (udata) {
-		uresp.ah_id = ah->sc_ah.ah_info.ah_idx;
-		err = ib_copy_to_udata(udata, &uresp, min(sizeof(uresp), udata->outlen));
-		if (err) {
-			if (!ah->parent_ah ||
-			    (ah->parent_ah && refcount_dec_and_test(&ah->parent_ah->refcnt))) {
-				irdma_ah_cqp_op(iwdev->rf, &ah->sc_ah,
-						IRDMA_OP_AH_DESTROY, false, NULL, ah);
-				ah_id = ah->sc_ah.ah_info.ah_idx;
-				goto err_ah_create;
-			}
-			goto err_unlock;
-		}
-	}
-	spin_unlock_irqrestore(&iwdev->ah_nosleep_tbl_lock, flags);
-	return 0;
-
-err_ah_create:
-	if (ah->parent_ah) {
-		hash_del(&ah->parent_ah->list);
-		kfree(ah->parent_ah);
-		iwdev->ah_list_cnt--;
-	}
-err_unlock:
-	spin_unlock_irqrestore(&iwdev->ah_nosleep_tbl_lock, flags);
-err_gid_l2:
-	if (ah_id)
-		irdma_free_rsrc(iwdev->rf, iwdev->rf->allocated_ahs, ah_id);
-
-	return err;
-}
-#endif /* CREATE_AH_VER_6 */
 
 #ifdef CREATE_AH_VER_2
 /**
@@ -2066,12 +1577,13 @@ int irdma_create_ah(struct ib_ah *ib_ah,
 		       struct rdma_ah_attr *attr, u32 ah_flags,
 		       struct ib_udata *udata)
 {
+	struct irdma_ah *ah = container_of(ib_ah, struct irdma_ah, ibah);
 	bool sleep = (ah_flags & RDMA_CREATE_AH_SLEEPABLE) != 0;
 
 	if (sleep)
-		return irdma_create_sleepable_ah(ib_ah, attr, ah_flags, udata);
+		return irdma_create_sleepable_ah(ib_ah->pd, ah, attr, sleep, udata);
 	else
-		return irdma_create_nosleep_ah(ib_ah, attr, ah_flags, udata);
+		return irdma_create_nosleep_ah(ib_ah->pd, ah, attr, udata);
 }
 #endif /* CREATE_AH_VER_2 */
 
@@ -2089,12 +1601,13 @@ int irdma_create_ah_v2(struct ib_ah *ib_ah,
 		       struct rdma_ah_attr *attr, u32 ah_flags,
 		       struct ib_udata *udata)
 {
+	struct irdma_ah *ah = container_of(ib_ah, struct irdma_ah, ibah);
 	bool sleep = (ah_flags & RDMA_CREATE_AH_SLEEPABLE) != 0;
 
 	if (sleep)
-		return irdma_create_sleepable_ah(ib_ah, attr, ah_flags, udata);
+		return irdma_create_sleepable_ah(ib_ah->pd, ah, attr, sleep, udata);
 	else
-		return irdma_create_nosleep_ah(ib_ah, attr, ah_flags, udata);
+		return irdma_create_nosleep_ah(ib_ah->pd, ah, attr, udata);
 }
 
 /**
@@ -2127,23 +1640,24 @@ int irdma_create_ah(struct ib_ah *ib_ah,
 		    struct ib_ah_attr *attr, u32 flags,
 		    struct ib_udata *udata)
 {
-	bool sleep = (ah_flags & RDMA_CREATE_AH_SLEEPABLE) != 0;
+	struct irdma_ah *ah = container_of(ib_ah, struct irdma_ah, ibah);
+	bool sleep = (flags & RDMA_CREATE_AH_SLEEPABLE) != 0;
 
 	if (sleep)
-		return irdma_create_sleepable_ah(ib_ah, attr, flags, udata);
+		return irdma_create_sleepable_ah(ib_ah->pd, ah, attr, sleep, udata);
 	else
-		return irdma_create_nosleep_ah(ib_ah, attr, flags, udata);
+		return irdma_create_nosleep_ah(ib_ah->pd, ah, attr, udata);
 }
 #endif /* CREATE_AH_VER_6 */
 
-#if defined(ETHER_COPY_VER_1)
+#if defined(CREATE_AH_VER_1_1) || defined(CREATE_AH_VER_0) || defined(CREATE_AH_VER_6)
 void irdma_ether_copy(u8 *dmac, struct ib_ah_attr *attr)
 {
 	ether_addr_copy(dmac, attr->dmac);
 }
 #endif
 
-#if defined(ETHER_COPY_VER_2)
+#if defined(CREATE_AH_VER_1_2) || defined(CREATE_AH_VER_2) || defined(CREATE_AH_VER_3) || defined(CREATE_AH_VER_4) || defined(CREATE_AH_VER_5)
 void irdma_ether_copy(u8 *dmac, struct rdma_ah_attr *attr)
 {
 	ether_addr_copy(dmac, attr->roce.dmac);
@@ -2203,11 +1717,23 @@ struct ib_ah *irdma_create_ah(struct ib_pd *ibpd,
 			      struct ib_udata *udata)
 {
 	bool sleep = udata ? true : false;
+	struct irdma_ah *ah;
+	int status = 0;
+
+	ah = kzalloc(sizeof(*ah), GFP_ATOMIC);
+	if (!ah)
+		return ERR_PTR(-ENOMEM);
 
 	if (sleep)
-		return irdma_create_sleepable_ah(ibpd, attr, udata);
+		status = irdma_create_sleepable_ah(ibpd, ah, attr, udata);
 	else
-		return irdma_create_nosleep_ah(ibpd, attr, udata);
+		status = irdma_create_nosleep_ah(ibpd, ah, attr, udata);
+
+	if (status) {
+		kfree(ah);
+		return ERR_PTR(status);
+	}
+	return &ah->ibah;
 }
 #endif /* CREATE_AH_VER_1_1 */
 
@@ -2253,9 +1779,9 @@ struct ib_ah *irdma_create_ah(struct ib_pd *ibpd, struct ib_ah_attr *attr)
 				attr->grh.sgid_index, &sgid, &sgid_attr);
 	rcu_read_unlock();
 	if (err) {
-		ibdev_dbg(&iwdev->ibdev,
-			  "VERBS: GID lookup at idx=%d with port=%d failed\n",
-			  attr->grh.sgid_index, attr->port_num);
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "VERBS: GID lookup at idx=%d with port=%d failed\n",
+				      attr->grh.sgid_index, attr->port_num);
 		err = -EINVAL;
 		goto error;
 	}
@@ -2296,8 +1822,8 @@ struct ib_ah *irdma_create_ah(struct ib_pd *ibpd, struct ib_ah_attr *attr)
 			      false, NULL, sc_ah);
 #endif
 	if (err) {
-		ibdev_dbg(&iwdev->ibdev,
-			  "VERBS: CQP-OP Create AH fail");
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "VERBS: CQP-OP Create AH fail");
 		goto error;
 	}
 
@@ -2479,7 +2005,7 @@ int irdma_create_qp(struct ib_qp *ibqp,
 	}
 
 	if (err_code) {
-		ibdev_dbg(&iwdev->ibdev, "setup qp failed\n");
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev, "setup qp failed\n");
 		goto error;
 	}
 
@@ -2507,7 +2033,7 @@ int irdma_create_qp(struct ib_qp *ibqp,
 	ret = irdma_sc_qp_init(qp, &init_info);
 	if (ret) {
 		err_code = -EPROTO;
-		ibdev_dbg(&iwdev->ibdev, "qp_init fail\n");
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev, "qp_init fail\n");
 		goto error;
 	}
 
@@ -2573,7 +2099,8 @@ int irdma_create_qp(struct ib_qp *ibqp,
 		err_code = ib_copy_to_udata(udata, &uresp,
 					    min(sizeof(uresp), udata->outlen));
 		if (err_code) {
-			ibdev_dbg(&iwdev->ibdev, "VERBS: copy_to_udata failed\n");
+			irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+					      "VERBS: copy_to_udata failed\n");
 			kc_irdma_destroy_qp(&iwqp->ibqp, udata);
 			return err_code;
 		}
@@ -2767,7 +2294,8 @@ struct ib_qp *irdma_create_qp(struct ib_pd *ibpd,
 	}
 
 	if (err_code) {
-		ibdev_dbg(&iwdev->ibdev, "VERBS: setup qp failed\n");
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "VERBS: setup qp failed\n");
 		goto error;
 	}
 
@@ -2795,7 +2323,7 @@ struct ib_qp *irdma_create_qp(struct ib_pd *ibpd,
 	ret = irdma_sc_qp_init(qp, &init_info);
 	if (ret) {
 		err_code = -EPROTO;
-		ibdev_dbg(&iwdev->ibdev, "VERBS: qp_init fail\n");
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev, "VERBS: qp_init fail\n");
 		goto error;
 	}
 
@@ -2861,7 +2389,8 @@ struct ib_qp *irdma_create_qp(struct ib_pd *ibpd,
 		err_code = ib_copy_to_udata(udata, &uresp,
 					    min(sizeof(uresp), udata->outlen));
 		if (err_code) {
-			ibdev_dbg(&iwdev->ibdev, "VERBS: copy_to_udata failed\n");
+			irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+					      "VERBS: copy_to_udata failed\n");
 			kc_irdma_destroy_qp(&iwqp->ibqp, udata);
 			return ERR_PTR(err_code);
 		}
@@ -2942,21 +2471,6 @@ free_rsrc:
 	return 0;
 }
 
-#ifdef CREATE_CQ_VER_4
-/**
- * irdma_create_cq - create cq
- * @ibcq: CQ allocated
- * @attr: attributes for cq
- * @attrs: uverbs attribute bundle
- */
-#else
-/**
- * irdma_create_cq - create cq
- * @ibcq: CQ allocated
- * @attr: attributes for cq
- * @udata: user data
- */
-#endif /* CREATE_CQ_VER_4 */
 #ifdef CREATE_CQ_VER_4
 int irdma_create_cq(struct ib_cq *ibcq,
 		    const struct ib_cq_init_attr *attr,
@@ -3165,7 +2679,7 @@ struct ib_cq *irdma_create_cq(struct ib_device *ibdev,
 	info.shadow_read_threshold = min(info.cq_uk_init_info.cq_size / 2,
 					 (u32)IRDMA_MAX_CQ_READ_THRESH);
 	if (irdma_sc_cq_init(cq, &info)) {
-		ibdev_dbg(&iwdev->ibdev, "VERBS: init cq fail\n");
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev, "VERBS: init cq fail\n");
 		err_code = -EPROTO;
 		goto cq_kmem_free;
 	}
@@ -3198,7 +2712,8 @@ struct ib_cq *irdma_create_cq(struct ib_device *ibdev,
 		resp.cq_size = info.cq_uk_init_info.cq_size;
 		if (ib_copy_to_udata(udata, &resp,
 				     min(sizeof(resp), udata->outlen))) {
-			ibdev_dbg(&iwdev->ibdev, "VERBS: copy to user data\n");
+			irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+					      "VERBS: copy to user data\n");
 			err_code = -EPROTO;
 			goto cq_destroy;
 		}
@@ -3275,7 +2790,7 @@ bool kc__rdma_block_iter_next(struct kc_ib_block_iter *biter)
 
 #ifdef COPY_USER_PGADDR_VER_1
 void irdma_copy_user_pgaddrs(struct irdma_mr *iwmr, u64 *pbl,
-			     enum irdma_pble_level level)
+			     u32 pbl_len, enum irdma_pble_level level)
 {
 	struct ib_umem *region = iwmr->region;
 	struct irdma_pbl *iwpbl = &iwmr->iwpbl;
@@ -3285,7 +2800,9 @@ void irdma_copy_user_pgaddrs(struct irdma_mr *iwmr, u64 *pbl,
 	struct irdma_pble_alloc *palloc = &iwpbl->pble_alloc;
 	struct irdma_pble_info *pinfo;
 	u32 idx = 0;
-	u32 pbl_cnt = 0;
+
+	if (!pbl_len)
+		return;
 
 	pinfo = (level == PBLE_LEVEL_1) ? NULL : palloc->level2.leaf;
 	for_each_sg(region->sg_head.sgl, sg, region->nmap, entry) {
@@ -3300,7 +2817,7 @@ void irdma_copy_user_pgaddrs(struct irdma_mr *iwmr, u64 *pbl,
 				*pbl = pg_addr;
 			else
 				continue;
-			if (++pbl_cnt == palloc->total_cnt)
+			if (!--pbl_len)
 				break;
 			pbl = irdma_next_pbl_addr(pbl, &pinfo, &idx);
 		}
@@ -3500,8 +3017,9 @@ struct ib_mr *irdma_reg_user_mr(struct ib_pd *pd, u64 start, u64 len,
 #endif
 
 	if (IS_ERR(region)) {
-		ibdev_dbg(&iwdev->ibdev,
-			  "VERBS: Failed to create ib_umem region err=%ld\n", PTR_ERR(region));
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "VERBS: Failed to create ib_umem region err=%ld\n",
+				      PTR_ERR(region));
 		return (struct ib_mr *)region;
 	}
 
@@ -3763,7 +3281,8 @@ struct ib_mr *irdma_reg_user_mr_dmabuf(struct ib_pd *pd, u64 start, u64 len,
 	umem_dmabuf = ib_umem_dmabuf_get_pinned(pd->device, start, len, fd, access);
 	if (IS_ERR(umem_dmabuf)) {
 		err = PTR_ERR(umem_dmabuf);
-		ibdev_dbg(&iwdev->ibdev, "Failed to get dmabuf umem[%d]\n", err);
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "Failed to get dmabuf umem[%d]\n", err);
 		return ERR_PTR(err);
 	}
 
@@ -4812,7 +4331,7 @@ void irdma_release_ib_devname(struct irdma_device *iwdev)
 
 char *irdma_set_ib_devname(struct irdma_device *iwdev)
 {
-	const char *name = "irdma%d";
+	const char *name = iwdev->lag_mode ? "irdma_bond%d" : "irdma%d";
 	int i;
 
 	i = ida_alloc(&irdma_devname_ida, GFP_KERNEL);
@@ -4831,7 +4350,7 @@ void irdma_release_ib_devname(struct irdma_device *iwdev)
 
 char *irdma_set_ib_devname(struct irdma_device *iwdev)
 {
-	const char *name = "irdma%d";
+	const char *name = iwdev->lag_mode ? "irdma_bond%d" : "irdma%d";
 
 	strcpy(iwdev->ib_devname, name);
 
@@ -4944,8 +4463,8 @@ int ib_get_eth_speed(struct ib_device *ibdev, u32 port_num, u16 *speed, u8 *widt
 		netdev_speed = lksettings.base.speed;
 	} else {
 		netdev_speed = SPEED_1000;
-		pr_warn("%s speed is unknown, defaulting to %u\n", netdev->name,
-			netdev_speed);
+		irdma_rblog_pr_warn("%s speed is unknown, defaulting to %u\n",
+				    netdev->name, netdev_speed);
 	}
 
 	ib_get_width_and_speed(netdev_speed, lanes, speed, width);

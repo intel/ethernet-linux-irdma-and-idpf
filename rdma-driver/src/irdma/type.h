@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2015 - 2023 Intel Corporation */
+/* Copyright (c) 2015 - 2026 Intel Corporation */
 #ifndef IRDMA_TYPE_H
 #define IRDMA_TYPE_H
 
@@ -41,6 +41,7 @@
 
 extern unsigned int dbg_opt;
 #define IRDMA_DBG_PUDA_PARTIAL_FPDU  0x00000001
+#define IRDMA_DBG_FAST_MEM_REG       0x00000002
 
 enum irdma_page_size {
 	IRDMA_PAGE_SIZE_4K = 0,
@@ -326,7 +327,6 @@ struct irdma_cqp_init_info {
 	u8 ts_shift;
 	u8 en_fine_grained_timers;
 	u8 blksizes_valid;
-	u8 cqp_type;
 	bool en_datacenter_tcp:1;
 	bool disable_packed:1;
 	bool rocev2_rto_policy:1;
@@ -502,7 +502,6 @@ struct irdma_sc_cqp {
 	u8 struct_ver;
 	u8 polarity;
 	u8 rq_polarity;
-	u8 cqp_type;
 	u8 hmc_profile;
 	u8 ena_vf_count;
 	u8 timeout_count;
@@ -637,12 +636,6 @@ struct irdma_sc_qp {
 	struct list_head list;
 };
 
-struct irdma_stats_inst_info {
-	u16 hmc_fn_id;
-	u16 stats_idx;
-	bool use_hmc_fcn_index:1;
-};
-
 struct irdma_up_info {
 	u8 map[8];
 	u8 cnp_up_override;
@@ -671,6 +664,9 @@ struct irdma_ws_node_info {
 	u8 prio_type;
 	u8 tc;
 	u8 weight;
+	u8 failing_port;
+	u8 active_port;
+	bool assign_to_active_port:1;
 };
 
 struct irdma_hmc_fpm_misc {
@@ -700,7 +696,7 @@ struct irdma_vchnl_if {
 struct irdma_qos {
 	struct list_head qplist;
 	struct mutex qos_mutex; /* protect QoS attributes per QoS level */
-	u32 l2_sched_node_id;
+	u32 l2_sched_node_id[2];
 	u16 qs_handle[IRDMA_MAX_QSETS];
 	u8 qs_cnt;
 	u8 qs_nxt_idx;
@@ -756,15 +752,28 @@ struct irdma_sc_vsi {
 	u16 mtu;
 	u16 vf_id;
 	enum irdma_vm_vf_type vm_vf_type;
-	bool stats_inst_alloc:1;
 	bool tc_change_pending:1;
 	bool mtu_change_pending:1;
+	bool failover_pending:1;
+	bool lag_aa:1;
+#define IRDMA_LAG_PRIMARY_IDX 0
+#define IRDMA_LAG_SECONDARY_IDX 1
+	u8 lag_ports[2];    /* Ports in LAG AA */
+	u8 lag_port_bitmap; /* bitmap of port's link on active-active bond */
+	atomic_t port1_qp_cnt;
+	atomic_t port2_qp_cnt;
+	u16 primary_port_node_ids[IRDMA_MAX_USER_PRIORITY]; /* node ID's assigned to primary port */
+	u16 secondary_port_node_ids[IRDMA_MAX_USER_PRIORITY]; /* node ID's assigned to secondary port */
+	bool primary_port_migrated:1; /* true means primary port nodes have been moved to secondary port */
+	bool secondary_port_migrated:1; /* true means secondary port nodes have been moved to primary port */
 	struct irdma_vsi_pestat *pestat;
 	atomic_t qp_suspend_reqs;
 	int (*register_qset)(struct irdma_sc_vsi *vsi,
-			     struct irdma_ws_node *tc_node);
+			     struct irdma_ws_node *tc_node1,
+			     struct irdma_ws_node *tc_node2);
 	void (*unregister_qset)(struct irdma_sc_vsi *vsi,
-				struct irdma_ws_node *tc_node);
+				struct irdma_ws_node *tc_node1,
+				struct irdma_ws_node *tc_node2);
 	struct irdma_config_check cfg_check[IRDMA_MAX_USER_PRIORITY];
 	bool tc_print_warning[IEEE_8021QAZ_MAX_TCS];
 	u8 qos_rel_bw;
@@ -918,21 +927,24 @@ struct irdma_set_interrupt_info {
 
 struct irdma_ret_cqp_cmpl_info {
 	u64 cqe_values[4];
-	u32 hmc_fcn_id;
-	u32 rqe_idx;
-	u8 pending;
+	u64 scratch;
+	u16 hmc_fcn_id;
+	u8 op_code;
+	bool pending:1;
 };
 
 struct irdma_rca_exec_fwd_op_info {
 	u64 wqe[8];
 	u64 buf_addr;
+	void *buf_addr_va;
+	size_t buf_size;
 	u64 scratch;
-	u32 rqe_idx;
+	u32 deferred_info;
 	u16 orig_hmc_fcn_id;
 	u16 orig_wq_desc_idx;
-	u16 deferred_info;
-	u16 op_code;
+	u8 op_code;
 	bool pending:1;
+	bool free_buf:1;
 };
 
 struct irdma_copy_data_info {
@@ -979,7 +991,6 @@ struct irdma_ccq_cqe_info {
 	struct irdma_sc_cqp *cqp;
 	u64 scratch;
 	u32 op_ret_val;
-	u32 rqe_idx;
 	u16 orig_hmc_fcn_id;
 	u16 orig_wq_desc_idx;
 	u16 maj_err_code;
@@ -1021,9 +1032,12 @@ struct irdma_vsi_init_info {
 	u16 pf_data_vsi_num;
 	enum irdma_vm_vf_type vm_vf_type;
 	int (*register_qset)(struct irdma_sc_vsi *vsi,
-			     struct irdma_ws_node *tc_node);
+			     struct irdma_ws_node *tc_node1,
+			     struct irdma_ws_node *tc_node2);
 	void (*unregister_qset)(struct irdma_sc_vsi *vsi,
-				struct irdma_ws_node *tc_node);
+				struct irdma_ws_node *tc_node1,
+				struct irdma_ws_node *tc_node2);
+	bool lag_aa:1;
 };
 
 struct irdma_vsi_stats_info {
@@ -1058,7 +1072,6 @@ struct irdma_ceq_init_info {
 	u8 tph_val;
 	u32 first_pm_pbl_idx;
 	struct irdma_sc_vsi *vsi;
-	struct irdma_sc_cq **reg_cq;
 };
 
 struct irdma_aeq_init_info {
@@ -1815,12 +1828,6 @@ struct cqp_info {
 			struct irdma_mcast_grp_info info;
 			u64 scratch;
 		} mc_modify;
-
-		struct {
-			struct irdma_sc_cqp *cqp;
-			struct irdma_stats_inst_info info;
-			u64 scratch;
-		} stats_manage;
 
 		struct {
 			struct irdma_sc_cqp *cqp;

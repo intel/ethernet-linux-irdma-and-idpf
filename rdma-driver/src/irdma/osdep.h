@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2015 - 2025 Intel Corporation */
+/* Copyright (c) 2015 - 2026 Intel Corporation */
 #ifndef IRDMA_OSDEP_H
 #define IRDMA_OSDEP_H
 
@@ -21,6 +21,12 @@
 #include <linux/refcount.h>
 #endif /* OFED_4_8 */
 
+/* Log backend selection - must be defined before rblog.h */
+#define IRDMA_LOG_BACKEND_NONE   0
+#define IRDMA_LOG_BACKEND_RBLOG  1
+/* Values 2-255 are reserved for future log backends */
+extern u8 log_backend;
+#include "rblog.h"
 #include "distro_ver.h"
 #ifdef RHEL_RELEASE_CODE
 #if (RHEL_RELEASE_CODE == RHEL_RELEASE_VERSION(9, 3)) && defined(CONFIG_X86_64)
@@ -58,15 +64,6 @@
 #define ibdev_err(ibdev, fmt, ...)  dev_err(&((ibdev)->dev), fmt, ##__VA_ARGS__)
 #define ibdev_warn(ibdev, fmt, ...) dev_warn(&((ibdev)->dev), fmt, ##__VA_ARGS__)
 #define ibdev_info(ibdev, fmt, ...) dev_info(&((ibdev)->dev), fmt, ##__VA_ARGS__)
-#else
-#define irdma_dbg(idev, fmt, ...)				\
-do {								\
-	struct ib_device *ibdev = irdma_get_ibdev(idev);	\
-	if (ibdev)						\
-		ibdev_dbg(ibdev, fmt, ##__VA_ARGS__);		\
-	else							\
-		dev_dbg(idev_to_dev(idev), fmt, ##__VA_ARGS__);	\
-} while (0)
 #endif
 #ifndef struct_size
 #define struct_size(ptr, member, count)	\

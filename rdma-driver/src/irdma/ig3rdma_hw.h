@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2021 - 2022 Intel Corporation */
+/* Copyright (c) 2021 - 2023 Intel Corporation */
 #ifndef IG3RDMA_HW_H
 #define IG3RDMA_HW_H
 

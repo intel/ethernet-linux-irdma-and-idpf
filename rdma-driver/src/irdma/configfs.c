@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2018 - 2023 Intel Corporation */
+/* Copyright (c) 2018 - 2025 Intel Corporation */
 #include <linux/configfs.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -534,9 +534,12 @@ static ssize_t ceq_intrl_store(struct config_item *item,
 	if (intrl) {
 		interval = (IRDMA_USECS_PER_SEC / intrl) / IRDMA_USECS_PER_UNIT;
 
-		ibdev_info(&iwdev->ibdev, "CEQ Interrupt rate Limit enabled with interval = %d\n", interval);
+		irdma_rblog_ibdev_info(&iwdev->ibdev,
+				       "CEQ Interrupt rate Limit enabled with interval = %d\n",
+				       interval);
 	} else {
-		ibdev_info(&iwdev->ibdev, "CEQ Interrupt rate Limit disabled\n");
+		irdma_rblog_ibdev_info(&iwdev->ibdev,
+				       "CEQ Interrupt rate Limit disabled\n");
 	}
 
 	if (iwdev->rf->msix_shared)

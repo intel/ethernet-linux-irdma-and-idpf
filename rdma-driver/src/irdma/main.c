@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2015 - 2024 Intel Corporation */
+/* Copyright (c) 2015 - 2026 Intel Corporation */
 #include "main.h"
+#include "iidc_rdma_idpf.h"
 
 #define DRV_VER_MAJOR 0
 #define DRV_VER_MINOR 0
@@ -36,6 +37,11 @@ MODULE_PARM_DESC(gen1_limits_sel, "x722 resource limits selector, Range: 0-5, de
 unsigned int dbg_opt;
 module_param(dbg_opt, uint, 0444);
 MODULE_PARM_DESC(dbg_opt, "set dbg_opt to enable a specific debug option, currently only iWarp Partial FPDUs dump (set bit #1 in dbg_opt) is supported, default=0");
+
+/* Log backend selection - see osdep.h for backend constants */
+u8 log_backend = IRDMA_LOG_BACKEND_NONE;
+module_param(log_backend, byte, 0444);
+MODULE_PARM_DESC(log_backend, "Debug log backend: 0=disabled(default), 1=ring buffer");
 
 static unsigned int roce_ena;
 module_param(roce_ena, uint, 0444);
@@ -80,7 +86,7 @@ MODULE_PARM_DESC(host_mem_mrte, "true if mrte host memory false local memory def
 
 bool irdma_rca_ena;
 module_param(irdma_rca_ena, bool, 0444);
-MODULE_PARM_DESC(irdma_rca_ena, "driver enable rca default=false");
+MODULE_PARM_DESC(irdma_rca_ena, "driver enable rca default=true");
 
 bool irdma_rca_rq_post = true;
 module_param(irdma_rca_rq_post, bool, 0444);
@@ -90,14 +96,18 @@ bool irdma_rca_rq_polarity = true;
 module_param(irdma_rca_rq_polarity, bool, 0444);
 MODULE_PARM_DESC(irdma_rca_rq_polarity, "Use polarity as Frag_Valid in RCA's RQEs, default=true");
 
-unsigned int irdma_rca_rq_size = IRDMA_CQP_SW_RQSIZE_2048;
+unsigned int irdma_rca_rq_size = IRDMA_CQP_SW_RQSIZE_MAX;
 module_param(irdma_rca_rq_size, uint, 0444);
 MODULE_PARM_DESC(irdma_rca_rq_size, "RCA CQP RQ size, default=2048");
 
 unsigned int irdma_rca_config = IRDMA_RCA_CFG_EXECUTE;
 module_param(irdma_rca_config, uint, 0444);
 MODULE_PARM_DESC(irdma_rca_config, "RCA configuration, default=EXECUTE");
- 
+
+bool irdma_rca_fast;
+module_param(irdma_rca_fast, bool, 0444);
+MODULE_PARM_DESC(irdma_rca_fast, "RCA do not wait for response from LORCH, default=false");
+
 unsigned int wa_mem_pages;
 module_param(wa_mem_pages, uint, 0444);
 MODULE_PARM_DESC(wa_mem_pages, "to override memory pages in local memory default = 0");
@@ -302,7 +312,7 @@ static int irdma_init_dbg_and_configfs(void)
 #if IS_ENABLED(CONFIG_CONFIGFS_FS)
 	ret = irdma_configfs_init();
 	if (ret) {
-		pr_err("Failed to register irdma to configfs subsystem\n");
+		irdma_rblog_pr_err("Failed to register irdma to configfs subsystem\n");
 #ifdef CONFIG_DEBUG_FS
 		irdma_dbg_exit();
 #endif
@@ -323,7 +333,7 @@ static inline void irdma_deinit_dbg_and_configfs(void)
 }
 
 int irdma_vchnl_receive(struct iidc_core_dev_info *cdev_info, u32 vf_id,
-			       u8 *msg, u16 len)
+			u8 *msg, u16 len)
 {
 	struct irdma_device *iwdev = dev_get_drvdata(&cdev_info->adev->dev);
 	struct irdma_sc_dev *dev;
@@ -361,8 +371,9 @@ int irdma_vchnl_send_sync(struct irdma_sc_dev *dev, u8 *msg, u16 len,
 		ret = cdev_info->ops->vc_send_sync(cdev_info, msg, len, recv_msg,
 						   recv_len);
 	if (ret == -ETIMEDOUT) {
-		ibdev_err(&(dev_to_rf(dev)->iwdev->ibdev),
-			  "Virtual channel Req <-> Resp completion timeout = 0x%x\n", ret);
+		irdma_rblog_ibdev_err(&(dev_to_rf(dev)->iwdev->ibdev),
+				      "Virtual channel Req <-> Resp completion timeout = 0x%x\n",
+				      ret);
 		dev->vchnl_up = false;
 	}
 
@@ -372,56 +383,13 @@ int irdma_vchnl_send_sync(struct irdma_sc_dev *dev, u8 *msg, u16 len,
 void irdma_log_invalid_mtu(u16 mtu, struct irdma_sc_dev *dev)
 {
 	if (mtu < IRDMA_MIN_MTU_IPV4)
-		ibdev_warn(to_ibdev(dev),
-			   "MTU setting [%d] too low for RDMA traffic. Minimum MTU is 576 for IPv4\n",
-			   mtu);
+		irdma_rblog_ibdev_warn(to_ibdev(dev),
+				       "MTU setting [%d] too low for RDMA traffic. Minimum MTU is 576 for IPv4\n",
+				       mtu);
 	else if (mtu < IRDMA_MIN_MTU_IPV6)
-		ibdev_warn(to_ibdev(dev),
-			   "MTU setting [%d] too low for RDMA traffic. Minimum MTU is 1280 for IPv6\\n",
-			   mtu);
-}
-
-void irdma_fill_qos_info(struct irdma_l2params *l2params,
-			 struct iidc_qos_params *qos_info)
-{
-	int i;
-
-	l2params->num_tc = qos_info->num_tc;
-	l2params->vsi_prio_type = qos_info->vport_priority_type;
-	l2params->vsi_rel_bw = qos_info->vport_relative_bw;
-	for (i = 0; i < l2params->num_tc; i++) {
-		l2params->tc_info[i].egress_virt_up =
-			qos_info->tc_info[i].egress_virt_up;
-		l2params->tc_info[i].ingress_virt_up =
-			qos_info->tc_info[i].ingress_virt_up;
-		l2params->tc_info[i].prio_type = qos_info->tc_info[i].prio_type;
-		l2params->tc_info[i].rel_bw = qos_info->tc_info[i].rel_bw;
-		l2params->tc_info[i].tc_ctx = qos_info->tc_info[i].tc_ctx;
-	}
-	for (i = 0; i < IIDC_MAX_USER_PRIORITY; i++)
-		l2params->up2tc[i] = qos_info->up2tc[i];
-
-	if (qos_info->pfc_mode == IIDC_DSCP_PFC_MODE) {
-		l2params->dscp_mode = true;
-		memcpy(l2params->dscp_map, qos_info->dscp_map,
-		       sizeof(l2params->dscp_map));
-	}
-}
-
-/**
- * irdma_request_reset - Request a reset
- * @rf: RDMA PCI function
- */
-void irdma_request_reset(struct irdma_pci_f *rf)
-{
-	struct iidc_core_dev_info *cdev_info = rf->cdev;
-
-	ibdev_warn(&rf->iwdev->ibdev, "Requesting a reset\n");
-	rf->sc_dev.vchnl_up = false;
-	if (rf->sc_dev.hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_3)
-		rf->idpf_idc_request_reset_func(rf->cdev, IIDC_CORER);
-	else
-		cdev_info->ops->request_reset(rf->cdev, IIDC_CORER);
+		irdma_rblog_ibdev_warn(to_ibdev(dev),
+				       "MTU setting [%d] too low for RDMA traffic. Minimum MTU is 1280 for IPv6\\n",
+				       mtu);
 }
 
 /*
@@ -472,54 +440,6 @@ int irdma_vchnl_req_ceq_vec_map_gen2(struct irdma_sc_dev *dev, u16 ceq_id, u32 i
 						      true);
 }
 
-/*
- * irdma_lan_register_qset - Register qset with LAN driver
- * @vsi: vsi structure
- * @tc_node: Traffic class node
- */
-int irdma_lan_register_qset(struct irdma_sc_vsi *vsi,
-			    struct irdma_ws_node *tc_node)
-{
-	struct irdma_device *iwdev = vsi->back_vsi;
-	struct iidc_core_dev_info *cdev_info = iwdev->rf->cdev;
-	struct iidc_rdma_qset_params qset = {};
-	int ret;
-
-	qset.qs_handle = tc_node->qs_handle;
-	qset.tc = tc_node->traffic_class;
-	qset.vport_id = vsi->vsi_idx;
-	ret = cdev_info->ops->alloc_res(cdev_info, &qset);
-	if (ret) {
-		ibdev_dbg(&iwdev->ibdev, "WS: LAN alloc_res for rdma qset failed.\n");
-		return ret;
-	}
-
-	tc_node->l2_sched_node_id = qset.teid;
-	vsi->qos[tc_node->user_pri].l2_sched_node_id = qset.teid;
-
-	return 0;
-}
-
-/**
- * irdma_lan_unregister_qset - Unregister qset with LAN driver
- * @vsi: vsi structure
- * @tc_node: Traffic class node
- */
-void irdma_lan_unregister_qset(struct irdma_sc_vsi *vsi,
-			       struct irdma_ws_node *tc_node)
-{
-	struct irdma_device *iwdev = vsi->back_vsi;
-	struct iidc_core_dev_info *cdev_info = iwdev->rf->cdev;
-	struct iidc_rdma_qset_params qset = {};
-
-	qset.qs_handle = tc_node->qs_handle;
-	qset.tc = tc_node->traffic_class;
-	qset.vport_id = vsi->vsi_idx;
-	qset.teid = tc_node->l2_sched_node_id;
-
-	if (cdev_info->ops->free_res(cdev_info, &qset))
-		ibdev_dbg(&iwdev->ibdev, "WS: LAN free_res for rdma qset failed.\n");
-}
 void irdma_cleanup_dead_qps(struct irdma_sc_vsi *vsi)
 {
 	struct irdma_sc_qp *qp = NULL;
@@ -528,7 +448,7 @@ void irdma_cleanup_dead_qps(struct irdma_sc_vsi *vsi)
 	u8 i;
 
 	for (i = 0; i < IRDMA_MAX_USER_PRIORITY; i++) {
-		qp = irdma_get_qp_from_list(&vsi->qos[i].qplist, qp);
+		qp = irdma_get_qp_from_list(&vsi->qos[i].qplist, NULL);
 		while (qp) {
 			if (qp->qp_uk.qp_type == IRDMA_QP_TYPE_UDA) {
 				qp = irdma_get_qp_from_list(&vsi->qos[i].qplist, qp);
@@ -536,6 +456,11 @@ void irdma_cleanup_dead_qps(struct irdma_sc_vsi *vsi)
 			}
 			iwqp = qp->qp_uk.back_qp;
 			rf = iwqp->iwdev->rf;
+
+			/* Get next qp from list before removing and freeing current one */
+			qp = irdma_get_qp_from_list(&vsi->qos[i].qplist, qp);
+
+			irdma_qp_rem_qos(&iwqp->sc_qp);
 			dma_free_coherent(rf->hw.device,
 					  iwqp->q2_ctx_mem.size,
 					  iwqp->q2_ctx_mem.va,
@@ -546,7 +471,7 @@ void irdma_cleanup_dead_qps(struct irdma_sc_vsi *vsi)
 					  iwqp->kqp.dma_mem.pa);
 			kfree(iwqp->kqp.sq_wrid_mem);
 			kfree(iwqp->kqp.rq_wrid_mem);
-			qp = irdma_get_qp_from_list(&vsi->qos[i].qplist, qp);
+			kfree(iwqp->sg_list);
 			kfree(iwqp);
 		}
 	}
@@ -556,46 +481,55 @@ static int __init irdma_init_module(void)
 {
 	int ret;
 
-	pr_info("irdma driver version: %d.%d.%d\n", DRV_VER_MAJOR,
-		DRV_VER_MINOR, DRV_VER_BUILD);
+	/* Initialize Ring Buffer Log if selected */
+	if (log_backend == IRDMA_LOG_BACKEND_RBLOG) {
+		ret = irdma_rblog_init();
+		if (ret) {
+			pr_err("irdma: Failed to initialize Ring Buffer Log, ret=%d\n", ret);
+			return ret;
+		}
+	}
+
+	irdma_plog_pr_info("irdma driver version: %d.%d.%d\n", DRV_VER_MAJOR,
+			   DRV_VER_MINOR, DRV_VER_BUILD);
+
 	ret = irdma_init_dbg_and_configfs();
 	if (ret)
 		return ret;
-
 	ret = auxiliary_driver_register(&i40iw_auxiliary_drv);
 	if (ret) {
-		pr_err("Failed i40iw(gen_1) auxiliary_driver_register() ret=%d\n",
-		       ret);
+		irdma_rblog_pr_err("Failed i40iw(gen_1) auxiliary_driver_register() ret=%d\n",
+				   ret);
 		irdma_deinit_dbg_and_configfs();
 		return ret;
 	}
 
-	ret = auxiliary_driver_register(&icrdma_auxiliary_drv.adrv);
+	ret = auxiliary_driver_register(&icrdma_core_auxiliary_drv.adrv);
 	if (ret) {
 		auxiliary_driver_unregister(&i40iw_auxiliary_drv);
-		pr_err("Failed irdma auxiliary_driver_register() ret=%d\n",
-		       ret);
+		irdma_rblog_pr_err("Failed icrdma core auxiliary_driver_register() ret=%d\n",
+				   ret);
 		irdma_deinit_dbg_and_configfs();
 		return ret;
 	}
 
-	ret = auxiliary_driver_register(&ig3rdma_auxiliary_drv.adrv);
+	ret = auxiliary_driver_register(&ig3rdma_core_auxiliary_drv.adrv);
 	if (ret) {
 		auxiliary_driver_unregister(&i40iw_auxiliary_drv);
-		auxiliary_driver_unregister(&icrdma_auxiliary_drv.adrv);
-		pr_err("Failed irdma auxiliary_driver_register() ret=%d\n",
-		       ret);
+		auxiliary_driver_unregister(&icrdma_core_auxiliary_drv.adrv);
+		irdma_rblog_pr_err("Failed ig3rdma core auxiliary_driver_register() ret=%d\n",
+				   ret);
 		irdma_deinit_dbg_and_configfs();
 		return ret;
 	}
 
 	ret = auxiliary_driver_register(&ig3rdma_vport_auxiliary_drv.adrv);
 	if (ret) {
-		auxiliary_driver_unregister(&ig3rdma_auxiliary_drv.adrv);
-		auxiliary_driver_unregister(&icrdma_auxiliary_drv.adrv);
+		auxiliary_driver_unregister(&ig3rdma_core_auxiliary_drv.adrv);
+		auxiliary_driver_unregister(&icrdma_core_auxiliary_drv.adrv);
 		auxiliary_driver_unregister(&i40iw_auxiliary_drv);
-		pr_err("Failed irdma auxiliary_driver_register() ret=%d\n",
-		       ret);
+		irdma_rblog_pr_err("Failed ig3rdma vport auxiliary_driver_register() ret=%d\n",
+				   ret);
 		irdma_deinit_dbg_and_configfs();
 		return ret;
 	}
@@ -605,12 +539,19 @@ static int __init irdma_init_module(void)
 
 static void __exit irdma_exit_module(void)
 {
+	//auxiliary_driver_unregister(&ig3rdma_core_auxiliary_drv.adrv);
 	auxiliary_driver_unregister(&ig3rdma_vport_auxiliary_drv.adrv);
-	auxiliary_driver_unregister(&ig3rdma_auxiliary_drv.adrv);
-	auxiliary_driver_unregister(&icrdma_auxiliary_drv.adrv);
+	auxiliary_driver_unregister(&ig3rdma_core_auxiliary_drv.adrv);
+	//auxiliary_driver_unregister(&ig3rdma_vport_auxiliary_drv.adrv);
+	auxiliary_driver_unregister(&icrdma_core_auxiliary_drv.adrv);
 	auxiliary_driver_unregister(&i40iw_auxiliary_drv);
 	irdma_deinit_dbg_and_configfs();
+
+	/* Cleanup Ring Buffer Log if it was initialized */
+	if (log_backend == IRDMA_LOG_BACKEND_RBLOG)
+		irdma_rblog_cleanup();
 }
 
 module_init(irdma_init_module);
 module_exit(irdma_exit_module);
+

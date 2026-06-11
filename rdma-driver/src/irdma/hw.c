@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2015 - 2024 Intel Corporation */
+/* Copyright (c) 2015 - 2025 Intel Corporation */
 #include "main.h"
 
 extern unsigned int irdma_rca_rq_size;
@@ -60,12 +60,15 @@ static void irdma_puda_ce_handler(struct irdma_pci_f *rf,
 		if (status == -ENOENT)
 			break;
 		if (status) {
-			ibdev_dbg(to_ibdev(dev), "ERR: puda status = %d\n", status);
+			irdma_rblog_ibdev_dbg(to_ibdev(dev),
+					      "ERR: puda status = %d\n",
+					      status);
 			break;
 		}
 		if (compl_error) {
-			ibdev_dbg(to_ibdev(dev), "ERR: puda compl_err = 0x%x\n",
-				  compl_error);
+			irdma_rblog_ibdev_dbg(to_ibdev(dev),
+					      "ERR: puda compl_err = 0x%x\n",
+					      compl_error);
 			break;
 		}
 	} while (1);
@@ -92,14 +95,16 @@ static void irdma_process_normal_ceqe(struct irdma_pci_f *rf,
 
 	if (unlikely(!iwcq)) {
 		/* Should not happen since CEQ is scrubbed upon CQ delete */
-		ibdev_warn(to_ibdev(dev), "Stale CEQE for CQ %u", cq_idx);
+		irdma_rblog_ibdev_warn(to_ibdev(dev), "Stale CEQE for CQ %u",
+				       cq_idx);
 		return;
 	}
 
 	cq = &iwcq->sc_cq;
 
 	if (unlikely(cq->cq_type != IRDMA_CQ_TYPE_IWARP)) {
-		ibdev_warn(to_ibdev(dev), "Unexpected CQ type %u", cq->cq_type);
+		irdma_rblog_ibdev_warn(to_ibdev(dev), "Unexpected CQ type %u",
+				       cq->cq_type);
 		return;
 	}
 
@@ -132,7 +137,8 @@ static void irdma_process_reserved_ceqe(struct irdma_pci_f *rf,
 		cq = (cq_idx == IRDMA_RSVD_CQ_ID_ILQ) ?
 			dev->ilq_cq : dev->ieq_cq;
 		if (!cq) {
-			ibdev_warn(to_ibdev(dev), "Stale ILQ/IEQ CEQE");
+			irdma_rblog_ibdev_warn(to_ibdev(dev),
+					       "Stale ILQ/IEQ CEQE");
 			goto err;
 		}
 		irdma_sc_cq_ack(cq);
@@ -176,20 +182,21 @@ void irdma_process_ceq(struct irdma_pci_f *rf, struct irdma_ceq *ceq)
 }
 
 static void irdma_set_flush_fields(struct irdma_sc_qp *qp,
-				   struct irdma_aeqe_info *info,
-				   struct irdma_qp_host_ctx_info *ctx_info)
+				   struct irdma_aeqe_info *info)
 {
 	struct qp_err_code qp_err;
 
 	qp->sq_flush_code = info->sq;
 	qp->rq_flush_code = info->rq;
-	if (info->sq && qp->qp_uk.uk_attrs->hw_rev >= IRDMA_GEN_3) {
-		qp->err_sq_idx_valid = true;
-		qp->err_sq_idx = info->wqe_idx;
-	}
-	if (ctx_info->roce_info->err_rq_idx_valid && qp->qp_uk.uk_attrs->hw_rev >= IRDMA_GEN_3) {
-		qp->err_rq_idx_valid = true;
-		qp->err_rq_idx = ctx_info->roce_info->err_rq_idx;
+	if (qp->qp_uk.uk_attrs->hw_rev >= IRDMA_GEN_3) {
+		if (info->sq) {
+			qp->err_sq_idx_valid = true;
+			qp->err_sq_idx = info->wqe_idx;
+		}
+		if (info->rq) {
+			qp->err_rq_idx_valid = true;
+			qp->err_rq_idx = info->wqe_idx;
+		}
 	}
 
 	qp_err = irdma_ae_to_qp_err_code(info->ae_id);
@@ -209,7 +216,7 @@ static void irdma_set_flush_fields(struct irdma_sc_qp *qp,
 static void irdma_complete_cqp_request(struct irdma_cqp *cqp,
 				       struct irdma_cqp_request *cqp_request)
 {
-	atomic_set(&cqp_request->request_done, true);
+	WRITE_ONCE(cqp_request->request_done, true);
 	if (cqp_request->waiting)
 		wake_up(&cqp_request->waitq);
 	else if (cqp_request->callback_fcn)
@@ -276,7 +283,8 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 			break;
 
 		if (info->aeqe_overflow) {
-			ibdev_err(&iwdev->ibdev, "AEQ has overflowed\n");
+			irdma_rblog_ibdev_err(&iwdev->ibdev,
+					      "AEQ has overflowed\n");
 			rf->reset = true;
 			rf->irdma_initiated_reset = true;
 			rf->gen_ops.request_reset(rf);
@@ -286,11 +294,13 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 		aeqcnt++;
 		atomic_inc(&iwdev->ae_info.ae_cnt);
 
-		ibdev_dbg(&iwdev->ibdev,
-			  "AEQ: ae_id = 0x%x (%s), is_qp = %d, qp_id = %d, tcp_state = %d, iwarp_state = %d, ae_src = %d\n",
-			  info->ae_id, irdma_get_ae_desc(info->ae_id), info->qp,
-			  info->qp_cq_id, info->tcp_state, info->iwarp_state,
-			  info->ae_src);
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "AEQ: ae_id = 0x%x (%s), is_qp = %d, qp_id = %d, tcp_state = %d, iwarp_state = %d, ae_src = %d\n",
+				      info->ae_id,
+				      irdma_get_ae_desc(info->ae_id),
+				      info->qp, info->qp_cq_id,
+				      info->tcp_state, info->iwarp_state,
+				      info->ae_src);
 
 		if (info->qp) {
 #ifdef HAVE_XARRAY
@@ -315,8 +325,9 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 					wake_up(&iwdev->suspend_wq);
 					continue;
 				}
-				ibdev_dbg(&iwdev->ibdev, "AEQ: qp_id %d is already freed\n",
-					  info->qp_cq_id);
+				irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+						      "AEQ: qp_id %d is already freed\n",
+						      info->qp_cq_id);
 				continue;
 			}
 			irdma_qp_add_ref(&iwqp->ibqp);
@@ -336,8 +347,10 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 			}
 
 			spin_unlock_irqrestore(&iwqp->lock, flags);
+			ctx_info = &iwqp->ctx_info;
 		} else if (info->srq) {
-			if (info->ae_id != IRDMA_AE_SRQ_LIMIT)
+			if (info->ae_id != IRDMA_AE_SRQ_LIMIT &&
+			    info->ae_id != IRDMA_AE_SRQ_CATASTROPHIC_ERROR)
 				continue;
 		} else {
 			if (info->ae_id != IRDMA_AE_CQ_OPERATION_ERROR &&
@@ -408,16 +421,17 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 			break;
 		case IRDMA_AE_LCE_CQ_CATASTROPHIC:
 		case IRDMA_AE_CQ_OPERATION_ERROR:
-			ibdev_err(&iwdev->ibdev,
-				  "Processing CQ[0x%x] op error, AE 0x%04X\n",
-				  info->qp_cq_id, info->ae_id);
+			irdma_rblog_ibdev_err(&iwdev->ibdev,
+					      "Processing CQ[0x%x] op error, AE 0x%04X\n",
+					      info->qp_cq_id, info->ae_id);
 			spin_lock_irqsave(&rf->cqtable_lock, flags);
 			iwcq = rf->cq_table[info->qp_cq_id];
 			if (!iwcq) {
 				spin_unlock_irqrestore(&rf->cqtable_lock,
 						       flags);
-				ibdev_dbg(&iwdev->ibdev, "AEQ: cq_id %d is already freed\n",
-					  info->qp_cq_id);
+				irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+						      "AEQ: cq_id %d is already freed\n",
+						      info->qp_cq_id);
 				continue;
 			}
 			irdma_cq_add_ref(&iwcq->ibcq);
@@ -441,9 +455,9 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 			if (!iwsrq) {
 				spin_unlock_irqrestore(&rf->srqtable_lock,
 						       flags);
-				ibdev_dbg(&iwdev->ibdev,
-					  "AEQ: srq_id %lluu is already freed\n",
-					  srq_id);
+				irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+						      "AEQ: srq_id %lluu is already freed\n",
+						      srq_id);
 				continue;
 			}
 			irdma_srq_add_ref(&iwsrq->ibsrq);
@@ -463,10 +477,10 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 		case IRDMA_AE_LLP_DOUBT_REACHABILITY:
 			break;
 		case IRDMA_AE_RESOURCE_EXHAUSTION:
-			ibdev_err(&iwdev->ibdev,
-				  "Resource exhaustion reason: q1 = %d xmit or rreq = %d\n",
-				  info->ae_src == IRDMA_AE_SOURCE_RSRC_EXHT_Q1,
-				  info->ae_src == IRDMA_AE_SOURCE_RSRC_EXHT_XT_RR);
+			irdma_rblog_ibdev_err(&iwdev->ibdev,
+					      "Resource exhaustion reason: q1 = %d xmit or rreq = %d\n",
+					      info->ae_src == IRDMA_AE_SOURCE_RSRC_EXHT_Q1,
+					      info->ae_src == IRDMA_AE_SOURCE_RSRC_EXHT_XT_RR);
 			break;
 		case IRDMA_AE_PRIV_OPERATION_DENIED:
 		case IRDMA_AE_RDMAP_ROE_BAD_LLP_CLOSE:
@@ -495,7 +509,6 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 		case IRDMA_AE_RCE_QP_CATASTROPHIC:
 		case IRDMA_AE_UDA_XMIT_DGRAM_TOO_LONG:
 		default:
-			ctx_info = &iwqp->ctx_info;
 			if (rdma_protocol_roce(&iwqp->iwdev->ibdev, 1)) {
 				ctx_info->roce_info->err_rq_idx_valid =
 					ctx_info->srq_valid ? false : info->err_rq_idx_valid;
@@ -504,7 +517,7 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 					irdma_sc_qp_setctx_roce(&iwqp->sc_qp, iwqp->host_ctx.va,
 								ctx_info);
 				}
-				irdma_set_flush_fields(qp, info, ctx_info);
+				irdma_set_flush_fields(qp, info);
 				irdma_cm_disconn(iwqp);
 				break;
 			}
@@ -626,7 +639,8 @@ static int irdma_save_msix_info(struct irdma_pci_f *rf)
 	u32 size;
 
 	if (!rf->msix_count) {
-		ibdev_err(to_ibdev(&rf->sc_dev), "No MSI-X vectors reserved for RDMA.\n");
+		irdma_rblog_ibdev_err(to_ibdev(&rf->sc_dev),
+				      "No MSI-X vectors reserved for RDMA.\n");
 		return -EINVAL;
 	}
 
@@ -705,7 +719,8 @@ static void irdma_destroy_cqp(struct irdma_pci_f *rf, bool free_hwcqp)
 
 	status = irdma_sc_cqp_destroy(dev->cqp, free_hwcqp);
 	if (status)
-		ibdev_dbg(to_ibdev(dev), "ERR: Destroy CQP failed %d\n", status);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "ERR: Destroy CQP failed %d\n", status);
 
 	irdma_cleanup_pending_cqp_op(rf);
 	dma_free_coherent(dev->hw->device, cqp->sq.size, cqp->sq.va,
@@ -760,7 +775,8 @@ static void irdma_destroy_aeq(struct irdma_pci_f *rf)
 	aeq->sc_aeq.size = 0;
 	status = irdma_cqp_aeq_cmd(dev, &aeq->sc_aeq, IRDMA_OP_AEQ_DESTROY);
 	if (status)
-		ibdev_dbg(to_ibdev(dev), "ERR: Destroy AEQ failed %d\n", status);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "ERR: Destroy AEQ failed %d\n", status);
 
 exit:
 	if (aeq->virtual_map)
@@ -790,14 +806,17 @@ static void irdma_destroy_ceq(struct irdma_pci_f *rf, struct irdma_ceq *iwceq)
 
 	status = irdma_sc_ceq_destroy(&iwceq->sc_ceq, 0, 1);
 	if (status) {
-		ibdev_dbg(to_ibdev(dev), "ERR: CEQ destroy command failed %d\n", status);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "ERR: CEQ destroy command failed %d\n",
+				      status);
 		goto exit;
 	}
 
 	status = irdma_sc_cceq_destroy_done(&iwceq->sc_ceq);
 	if (status)
-		ibdev_dbg(to_ibdev(dev), "ERR: CEQ destroy completion failed %d\n",
-			  status);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "ERR: CEQ destroy completion failed %d\n",
+				      status);
 exit:
 	dma_free_coherent(dev->hw->device, iwceq->mem.size, iwceq->mem.va,
 			  iwceq->mem.pa);
@@ -890,7 +909,8 @@ static void irdma_destroy_ccq(struct irdma_pci_f *rf)
 	if (!rf->reset)
 		status = irdma_sc_ccq_destroy(dev->ccq, 0, true);
 	if (status)
-		ibdev_dbg(to_ibdev(dev), "ERR: CCQ destroy failed %d\n", status);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "ERR: CCQ destroy failed %d\n", status);
 	dma_free_coherent(dev->hw->device, ccq->mem_cq.size, ccq->mem_cq.va,
 			  ccq->mem_cq.pa);
 	ccq->mem_cq.va = NULL;
@@ -916,8 +936,9 @@ static void irdma_close_hmc_objects_type(struct irdma_sc_dev *dev,
 	info.count = hmc_info->hmc_obj[obj_type].cnt;
 	info.privileged = privileged;
 	if (irdma_sc_del_hmc_obj(dev, &info, reset))
-		ibdev_dbg(to_ibdev(dev), "ERR: del HMC obj of type %d failed\n",
-			  obj_type);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "ERR: del HMC obj of type %d failed\n",
+				      obj_type);
 }
 
 /**
@@ -983,9 +1004,10 @@ static int irdma_create_hmc_objs(struct irdma_pci_f *rf, bool privileged,
 			info.add_sd_cnt = 0;
 			status = irdma_create_hmc_obj_type(dev, &info);
 			if (status) {
-				ibdev_dbg(to_ibdev(dev),
-					  "ERR: create obj type %d status = %d\n",
-					  iw_hmc_obj_types[i], status);
+				irdma_rblog_ibdev_dbg(to_ibdev(dev),
+						      "ERR: create obj type %d status = %d\n",
+						      iw_hmc_obj_types[i],
+						      status);
 				break;
 			}
 		}
@@ -1054,7 +1076,6 @@ static int irdma_alloc_cqp_rq(struct irdma_sc_dev *dev, struct irdma_cqp *cqp,
 			      struct irdma_cqp_init_info *info, u32 rqsize)
 {
 	cqp->rqe_array = kcalloc(rqsize, sizeof(*cqp->rqe_array), GFP_KERNEL);
-	// add RQ support, conditional, Need buffers too...  Can we leverage UDA code?
 	if (!cqp->rqe_array)
 		return -ENOMEM;
 
@@ -1102,7 +1123,7 @@ error:
  */
 static int irdma_create_cqp(struct irdma_pci_f *rf)
 {
-	u32 sqsize = IRDMA_CQP_SW_SQSIZE_2048;
+	u32 sqsize = IRDMA_CQP_SW_SQSIZE_MAX;
 	u32 rqsize = irdma_rca_rq_size;
 	struct irdma_dma_mem mem;
 	struct irdma_sc_dev *dev = &rf->sc_dev;
@@ -1151,9 +1172,6 @@ static int irdma_create_cqp(struct irdma_pci_f *rf)
 		status = irdma_alloc_cqp_rq(dev, cqp, &cqp_init_info, rqsize);
 		if (status)
 			goto err_rq;
-		cqp_init_info.cqp_type = IRDMA_CQP_TYPE_RCA;
-	} else {
-		cqp_init_info.cqp_type = IRDMA_CQP_TYPE_PRIMARY;
 	}
 
 	status = irdma_obj_aligned_mem(rf, &mem, sizeof(struct irdma_cqp_ctx),
@@ -1177,6 +1195,9 @@ static int irdma_create_cqp(struct irdma_pci_f *rf)
 	cqp_init_info.scratch_array = cqp->scratch_array;
 	cqp_init_info.rq_scratch_array = cqp->rq_scratch_array;
 	cqp_init_info.protocol_used = rf->protocol_used;
+	/* When changing protocol_used for CRT, then also need to change
+	 * the rf->protocol_used to match.
+	 */
 	cqp_init_info.en_rem_endpoint_trk = rf->en_rem_endpoint_trk;
 	cqp_init_info.timer_slots = rf->timer_slots;
 	memcpy(&cqp_init_info.dcqcn_params, &rf->dcqcn_params,
@@ -1200,7 +1221,8 @@ static int irdma_create_cqp(struct irdma_pci_f *rf)
 	}
 	status = irdma_sc_cqp_init(dev->cqp, &cqp_init_info);
 	if (status) {
-		ibdev_dbg(to_ibdev(dev), "ERR: cqp init status %d\n", status);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "ERR: cqp init status %d\n", status);
 		goto err_ctx;
 	}
 
@@ -1209,9 +1231,9 @@ static int irdma_create_cqp(struct irdma_pci_f *rf)
 
 	status = irdma_sc_cqp_create(dev->cqp, &maj_err, &min_err);
 	if (status) {
-		ibdev_dbg(to_ibdev(dev),
-			  "ERR: cqp create failed - status %d maj_err %d min_err %d\n",
-			  status, maj_err, min_err);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "ERR: cqp create failed - status %d maj_err %d min_err %d\n",
+				      status, maj_err, min_err);
 		goto err_ctx;
 	}
 
@@ -1362,7 +1384,8 @@ static int irdma_cfg_ceq_vector(struct irdma_pci_f *rf, struct irdma_ceq *iwceq,
 	cpumask_set_cpu(msix_vec->cpu_affinity, &msix_vec->mask);
 	irq_update_affinity_hint(msix_vec->irq, &msix_vec->mask);
 	if (status) {
-		ibdev_dbg(&rf->iwdev->ibdev, "ERR: ceq irq config fail\n");
+		irdma_rblog_ibdev_dbg(&rf->iwdev->ibdev,
+				      "ERR: ceq irq config fail\n");
 		return status;
 	}
 
@@ -1401,7 +1424,8 @@ static int irdma_cfg_aeq_vector(struct irdma_pci_f *rf)
 	}
 
 	if (status) {
-		ibdev_dbg(&rf->iwdev->ibdev, "ERR: aeq irq config fail\n");
+		irdma_rblog_ibdev_dbg(&rf->iwdev->ibdev,
+				      "ERR: aeq irq config fail\n");
 		return status;
 	}
 
@@ -1497,8 +1521,8 @@ static int irdma_setup_ceq_0(struct irdma_pci_f *rf)
 	iwceq = &rf->ceqlist[0];
 	status = irdma_create_ceq(rf, iwceq, 0, &rf->default_vsi);
 	if (status) {
-		ibdev_dbg(&rf->iwdev->ibdev, "ERR: create ceq status = %d\n",
-			  status);
+		irdma_rblog_ibdev_dbg(&rf->iwdev->ibdev,
+				      "ERR: create ceq status = %d\n", status);
 		goto exit;
 	}
 
@@ -1557,8 +1581,9 @@ static int irdma_setup_ceqs(struct irdma_pci_f *rf, struct irdma_sc_vsi *vsi)
 		iwceq = &rf->ceqlist[ceq_id];
 		status = irdma_create_ceq(rf, iwceq, ceq_id, vsi);
 		if (status) {
-			ibdev_dbg(&rf->iwdev->ibdev,
-				  "ERR: create ceq status = %d\n", status);
+			irdma_rblog_ibdev_dbg(&rf->iwdev->ibdev,
+					      "ERR: create ceq status = %d\n",
+					      status);
 			goto del_ceqs;
 		}
 		spin_lock_init(&iwceq->ce_lock);
@@ -1744,7 +1769,7 @@ static int irdma_initialize_ilq(struct irdma_device *iwdev)
 	info.xmit_complete = irdma_free_sqbuf;
 	status = irdma_puda_create_rsrc(&iwdev->vsi, &info);
 	if (status)
-		ibdev_dbg(&iwdev->ibdev, "ERR: ilq create fail\n");
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev, "ERR: ilq create fail\n");
 
 	return status;
 }
@@ -1772,7 +1797,7 @@ static int irdma_initialize_ieq(struct irdma_device *iwdev)
 	info.tx_buf_cnt = 4096;
 	status = irdma_puda_create_rsrc(&iwdev->vsi, &info);
 	if (status)
-		ibdev_dbg(&iwdev->ibdev, "ERR: ieq create fail\n");
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev, "ERR: ieq create fail\n");
 
 	return status;
 }
@@ -1931,7 +1956,8 @@ error:
 void irdma_rt_deinit_hw(struct irdma_device *iwdev)
 {
 	struct irdma_sc_qp qp = {};
-	ibdev_dbg(&iwdev->ibdev, "INIT: state = %d\n", iwdev->init_state);
+	irdma_rblog_ibdev_dbg(&iwdev->ibdev, "INIT: state = %d\n",
+		              iwdev->init_state);
 
 	switch (iwdev->init_state) {
 	case IP_ADDR_REGISTERED:
@@ -1962,7 +1988,8 @@ void irdma_rt_deinit_hw(struct irdma_device *iwdev)
 					     iwdev->rf->reset);
 		break;
 	default:
-		ibdev_warn(&iwdev->ibdev, "bad init_state = %d\n", iwdev->init_state);
+		irdma_rblog_ibdev_warn(&iwdev->ibdev, "bad init_state = %d\n",
+				       iwdev->init_state);
 		break;
 	}
 
@@ -2068,7 +2095,9 @@ void irdma_ctrl_deinit_hw(struct irdma_pci_f *rf)
 		break;
 	case INVALID_STATE:
 	default:
-		ibdev_warn(&rf->iwdev->ibdev, "bad init_state = %d\n", rf->init_state);
+		irdma_rblog_ibdev_warn(&rf->iwdev->ibdev,
+				       "bad init_state = %d\n",
+				       rf->init_state);
 		break;
 	}
 }
@@ -2099,6 +2128,7 @@ int irdma_rt_init_hw(struct irdma_device *iwdev,
 
 	vsi_info.register_qset = rf->gen_ops.register_qset;
 	vsi_info.unregister_qset = rf->gen_ops.unregister_qset;
+	vsi_info.lag_aa = iwdev->lag_mode == IRDMA_LAG_ACTIVE_ACTIVE;
 	vsi_info.exception_lan_q = IRDMA_RSVD_QP_ID_IEQ;
 	irdma_sc_vsi_init(&iwdev->vsi, &vsi_info);
 
@@ -2164,8 +2194,8 @@ int irdma_rt_init_hw(struct irdma_device *iwdev,
 			iwdev->init_state = AEQ_CREATED;
 			rf->rsrc_created = true;
 			if (!atomic_read(&rf->ceq0_int_good)) {
-				dev_err(&rf->pcidev->dev,
-				       "irdma: No CEQ-0 interrupt detected, falling back to poll mode\n");
+				irdma_rblog_dev_err(&rf->pcidev->dev,
+						    "irdma: No CEQ-0 interrupt detected, falling back to poll mode\n");
 				atomic_set(&rf->ceq0_wa_enable, 1);
 			}
 		}
@@ -2185,11 +2215,13 @@ int irdma_rt_init_hw(struct irdma_device *iwdev,
 		irdma_get_used_rsrc(iwdev);
 		init_waitqueue_head(&iwdev->suspend_wq);
 
-		return 0;
+		if (1)
+			return 0;
 	} while (0);
 
-	dev_err(&rf->pcidev->dev, "HW runtime init FAIL status = %d last cmpl = %d\n",
-		status, iwdev->init_state);
+	irdma_rblog_dev_err(&rf->pcidev->dev,
+			    "HW runtime init FAIL status = %d last cmpl = %d\n",
+			    status, iwdev->init_state);
 	irdma_rt_deinit_hw(iwdev);
 
 	return status;
@@ -2244,7 +2276,7 @@ int irdma_ctrl_init_hw(struct irdma_pci_f *rf)
 			break;
 		rf->init_state = CEQ0_CREATED;
 		/* Handles processing of CQP completions */
-		rf->cqp_cmpl_wq = alloc_ordered_workqueue("cqp_cmpl_wq",
+		rf->cqp_cmpl_wq = alloc_ordered_workqueue("irdma-cqp_cmpl_wq",
 							  WQ_HIGHPRI | WQ_UNBOUND);
 		if (!rf->cqp_cmpl_wq) {
 			status = -ENOMEM;
@@ -2254,11 +2286,12 @@ int irdma_ctrl_init_hw(struct irdma_pci_f *rf)
 		if (dev->hw_wa & CCQ_CQ3_POLL)
 			return 0;
 		irdma_sc_ccq_arm(dev->ccq);
-		return 0;
+		if (1)
+			return 0;
 	} while (0);
 
-	pr_err("IRDMA hardware initialization FAILED init_state=%d status=%d\n",
-	       rf->init_state, status);
+	irdma_rblog_pr_err("IRDMA hardware initialization FAILED init_state=%d status=%d\n",
+			   rf->init_state, status);
 	irdma_ctrl_deinit_hw(rf);
 	return status;
 }
@@ -2408,13 +2441,58 @@ mem_rsrc_vmalloc_fail:
 }
 
 /**
+ * irdma_rca_ret_cmpl - return cqp completion to source function
+ * @dev: hardware control device structure
+ * @orig_hmc_fcn_id: HMC function index of the source function
+ * @orig_wq_desc_idx: WQE_Desc_Index from CQP operation in the source function
+ * @op_ret_val: operation return value
+ * @deferred_info: out-of-order completion ID
+ * @maj_err_code: major error code
+ * @min_err_code: minor error code
+ * @op_code: forwarded CQP op code
+ * @ooo_cmpl: true for out-of-order completion (for earlier pending one)
+ * @pending: true for pending completion (should be false if OOO is true)
+ */
+static
+void irdma_rca_ret_cmpl(struct irdma_sc_dev *dev,
+			 u16 orig_hmc_fcn_id, u16 orig_wq_desc_idx,
+			 u16 op_ret_val, u32 deferred_info,
+			 u16 maj_err_code, u16 min_err_code,
+			 u8 op_code, bool ooo_cmpl, bool pending)
+{
+	struct irdma_ret_cqp_cmpl_info info = {};
+	bool error = (maj_err_code != IRDMA_CQPSQ_MAJ_NO_ERROR);
+	int ret;
+
+	info.hmc_fcn_id = orig_hmc_fcn_id;
+	info.pending = pending && !ooo_cmpl;
+
+	info.cqe_values[0] =
+		FIELD_PREP(IRDMA_CQ_HMC_FCN_ID, orig_hmc_fcn_id) |
+		FIELD_PREP(IRDMA_CQ_WQEIDX, orig_wq_desc_idx);
+	info.cqe_values[2] =
+		FIELD_PREP(IRDMA_CCQ_DEFINFO, deferred_info) |
+		FIELD_PREP(IRDMA_CCQ_OPRETVAL, op_ret_val);
+	info.cqe_values[3] =
+		FIELD_PREP(IRDMA_CQ_SQ, 1) |
+		FIELD_PREP(IRDMACQ_OP, op_code) |
+		FIELD_PREP(IRDMA_OOO_CMPL, ooo_cmpl) |
+		FIELD_PREP(IRDMA_CQ_WQEIDX, orig_wq_desc_idx) |
+		FIELD_PREP(IRDMA_CQ_ERROR, error) |
+		FIELD_PREP(IRDMA_CQ_MAJERR, maj_err_code) |
+		FIELD_PREP(IRDMA_CQ_MINERR, min_err_code);
+
+	ret = irdma_cqp_ret_cqp_cmpl(dev, &info);
+	if (ret) {
+		irdma_rblog_pr_err("cannot sent completion back to source function!");
+	}
+}
+
+/**
  * irdma_cqp_ce_handler_rca - handle cqp completions for forwarded CQP ops
  * @rf: RDMA PCI function
  * @cq: cq for cqp completions
  * @info: completion info
- *
- * This routine is only used for testing, where the driver running
- * on an APF (e.g. ACC) acts as an RCA.
  */
 static
 void irdma_cqp_ce_handler_rca(struct irdma_pci_f *rf, struct irdma_sc_cq *cq,
@@ -2423,35 +2501,30 @@ void irdma_cqp_ce_handler_rca(struct irdma_pci_f *rf, struct irdma_sc_cq *cq,
 	struct irdma_sc_dev *dev = &rf->sc_dev;
 	struct irdma_cqp_rqe_bufs *rqe =
 		(struct irdma_cqp_rqe_bufs *)(uintptr_t)info->scratch;
-	struct irdma_ret_cqp_cmpl_info rcacmplinfo = {};
 	struct irdma_rca_exec_fwd_op_info fwd_op_info = {};
 
-	static u16 uniq_ooo_id = 0x1000;
+	static u32 uniq_ooo_id = 0x1000;
 
 	__le64 *wqe = rqe->small_buf.va;
 	u64 temp;
-	u16 op;
-	u16 orig_hmc_fcn_id;
-	u16 orig_wq_desc_idx;
-	u16 op_ret_val;
-	u16 deferred_info = 0;
+	u32 deferred_info = 0;
 	u16 maj_err_code;
 	u16 min_err_code;
-	int error;
 	int pending = 1;	/* return pending completion first */
-	int execute = 1;	/* execute on behalf on originating function */
+	int execute = 1;	/* execute on behalf of originating function */
+	u8 op;
 
 	struct irdma_device *iwdev = rf->iwdev;
 
 	if (!iwdev) {
-		pr_err("irdma_device not found!\n");
+		irdma_rblog_pr_err("irdma_device not found!\n");
 		return;
 	}
 
 	if (info->error)
-		ibdev_err(&rf->iwdev->ibdev,
-			  "CQP: [Error] maj=0x%x min=0x%x\n",
-			  info->maj_err_code, info->min_err_code);
+		irdma_rblog_ibdev_err(&rf->iwdev->ibdev,
+				      "CQP: [Error] maj=0x%x min=0x%x\n",
+				      info->maj_err_code, info->min_err_code);
 
 	/* These error codes indicate that one of the functions with CQP op
 	 * forwarding enabled is being reset.  It means there is no forwarded
@@ -2460,142 +2533,99 @@ void irdma_cqp_ce_handler_rca(struct irdma_pci_f *rf, struct irdma_sc_cq *cq,
 	 * for given function, as there will be no final completions for them.
 	 */
 	if (info->maj_err_code == 0xf002 && info->min_err_code == 0x0001) {
-		ibdev_err(&rf->iwdev->ibdev,
-			  "CQP: [RCA Function Reset Error] maj=0x%x min=0x%x hmc_fcn_id=%u\n",
-			  info->maj_err_code, info->min_err_code,
-			  info->orig_hmc_fcn_id);
-
+		irdma_rblog_ibdev_err(&rf->iwdev->ibdev,
+				      "CQP: [RCA Function Reset Error] maj=0x%x min=0x%x hmc_fcn_id=%u\n",
+				      info->maj_err_code, info->min_err_code,
+				      info->orig_hmc_fcn_id);
 		/* TBD: clean up pending list */
+		/* TBD: in case of PFR, invalidate also VFs */
 		return;
 	}
-
-	execute = (rf->rca_config & IRDMA_RCA_CFG_EXECUTE) != 0;
-	pending |= (rf->rca_config & IRDMA_RCA_CFG_PENDING) != 0;
-	pending &= (rf->rca_config & IRDMA_RCA_CFG_NO_PENDING) == 0;
-
-	print_hex_dump_debug("CQP: FORWARDED CQP WQE ",
-			     DUMP_PREFIX_OFFSET, 16, 8,
-			     rqe->small_buf.va,
-			     IRDMA_CQP_RQ_SMALL_BUF_SZ, false);
-	print_hex_dump_debug("CQP: FORWARDED CQP DATA ",
-			     DUMP_PREFIX_OFFSET, 16, 8,
-			     rqe->large_buf.va,
-			     IRDMA_CQP_RQ_LARGE_BUF_SZ, false);
-
-	/* Extract originating function index, WQ desc index and CQP opcode
-	 * from the forwarded WQE.
-	 */
-	get_64bit_val(wqe, 0, &temp);
-	orig_hmc_fcn_id = info->orig_hmc_fcn_id;
-	orig_wq_desc_idx = info->orig_wq_desc_idx;
 
 	get_64bit_val(wqe, 24, &temp);
 	op = (u16)FIELD_GET(IRDMA_CQPSQ_OPCODE, temp);
 
-	rcacmplinfo.rqe_idx = info->rqe_idx;
+	irdma_rblog_hex_dump("CQP: FORWARDED CQP WQE ", DUMP_PREFIX_OFFSET,
+			     16, 8, rqe->small_buf.va,
+			     IRDMA_CQP_RQ_SMALL_BUF_SZ, false);
 
-	/* issue command to local CQP for the function */
-	rcacmplinfo.hmc_fcn_id = orig_hmc_fcn_id;
-	rcacmplinfo.pending = pending;
+	if (op == IRDMA_CQP_OP_CREATE_QP || op == IRDMA_CQP_OP_MODIFY_QP) {
+		irdma_rblog_hex_dump("CQP: FORWARDED CQP DATA ",
+				     DUMP_PREFIX_OFFSET, 16, 8,
+				     rqe->large_buf.va,
+				     IRDMA_CQP_RQ_LARGE_BUF_SZ, false);
+	}
 
-	rcacmplinfo.cqe_values[0] =
-		FIELD_PREP(IRDMA_CQ_HMC_FCN_ID, orig_hmc_fcn_id) |
-		FIELD_PREP(IRDMA_CQ_WQEIDX, orig_wq_desc_idx);
+	execute = (rf->rca_config & IRDMA_RCA_CFG_EXECUTE) != 0;
+	/* optionally enforce or disable pending completion */
+	pending |= (rf->rca_config & IRDMA_RCA_CFG_PENDING) != 0;
+	pending &= (rf->rca_config & IRDMA_RCA_CFG_NO_PENDING) == 0;
+	rf->cqp.rca_stats[RCA_RQ_RCVD]++;
+	rf->cqp.rca_stats[RCA_LAST_RCVD_OP] = op;
+	rf->cqp.rca_stats[RCA_LAST_RCVD_PMF] = info->orig_hmc_fcn_id;
+	rf->cqp.rca_rcvd_ops[op]++;
 
-	/* QP_Completion Contex is filled by CQP */
-	rcacmplinfo.cqe_values[1] = 0x0000000000000000;
+	irdma_rblog_ibdev_dbg(&iwdev->ibdev, "RCA: op %d exec %d pend %d\n",
+			      op, execute, pending);
+	irdma_rblog_ibdev_dbg(&iwdev->ibdev, "RCA: wqe %08lx\n",
+			      (uintptr_t)rqe->small_buf.va);
 
 	/* return pending completion first */
 	if (pending) {
-		op_ret_val = 0;
 		deferred_info = uniq_ooo_id++;
 
-		rcacmplinfo.cqe_values[2] =
-			FIELD_PREP(IRDMA_CCQ_DEFINFO, deferred_info) |
-			FIELD_PREP(IRDMA_CCQ_OPRETVAL, op_ret_val);
-
-		/* TBD: Major/minor error codes are populated/overwritten
-		 * by CQP, but we set them here as a WA for a bug in older
-		 * versions of Simics.
-		 */
-		rcacmplinfo.cqe_values[3] =
-			FIELD_PREP(IRDMA_CQ_SQ, 1) |
-			FIELD_PREP(IRDMACQ_OP, op) |
-			FIELD_PREP(IRDMA_OOO_CMPL, 0) |
-			FIELD_PREP(IRDMA_CQ_WQEIDX, orig_wq_desc_idx) |
-			FIELD_PREP(IRDMA_CQ_ERROR, 0) |
-			FIELD_PREP(IRDMA_CQ_MAJERR, IRDMA_CQPSQ_MAJ_NO_ERROR) |
-			FIELD_PREP(IRDMA_CQ_MINERR, IRDMA_CQPSQ_MIN_OOO_CMPL);
-
-		irdma_cqp_ret_cqp_cmpl(dev, &rcacmplinfo);
+		irdma_rca_ret_cmpl(dev, info->orig_hmc_fcn_id,
+				   info->orig_wq_desc_idx, 0, deferred_info,
+				   IRDMA_CQPSQ_MAJ_NO_ERROR,
+				   IRDMA_CQPSQ_MIN_OOO_CMPL,
+				   op, false, true);
 	}
 
 	if (execute) {
 		switch (op) {
 		case IRDMA_CQP_OP_NOP:
-			op_ret_val = 0;
-			error = 0;
 			maj_err_code = IRDMA_CQPSQ_MAJ_NO_ERROR;
 			min_err_code = 0;
 			break;
 
 		case IRDMA_CQP_OP_REG_MR:
+		case IRDMA_CQP_OP_UPLOAD_CONTEXT:
 		case IRDMA_CQP_OP_CREATE_ADDR_HANDLE:
 		case IRDMA_CQP_OP_MODIFY_ADDR_HANDLE:
 		case IRDMA_CQP_OP_DESTROY_ADDR_HANDLE:
-		case IRDMA_CQP_OP_UPLOAD_CONTEXT:
 		case IRDMA_CQP_OP_CREATE_QP:
 		case IRDMA_CQP_OP_MODIFY_QP:
 		case IRDMA_CQP_OP_DESTROY_QP:
 			memcpy(&fwd_op_info.wqe, wqe, sizeof(fwd_op_info.wqe));
 
-			fwd_op_info.rqe_idx = info->rqe_idx;
-			fwd_op_info.orig_hmc_fcn_id = orig_hmc_fcn_id;
-			fwd_op_info.orig_wq_desc_idx = orig_wq_desc_idx;
+			fwd_op_info.orig_hmc_fcn_id = info->orig_hmc_fcn_id;
+			fwd_op_info.orig_wq_desc_idx = info->orig_wq_desc_idx;
 			fwd_op_info.deferred_info = deferred_info;
 			fwd_op_info.op_code = op;
 			fwd_op_info.pending = pending;
 			fwd_op_info.buf_addr = rqe->large_buf.pa;
 			fwd_op_info.scratch = info->scratch;
+			fwd_op_info.free_buf = false;
+
 			irdma_cqp_rca_exec_fwd_op(dev, &fwd_op_info);
 			/* completion will be sent back by RCA callback */
 			return;
 
 		default:
-			op_ret_val = 0;
-			error = 1;
 			maj_err_code = IRDMA_CQPSQ_MAJ_ERROR;
 			min_err_code = 0xFFF1;
 			break;
 		}
 	} else {
-		op_ret_val = 0;
-		error = 1;
 		maj_err_code = IRDMA_CQPSQ_MAJ_ERROR;
 		min_err_code = 0xFFF0;
 	}
 
 	/* return final completion */
-	rcacmplinfo.pending = 0;
-
-	/* build CQE in return WQE */
-	rcacmplinfo.cqe_values[2] =
-		FIELD_PREP(IRDMA_CCQ_DEFINFO, deferred_info) |
-		FIELD_PREP(IRDMA_CCQ_OPRETVAL, op_ret_val);
-
-	rcacmplinfo.cqe_values[3] =
-		FIELD_PREP(IRDMA_CQ_SQ, 1) |
-		FIELD_PREP(IRDMACQ_OP, op) |
-		FIELD_PREP(IRDMA_OOO_CMPL, pending) |
-		FIELD_PREP(IRDMA_CQ_WQEIDX, orig_wq_desc_idx) |
-		FIELD_PREP(IRDMA_CQ_ERROR, error) |
-		FIELD_PREP(IRDMA_CQ_MAJERR, maj_err_code) |
-		FIELD_PREP(IRDMA_CQ_MINERR, min_err_code);
-
-	/* submit request, non waiting... */
-	irdma_cqp_ret_cqp_cmpl(dev, &rcacmplinfo);
-
-	irdma_sc_cqp_post_rq(dev->cqp, info->scratch);
+	irdma_rca_ret_cmpl(dev, info->orig_hmc_fcn_id,
+			   info->orig_wq_desc_idx, 0, deferred_info,
+			   maj_err_code, min_err_code,
+			   op, pending, false);
 }
 
 /**
@@ -2632,10 +2662,10 @@ void irdma_cqp_ce_handler(struct irdma_pci_f *rf, struct irdma_sc_cq *cq)
 						     cqp_request->info.cqp_cmd,
 						     info.maj_err_code,
 						     info.min_err_code))
-			ibdev_err(&rf->iwdev->ibdev,
-				  "cqp opcode = 0x%x maj_err_code = 0x%x min_err_code = 0x%x\n",
-				  info.op_code, info.maj_err_code,
-				  info.min_err_code);
+			irdma_rblog_ibdev_err(&rf->iwdev->ibdev,
+					      "cqp opcode = 0x%x maj_err_code = 0x%x min_err_code = 0x%x\n",
+					      info.op_code, info.maj_err_code,
+					      info.min_err_code);
 
 		if (cqp_request) {
 			cqp_request->compl_info.maj_err_code =
@@ -2859,8 +2889,9 @@ static int irdma_cqp_manage_apbvt_cmd(struct irdma_device *iwdev,
 	cqp_info->post_sq = 1;
 	cqp_info->in.u.manage_apbvt_entry.cqp = &iwdev->rf->cqp.sc_cqp;
 	cqp_info->in.u.manage_apbvt_entry.scratch = (uintptr_t)cqp_request;
-	ibdev_dbg(&iwdev->ibdev, "DEV: %s: port=0x%04x\n",
-		  (!add_port) ? "DELETE" : "ADD", accel_local_port);
+	irdma_rblog_ibdev_dbg(&iwdev->ibdev, "DEV: %s: port=0x%04x\n",
+			      (!add_port) ? "DELETE" : "ADD",
+			      accel_local_port);
 
 	status = irdma_handle_cqp_op(iwdev->rf, cqp_request);
 	irdma_put_cqp_request(&iwdev->rf->cqp, cqp_request);
@@ -3085,21 +3116,23 @@ int irdma_manage_qhash(struct irdma_device *iwdev, struct irdma_cm_info *cminfo,
 			irdma_add_ref_cmnode(cm_node);
 	}
 	if (info->ipv4_valid)
-		ibdev_dbg(&iwdev->ibdev,
-			  "CM: %s caller: %pS loc_port=0x%04x rem_port=0x%04x loc_addr=%pI4 rem_addr=%pI4 mac=%pM, vlan_id=%d cm_node=%p\n",
-			  (!mtype) ? "DELETE" : "ADD",
-			  __builtin_return_address(0), info->src_port,
-			  info->dest_port, info->src_ip, info->dest_ip,
-			  info->mac_addr, cminfo->vlan_id,
-			  cmnode ? cmnode : NULL);
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "CM: %s caller: %pS loc_port=0x%04x rem_port=0x%04x loc_addr=%pI4 rem_addr=%pI4 mac=%pM, vlan_id=%d cm_node=%p\n",
+				      (!mtype) ? "DELETE" : "ADD",
+				      __builtin_return_address(0),
+				      info->dest_port, info->src_port,
+				      info->dest_ip, info->src_ip,
+				      info->mac_addr, cminfo->vlan_id,
+				      cmnode ? cmnode : NULL);
 	else
-		ibdev_dbg(&iwdev->ibdev,
-			  "CM: %s caller: %pS loc_port=0x%04x rem_port=0x%04x loc_addr=%pI6 rem_addr=%pI6 mac=%pM, vlan_id=%d cm_node=%p\n",
-			  (!mtype) ? "DELETE" : "ADD",
-			  __builtin_return_address(0), info->src_port,
-			  info->dest_port, info->src_ip, info->dest_ip,
-			  info->mac_addr, cminfo->vlan_id,
-			  cmnode ? cmnode : NULL);
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "CM: %s caller: %pS loc_port=0x%04x rem_port=0x%04x loc_addr=%pI6 rem_addr=%pI6 mac=%pM, vlan_id=%d cm_node=%p\n",
+				      (!mtype) ? "DELETE" : "ADD",
+				      __builtin_return_address(0),
+				      info->dest_port, info->src_port,
+				      info->dest_ip, info->src_ip,
+				      info->mac_addr, cminfo->vlan_id,
+				      cmnode ? cmnode : NULL);
 
 	cqp_info->in.u.manage_qhash_table_entry.cqp = &iwdev->rf->cqp.sc_cqp;
 	cqp_info->in.u.manage_qhash_table_entry.scratch = (uintptr_t)cqp_request;
@@ -3169,11 +3202,13 @@ int irdma_hw_flush_wqes(struct irdma_pci_f *rf, struct irdma_sc_qp *qp,
 		}
 	}
 
-	ibdev_dbg(&rf->iwdev->ibdev,
-		  "VERBS: qp_id=%d qp_type=%d qpstate=%d ibqpstate=%d last_aeq=%d hw_iw_state=%d maj_err_code=%d min_err_code=%d\n",
-		  iwqp->ibqp.qp_num, rf->protocol_used, iwqp->iwarp_state,
-		  iwqp->ibqp_state, iwqp->last_aeq, iwqp->hw_iwarp_state,
-		  cqp_request->compl_info.maj_err_code, cqp_request->compl_info.min_err_code);
+	irdma_rblog_ibdev_dbg(&rf->iwdev->ibdev,
+			      "VERBS: qp_id=%d qp_type=%d qpstate=%d ibqpstate=%d last_aeq=%d hw_iw_state=%d maj_err_code=%d min_err_code=%d\n",
+			      iwqp->ibqp.qp_num, rf->protocol_used,
+			      iwqp->iwarp_state, iwqp->ibqp_state,
+			      iwqp->last_aeq, iwqp->hw_iwarp_state,
+			      cqp_request->compl_info.maj_err_code,
+			      cqp_request->compl_info.min_err_code);
 put_cqp:
 	irdma_put_cqp_request(&rf->cqp, cqp_request);
 
@@ -3304,7 +3339,8 @@ void irdma_flush_wqes(struct irdma_qp *iwqp, u32 flush_mask)
 		if (irdma_upload_context &&
 		    irdma_upload_qp_context(rf, iwqp->sc_qp.qp_uk.qp_id,
 					    iwqp->sc_qp.qp_uk.qp_type, 0, 1))
-			ibdev_warn(&iwqp->iwdev->ibdev, "failed to upload QP context\n");
+			irdma_rblog_ibdev_warn(&iwqp->iwdev->ibdev,
+				               "failed to upload QP context\n");
 		if (!iwqp->user_mode)
 			irdma_sched_qp_flush_work(iwqp);
 	}

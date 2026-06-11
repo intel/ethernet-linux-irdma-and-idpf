@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2015 - 2022 Intel Corporation */
+/* Copyright (c) 2015 - 2026 Intel Corporation */
 #include "osdep.h"
 #include "hmc.h"
 #include "defs.h"
@@ -256,15 +256,16 @@ static int irdma_puda_poll_info(struct irdma_sc_cq *cq,
 		IRDMA_RING_MOVE_TAIL(cq_uk->cq_ring);
 	}
 
-	print_hex_dump_debug("PUDA: PUDA CQE", DUMP_PREFIX_OFFSET, 16, 8, cqe,
+	irdma_rblog_hex_dump("PUDA: PUDA CQE", DUMP_PREFIX_OFFSET, 16, 8, cqe,
 			     32, false);
 	if (ext_valid)
-		print_hex_dump_debug("PUDA: PUDA EXT-CQE", DUMP_PREFIX_OFFSET,
+		irdma_rblog_hex_dump("PUDA: PUDA EXT-CQE", DUMP_PREFIX_OFFSET,
 				     16, 8, ext_cqe, 32, false);
 
 	error = (bool)FIELD_GET(IRDMA_CQ_ERROR, qword3);
 	if (error) {
-		ibdev_dbg(to_ibdev(cq->dev), "PUDA: receive error\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(cq->dev),
+				      "PUDA: receive error\n");
 		major_err = (u32)(FIELD_GET(IRDMA_CQ_MAJERR, qword3));
 		minor_err = (u32)(FIELD_GET(IRDMA_CQ_MINERR, qword3));
 		info->compl_error = major_err << 16 | minor_err;
@@ -336,7 +337,7 @@ int irdma_puda_poll_cmpl(struct irdma_sc_dev *dev, struct irdma_sc_cq *cq,
 		rsrc = (cq_type == IRDMA_CQ_TYPE_ILQ) ? cq->vsi->ilq :
 							cq->vsi->ieq;
 	} else {
-		ibdev_dbg(to_ibdev(dev), "PUDA: qp_type error\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(dev), "PUDA: qp_type error\n");
 		return -EFAULT;
 	}
 
@@ -381,7 +382,7 @@ int irdma_puda_poll_cmpl(struct irdma_sc_dev *dev, struct irdma_sc_cq *cq,
 
 		rsrc->stats_pkt_rcvd++;
 		rsrc->compl_rxwqe_idx = info.wqe_idx;
-		ibdev_dbg(to_ibdev(dev), "PUDA: RQ completion\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(dev), "PUDA: RQ completion\n");
 		rsrc->receive(rsrc->vsi, buf);
 		if (cq_type == IRDMA_CQ_TYPE_ILQ)
 			irdma_ilq_putback_rcvbuf(&rsrc->qp, buf, info.wqe_idx);
@@ -389,7 +390,7 @@ int irdma_puda_poll_cmpl(struct irdma_sc_dev *dev, struct irdma_sc_cq *cq,
 			irdma_puda_replenish_rq(rsrc, false);
 
 	} else {
-		ibdev_dbg(to_ibdev(dev), "PUDA: SQ completion\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(dev), "PUDA: SQ completion\n");
 		buf = (struct irdma_puda_buf *)(uintptr_t)
 					qp->sq_wrtrk_array[info.wqe_idx].wrid;
 
@@ -490,7 +491,7 @@ int irdma_puda_send(struct irdma_sc_qp *qp, struct irdma_puda_send_info *info)
 
 	set_64bit_val(wqe, 24, hdr[1]);
 
-	print_hex_dump_debug("PUDA: PUDA SEND WQE", DUMP_PREFIX_OFFSET, 16, 8,
+	irdma_rblog_hex_dump("PUDA: PUDA SEND WQE", DUMP_PREFIX_OFFSET, 16, 8,
 			     wqe, 32, false);
 	irdma_uk_qp_post_wr(&qp->qp_uk);
 	return 0;
@@ -511,9 +512,9 @@ int irdma_puda_send_buf(struct irdma_puda_rsrc *rsrc,
 	spin_lock_irqsave(&rsrc->bufpool_lock, flags);
 	if (buf) {
 		if (buf->queued) {
-			ibdev_dbg(to_ibdev(rsrc->dev),
-				  "PUDA: PUDA: Attempting to re-send queued buf %p\n",
-				  buf);
+			irdma_rblog_ibdev_dbg(to_ibdev(rsrc->dev),
+					      "PUDA: PUDA: Attempting to re-send queued buf %p\n",
+					      buf);
 			spin_unlock_irqrestore(&rsrc->bufpool_lock, flags);
 			return -EINVAL;
 		}
@@ -528,8 +529,8 @@ int irdma_puda_send_buf(struct irdma_puda_rsrc *rsrc,
 		rsrc->stats_sent_pkt_q++;
 		spin_unlock_irqrestore(&rsrc->bufpool_lock, flags);
 		if (rsrc->type == IRDMA_PUDA_RSRC_TYPE_ILQ)
-			ibdev_dbg(to_ibdev(rsrc->dev),
-				  "PUDA: adding to txpend\n");
+			irdma_rblog_ibdev_dbg(to_ibdev(rsrc->dev),
+					      "PUDA: adding to txpend\n");
 		return 0;
 	}
 	rsrc->tx_wqe_avail_cnt--;
@@ -564,8 +565,8 @@ int irdma_puda_send_buf(struct irdma_puda_rsrc *rsrc,
 		rsrc->stats_sent_pkt_q++;
 		list_add(&buf->list, &rsrc->txpend);
 		if (rsrc->type == IRDMA_PUDA_RSRC_TYPE_ILQ)
-			ibdev_dbg(to_ibdev(rsrc->dev),
-				  "PUDA: adding to puda_send\n");
+			irdma_rblog_ibdev_dbg(to_ibdev(rsrc->dev),
+					      "PUDA: adding to puda_send\n");
 	} else {
 		rsrc->stats_pkt_sent++;
 	}
@@ -608,7 +609,7 @@ static void irdma_puda_qp_setctx(struct irdma_puda_rsrc *rsrc)
 		      FIELD_PREP(IRDMAQPC_RQTPHVAL, qp->rq_tph_val) |
 		      FIELD_PREP(IRDMAQPC_QSHANDLE, qp->qs_handle));
 
-	print_hex_dump_debug("PUDA: PUDA QP CONTEXT", DUMP_PREFIX_OFFSET, 16,
+	irdma_rblog_hex_dump("PUDA: PUDA QP CONTEXT", DUMP_PREFIX_OFFSET, 16,
 			     8, qp_ctx, IRDMA_QP_CTX_SIZE, false);
 }
 
@@ -643,7 +644,7 @@ static int irdma_puda_qp_wqe(struct irdma_sc_dev *dev, struct irdma_sc_qp *qp)
 
 	set_64bit_val(wqe, 24, hdr);
 
-	print_hex_dump_debug("PUDA: PUDA QP CREATE", DUMP_PREFIX_OFFSET, 16,
+	irdma_rblog_hex_dump("PUDA: PUDA QP CREATE", DUMP_PREFIX_OFFSET, 16,
 			     8, wqe, 40, false);
 	irdma_sc_cqp_post_sq(cqp);
 	status = irdma_sc_poll_for_cqp_op_done(dev->cqp, IRDMA_CQP_OP_CREATE_QP,
@@ -771,11 +772,12 @@ static int irdma_puda_cq_wqe(struct irdma_sc_dev *dev, struct irdma_sc_cq *cq)
 
 	set_64bit_val(wqe, 24, hdr);
 
-	print_hex_dump_debug("PUDA: PUDA CREATE CQ", DUMP_PREFIX_OFFSET, 16,
+	irdma_rblog_hex_dump("PUDA: PUDA CREATE CQ", DUMP_PREFIX_OFFSET, 16,
 			     8, wqe, IRDMA_CQP_WQE_SIZE * 8, false);
 	irdma_sc_cqp_post_sq(dev->cqp);
 	status = irdma_sc_poll_for_cqp_op_done(dev->cqp, IRDMA_CQP_OP_CREATE_CQ,
 					       &compl_info);
+
 	return status;
 }
 
@@ -861,16 +863,16 @@ static void irdma_puda_free_qp(struct irdma_puda_rsrc *rsrc)
 
 	ret = irdma_sc_qp_destroy(&rsrc->qp, 0, false, true, true);
 	if (ret)
-		ibdev_dbg(to_ibdev(dev),
-			  "PUDA: error puda qp destroy wqe, status = %d\n",
-			  ret);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "PUDA: error puda qp destroy wqe, status = %d\n",
+				      ret);
 	if (!ret) {
 		ret = irdma_sc_poll_for_cqp_op_done(dev->cqp, IRDMA_CQP_OP_DESTROY_QP,
 						    &compl_info);
 		if (ret)
-			ibdev_dbg(to_ibdev(dev),
-				  "PUDA: error puda qp destroy failed, status = %d\n",
-				  ret);
+			irdma_rblog_ibdev_dbg(to_ibdev(dev),
+					      "PUDA: error puda qp destroy failed, status = %d\n",
+					      ret);
 	}
 	rsrc->dev->ws_remove(rsrc->qp.vsi, rsrc->qp.user_pri);
 }
@@ -900,13 +902,14 @@ static void irdma_puda_free_cq(struct irdma_puda_rsrc *rsrc)
 
 	ret = irdma_sc_cq_destroy(&rsrc->cq, 0, true);
 	if (ret)
-		ibdev_dbg(to_ibdev(dev), "PUDA: error ieq cq destroy\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "PUDA: error ieq cq destroy\n");
 	if (!ret) {
 		ret = irdma_sc_poll_for_cqp_op_done(dev->cqp, IRDMA_CQP_OP_DESTROY_CQ,
 						    &compl_info);
 		if (ret)
-			ibdev_dbg(to_ibdev(dev),
-				  "PUDA: error ieq qp destroy done\n");
+			irdma_rblog_ibdev_dbg(to_ibdev(dev),
+					      "PUDA: error ieq qp destroy done\n");
 	}
 }
 
@@ -937,8 +940,9 @@ void irdma_puda_dele_rsrc(struct irdma_sc_vsi *vsi, enum puda_rsrc_type type,
 		vsi->ieq = NULL;
 		break;
 	default:
-		ibdev_dbg(to_ibdev(dev), "PUDA: error resource type = 0x%x\n",
-			  type);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "PUDA: error resource type = 0x%x\n",
+				      type);
 		return;
 	}
 
@@ -966,7 +970,8 @@ void irdma_puda_dele_rsrc(struct irdma_sc_vsi *vsi, enum puda_rsrc_type type,
 		rsrc->cqmem.va = NULL;
 		break;
 	default:
-		ibdev_dbg(to_ibdev(rsrc->dev), "PUDA: error no resources\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(rsrc->dev),
+				      "PUDA: error no resources\n");
 		break;
 	}
 	/* Free all allocated puda buffers for both tx and rx */
@@ -1098,16 +1103,17 @@ int irdma_puda_create_rsrc(struct irdma_sc_vsi *vsi,
 		ret = irdma_puda_qp_create(rsrc);
 	}
 	if (ret) {
-		ibdev_dbg(to_ibdev(dev),
-			  "PUDA: error qp_create type=%d, status=%d\n",
-			  rsrc->type, ret);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "PUDA: error qp_create type=%d, status=%d\n",
+				      rsrc->type, ret);
 		goto error;
 	}
 	rsrc->cmpl = PUDA_QP_CREATED;
 
 	ret = irdma_puda_allocbufs(rsrc, info->tx_buf_cnt + info->rq_size);
 	if (ret) {
-		ibdev_dbg(to_ibdev(dev), "PUDA: error alloc_buf\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "PUDA: error alloc_buf\n");
 		goto error;
 	}
 
@@ -1421,14 +1427,15 @@ static int irdma_ieq_handle_partial(struct irdma_puda_rsrc *ieq,
 		status = irdma_ieq_check_mpacrc(ieq->hash_desc, txbuf->data,
 						(fpdu_len - 4), mpacrc);
 		if (status) {
-			ibdev_dbg(to_ibdev(ieq->dev), "IEQ: error bad crc\n");
+			irdma_rblog_ibdev_dbg(to_ibdev(ieq->dev),
+					      "IEQ: error bad crc\n");
 			pfpdu->mpa_crc_err = true;
 			goto error;
 		}
 	}
 
 	if (dbg_opt & IRDMA_DBG_PUDA_PARTIAL_FPDU)
-		print_hex_dump_debug("IEQ: IEQ TX BUFFER", DUMP_PREFIX_OFFSET,
+		irdma_rblog_hex_dump("IEQ: IEQ TX BUFFER", DUMP_PREFIX_OFFSET,
 				     16, 8, txbuf->mem.va, txbuf->totallen,
 				     false);
 	if (ieq->dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_2)
@@ -1477,8 +1484,8 @@ static int irdma_ieq_process_buf(struct irdma_puda_rsrc *ieq,
 	while (datalen) {
 		fpdu_len = irdma_ieq_get_fpdu_len(pfpdu, datap, buf->seqnum);
 		if (!fpdu_len) {
-			ibdev_dbg(to_ibdev(ieq->dev),
-				  "IEQ: error bad fpdu len\n");
+			irdma_rblog_ibdev_dbg(to_ibdev(ieq->dev),
+					      "IEQ: error bad fpdu len\n");
 			list_add(&buf->list, rxlist);
 			pfpdu->mpa_crc_err = true;
 			return -EINVAL;
@@ -1495,8 +1502,8 @@ static int irdma_ieq_process_buf(struct irdma_puda_rsrc *ieq,
 						     fpdu_len - 4, mpacrc);
 		if (ret) {
 			list_add(&buf->list, rxlist);
-			ibdev_dbg(to_ibdev(ieq->dev),
-				  "ERR: IRDMA_ERR_MPA_CRC\n");
+			irdma_rblog_ibdev_dbg(to_ibdev(ieq->dev),
+					      "ERR: IRDMA_ERR_MPA_CRC\n");
 			pfpdu->mpa_crc_err = true;
 			return ret;
 		}
@@ -1531,7 +1538,7 @@ static int irdma_ieq_process_buf(struct irdma_puda_rsrc *ieq,
 		irdma_ieq_update_tcpip_info(txbuf, len, buf->seqnum);
 
 		if (dbg_opt & IRDMA_DBG_PUDA_PARTIAL_FPDU)
-			print_hex_dump_debug("IEQ: IEQ TX BUFFER",
+			irdma_rblog_hex_dump("IEQ: IEQ TX BUFFER",
 					     DUMP_PREFIX_OFFSET, 16, 8,
 					     txbuf->mem.va, txbuf->totallen,
 					     false);
@@ -1572,7 +1579,8 @@ void irdma_ieq_process_fpdus(struct irdma_sc_qp *qp,
 			break;
 		buf = irdma_puda_get_listbuf(rxlist);
 		if (!buf) {
-			ibdev_dbg(to_ibdev(ieq->dev), "IEQ: error no buf\n");
+			irdma_rblog_ibdev_dbg(to_ibdev(ieq->dev),
+					      "IEQ: error no buf\n");
 			break;
 		}
 		if (buf->seqnum != pfpdu->rcv_nxt) {
@@ -1632,7 +1640,7 @@ static void irdma_ieq_handle_exception(struct irdma_puda_rsrc *ieq,
 	u8 hw_rev = qp->dev->hw_attrs.uk_attrs.hw_rev;
 
 	if (dbg_opt & IRDMA_DBG_PUDA_PARTIAL_FPDU)
-		print_hex_dump_debug("IEQ: IEQ RX BUFFER", DUMP_PREFIX_OFFSET,
+		irdma_rblog_hex_dump("IEQ: IEQ RX BUFFER", DUMP_PREFIX_OFFSET,
 				     16, 8, buf->mem.va, buf->totallen, false);
 
 	spin_lock_irqsave(&pfpdu->lock, flags);
@@ -1644,12 +1652,13 @@ static void irdma_ieq_handle_exception(struct irdma_puda_rsrc *ieq,
 	if (pfpdu->mode && fps != pfpdu->fps) {
 		/* clean up qp as it is new partial sequence */
 		irdma_ieq_cleanup_qp(ieq, qp);
-		ibdev_dbg(to_ibdev(ieq->dev), "IEQ: restarting new partial\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(ieq->dev),
+				      "IEQ: restarting new partial\n");
 		pfpdu->mode = false;
 	}
 
 	if (!pfpdu->mode) {
-		print_hex_dump_debug("IEQ: Q2 BUFFER", DUMP_PREFIX_OFFSET, 16,
+		irdma_rblog_hex_dump("IEQ: Q2 BUFFER", DUMP_PREFIX_OFFSET, 16,
 				     8, (u64 *)qp->q2_buf, 128, false);
 		/* First_Partial_Sequence_Number check */
 		pfpdu->rcv_nxt = fps;
@@ -1689,7 +1698,7 @@ static void irdma_ieq_handle_exception(struct irdma_puda_rsrc *ieq,
 	}
 	if (hw_rev == IRDMA_GEN_1)
 		irdma_ieq_process_fpdus(qp, ieq);
-	else if (pfpdu->ah && atomic_read(&pfpdu->ah->ah_info.ah_valid))
+	else if (pfpdu->ah && READ_ONCE(pfpdu->ah->ah_info.ah_valid))
 		irdma_ieq_process_fpdus(qp, ieq);
 exit:
 	spin_unlock_irqrestore(&pfpdu->lock, flags);

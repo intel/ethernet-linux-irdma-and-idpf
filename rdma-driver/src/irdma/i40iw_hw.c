@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2015 - 2023 Intel Corporation */
+/* Copyright (c) 2015 - 2026 Intel Corporation */
 #include "osdep.h"
 #include "type.h"
 #include "i40iw_hw.h"

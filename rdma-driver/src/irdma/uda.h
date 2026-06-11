@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2016 - 2021 Intel Corporation */
+/* Copyright (c) 2016 - 2023 Intel Corporation */
 #ifndef IRDMA_UDA_H
 #define IRDMA_UDA_H
 
@@ -23,7 +23,7 @@ struct irdma_ah_info {
 	u8 tc_tos;
 	u8 hop_ttl;
 	u8 mac_addr[ETH_ALEN];
-	atomic_t ah_valid;
+	u8 ah_valid;
 	bool ipv4_valid:1;
 	bool do_lpbk:1;
 };

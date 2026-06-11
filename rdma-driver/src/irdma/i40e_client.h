@@ -1,5 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB-only */
-/* Copyright (C) 2013-2026 Intel Corporation */
+/* SPDX-License-Identifier: GPL-2.0 */
+/* Copyright(c) 2013 - 2023 Intel Corporation. */
 
 #ifndef _I40E_CLIENT_H_
 #define _I40E_CLIENT_H_
@@ -219,4 +219,3 @@ static inline bool i40e_client_is_registered(struct i40e_client *client)
 }
 
 #endif /* _I40E_CLIENT_H_ */
-

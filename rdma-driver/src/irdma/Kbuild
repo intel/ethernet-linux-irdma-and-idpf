@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-# Copyright (c) 2015 - 2023 Intel Corporation
+# Copyright (c) 2015 - 2026 Intel Corporation
 # Makefile for the Intel(R) Ethernet Protocol Driver for RDMA
 #
 ifneq (${LINUXINCLUDE},)
@@ -36,6 +36,7 @@ irdma-objs := main.o      \
 	      configfs.o  \
 	      virtchnl.o  \
 	      irdma_kcompat.o \
-	      debugfs.o
+	      debugfs.o \
+	      rblog.o
 
 CFLAGS_trace.o = -I$(src)

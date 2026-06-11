@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2015 - 2024 Intel Corporation */
+/* Copyright (c) 2015 - 2025 Intel Corporation */
 #ifndef IRDMA_MAIN_H
 #define IRDMA_MAIN_H
 
@@ -55,16 +55,17 @@
 #include "pble.h"
 #include "cm.h"
 #include "iidc.h"
-#include "iidc_rdma_idpf.h"
 #include "irdma_kcompat.h"
 #include "irdma-abi.h"
 #include "verbs.h"
 #include "user.h"
 #include "puda.h"
+#include "uda_d.h"
 
 extern struct list_head irdma_handlers;
 extern spinlock_t irdma_handler_lock;
 extern bool irdma_upload_context;
+extern bool mod_rdpu_bw;
 #define MEV_PCI_VER_A0	0
 #define MEV_PCI_VER_B0	16
 #define MEV_PCI_VER_C0	32
@@ -76,14 +77,16 @@ extern bool host_mem_mrte;
 extern u8 rrf_m;
 extern u8 xf_m;
 extern u8 min_ird;
+extern unsigned int rdma_key;
 extern bool irdma_rca_ena;
 extern bool irdma_rca_rq_post;
 extern bool irdma_rca_rq_polarity;
 extern unsigned int irdma_rca_rq_size;
+extern bool irdma_rca_fast;
 extern unsigned int irdma_rca_config;
 extern struct auxiliary_driver i40iw_auxiliary_drv;
-extern struct iidc_auxiliary_drv icrdma_auxiliary_drv;
-extern struct iidc_auxiliary_drv ig3rdma_auxiliary_drv;
+extern struct iidc_auxiliary_drv icrdma_core_auxiliary_drv;
+extern struct iidc_auxiliary_drv ig3rdma_core_auxiliary_drv;
 extern struct iidc_rdma_vport_auxiliary_drv ig3rdma_vport_auxiliary_drv;
 
 #define IRDMA_FW_VER_DEFAULT	2
@@ -97,8 +100,8 @@ extern struct iidc_rdma_vport_auxiliary_drv ig3rdma_vport_auxiliary_drv;
 #define IRDMA_MACIP_ADD		1
 #define IRDMA_MACIP_DELETE	2
 
-#define IW_CCQ_SIZE		(IRDMA_CQP_SW_SQSIZE_2048 + 2)
-#define IW_GEN_3_CCQ_SIZE	(2*IRDMA_CQP_SW_SQSIZE_2048 + 2)
+#define IW_CCQ_SIZE		(IRDMA_CQP_SW_SQSIZE_MAX + 2)
+#define IW_GEN_3_CCQ_SIZE	(2*IRDMA_CQP_SW_SQSIZE_MAX + 2)
 #define IW_CEQ_SIZE		2048
 #define IW_AEQ_SIZE		2048
 
@@ -148,10 +151,10 @@ extern struct iidc_rdma_vport_auxiliary_drv ig3rdma_vport_auxiliary_drv;
 #define IRDMA_RCA_CFG_PENDING			BIT(0)
 #define IRDMA_RCA_CFG_EXECUTE			BIT(1)
 #define IRDMA_RCA_CFG_AH_MODIFY			BIT(2)
-#define IRDMA_RCA_CFG_FORWARD                   BIT(3)
-#define IRDMA_RCA_CFG_NO_FORWARD                BIT(4)
-#define IRDMA_RCA_CFG_NO_PENDING                BIT(5)
-#define IRDMA_RCA_CFG_QP_THRESH                 BIT(6)
+#define IRDMA_RCA_CFG_FORWARD			BIT(3)
+#define IRDMA_RCA_CFG_NO_FORWARD		BIT(4)
+#define IRDMA_RCA_CFG_NO_PENDING		BIT(5)
+#define IRDMA_RCA_CFG_QP_THRESH			BIT(6)
 
 #define IRDMA_FLUSH_SQ		BIT(0)
 #define IRDMA_FLUSH_RQ		BIT(1)
@@ -159,6 +162,22 @@ extern struct iidc_rdma_vport_auxiliary_drv ig3rdma_vport_auxiliary_drv;
 #define IRDMA_FLUSH_WAIT	BIT(3)
 
 #define IRDMA_IRQ_NAME_STR_LEN 64
+
+enum rca_stats {
+	RCA_RQ_RCVD = 0,
+	RCA_LORCH_FWD,
+	RCA_LORCH_RCVD,
+	RCA_EXEC,
+	RCA_PEND_CMPL,
+	RCA_FINAL_CMPL,
+	RCA_LAST_RCVD_OP,
+	RCA_LAST_EXEC_OP,
+	RCA_LAST_CMPL_OP,
+	RCA_LAST_RCVD_PMF,
+	RCA_LAST_EXEC_PMF,
+	RCA_LAST_CMPL_PMF,
+	RCA_MAX_STATS,
+};
 
 enum init_completion_state {
 	INVALID_STATE = 0,
@@ -210,7 +229,7 @@ struct irdma_cqp_request {
 	void (*callback_fcn)(struct irdma_cqp_request *cqp_request);
 	void *param;
 	struct irdma_cqp_compl_info compl_info;
-	atomic_t request_done;
+	u8 request_done; /* READ/WRITE_ONCE macros operate on it */
 	bool waiting:1;
 	bool dynamic:1;
 	bool pending:1;
@@ -234,6 +253,10 @@ struct irdma_cqp {
 	struct irdma_ooo_cqp_op *ooo_op_array;
 	struct list_head cqp_avail_reqs;
 	struct list_head cqp_pending_reqs;
+	u64 rca_stats[RCA_MAX_STATS];
+	u64 rca_rcvd_ops[IRDMA_MAX_CQP_OPS];
+	u64 rca_exec_ops[IRDMA_MAX_CQP_OPS];
+	u64 rca_cmpl_ops[IRDMA_MAX_CQP_OPS];
 };
 
 struct irdma_ccq {
@@ -303,9 +326,11 @@ struct irdma_qvlist_info {
 struct irdma_gen_ops {
 	void (*request_reset)(struct irdma_pci_f *rf);
 	int (*register_qset)(struct irdma_sc_vsi *vsi,
-			     struct irdma_ws_node *tc_node);
+			     struct irdma_ws_node *tc_node1,
+			     struct irdma_ws_node *tc_node2);
 	void (*unregister_qset)(struct irdma_sc_vsi *vsi,
-				struct irdma_ws_node *tc_node);
+				struct irdma_ws_node *tc_node1,
+				struct irdma_ws_node *tc_node2);
 };
 
 struct irdma_pci_f {
@@ -413,6 +438,7 @@ struct irdma_pci_f {
 	struct workqueue_struct *cqp_cmpl_wq;
 	struct work_struct cqp_cmpl_work;
 	struct workqueue_struct *vchnl_wq;
+	struct workqueue_struct *ocm_wq;
 	struct irdma_sc_vsi default_vsi;
 	void *back_fcn;
 	struct irdma_gen_ops gen_ops;
@@ -433,6 +459,12 @@ struct irdma_pci_f {
 	atomic_t ceq0_int_good;
 	atomic_t ceq0_wa_enable;
 	u8 rca_config;
+};
+
+enum irdma_lag_type {
+	IRDMA_LAG_NONE,
+	IRDMA_LAG_ACTIVE_PASSIVE,
+	IRDMA_LAG_ACTIVE_ACTIVE
 };
 
 struct irdma_ae_info {
@@ -506,6 +538,7 @@ struct irdma_device {
 	bool dcb_vlan_mode:1;
 	bool iw_ooo:1;
 	enum init_completion_state init_state;
+	enum irdma_lag_type lag_mode;
 #ifdef CONFIG_DEBUG_FS
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0)
 	u32 hugepgcnt;
@@ -618,9 +651,9 @@ static inline int irdma_alloc_rsrc(struct irdma_pci_f *rf,
 		rsrc_num = find_first_zero_bit(rsrc_array, max_rsrc);
 		if (rsrc_num >= max_rsrc) {
 			spin_unlock_irqrestore(&rf->rsrc_lock, flags);
-			ibdev_dbg(&rf->iwdev->ibdev,
-				  "ERR: resource [%d] allocation failed\n",
-				  rsrc_num);
+			irdma_rblog_ibdev_dbg(&rf->iwdev->ibdev,
+					      "ERR: resource [%d] allocation failed\n",
+					      rsrc_num);
 			return -EOVERFLOW;
 		}
 	}
@@ -805,15 +838,6 @@ static inline void irdma_deinit_device(struct irdma_device *iwdev)
 
 int irdma_vchnl_req_aeq_vec_map_gen2(struct irdma_sc_dev *dev, u32 idx);
 int irdma_vchnl_req_ceq_vec_map_gen2(struct irdma_sc_dev *dev, u16 ceq_id, u32 idx);
-int irdma_lan_register_qset(struct irdma_sc_vsi *vsi,
-			    struct irdma_ws_node *tc_node);
-void irdma_lan_unregister_qset(struct irdma_sc_vsi *vsi,
-			       struct irdma_ws_node *tc_node);
-void irdma_request_reset(struct irdma_pci_f *rf);
-void irdma_fill_qos_info(struct irdma_l2params *l2params,
-			 struct iidc_qos_params *qos_info);
-void irdma_iidc_event_handler(struct iidc_core_dev_info *cdev_info,
-			      struct iidc_event *event);
 int irdma_vchnl_receive(struct iidc_core_dev_info *cdev_info, u32 vf_id,
 			u8 *msg, u16 len);
 void irdma_log_invalid_mtu(u16 mtu, struct irdma_sc_dev *dev);

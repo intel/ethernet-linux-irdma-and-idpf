@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2018 - 2025 Intel Corporation */
+/* Copyright (c) 2018 - 2026 Intel Corporation */
 #ifndef IRDMA_KCOMPAT_H
 #define IRDMA_KCOMPAT_H
 
@@ -54,8 +54,9 @@
 #include "irdma_kcompat_gen.h"
 #endif
 #include "distro_ver.h"
-
-#if defined(__OFED_BUILD__) || defined(__OFED_4_8__)
+#if defined(USE_LINUX_KCOMPAT)
+#include "linux_kcompat.h"
+#elif defined(__OFED_BUILD__) || defined(__OFED_4_8__)
 #include "ofed_kcompat.h"
 #elif defined(RHEL_RELEASE_CODE)
 #include "rhel_kcompat.h"
@@ -81,6 +82,11 @@
 #define timer_container_of(var, callback_timer, timer_fieldname) \
 	container_of(callback_timer, typeof(*var), timer_fieldname)
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)) */
+
+/* no_llseek was removed in 5.11 and replaced by noop_llseek */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+#define noop_llseek no_llseek
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
 #define ENABLE_DUP_CM_NAME_WA
@@ -168,7 +174,6 @@ int irdma_process_resize_list(struct irdma_cq *iwcq, struct irdma_device *iwdev,
 #define kc_set_driver_id(x)
 #endif /* IRDMA_SET_DRIVER_ID */
 /*****************************************************************************/
-
 
 /*********************************************************/
 #ifndef ether_addr_copy
@@ -396,11 +401,11 @@ void irdma_dealloc_ucontext(struct ib_ucontext *context);
 int irdma_dealloc_ucontext(struct ib_ucontext *context);
 #endif
 
-#if defined(ETHER_COPY_VER_2)
+#if defined(CREATE_AH_VER_1_2) || defined(CREATE_AH_VER_2) || defined(CREATE_AH_VER_3) || defined(CREATE_AH_VER_4) || defined(CREATE_AH_VER_5)
 void irdma_ether_copy(u8 *dmac, struct rdma_ah_attr *attr);
 #endif
 
-#if defined(ETHER_COPY_VER_1)
+#if defined(CREATE_AH_VER_1_1) || defined(CREATE_AH_VER_0) || defined(CREATE_AH_VER_6)
 void irdma_ether_copy(u8 *dmac, struct ib_ah_attr *attr);
 #endif
 
@@ -569,8 +574,8 @@ static inline size_t irdma_ib_umem_num_dma_blocks(struct ib_umem *umem, unsigned
 	return (size_t)((ALIGN(iova + umem->length, pgsz) -
 			 ALIGN_DOWN(iova, pgsz))) / pgsz;
 }
-#endif
 
+#endif
 #ifdef NEED_RDMA_UMEM_BLOCK_ITER_NEXT
 /*
  * IB block DMA iterator
@@ -646,7 +651,6 @@ kc__rdma_umem_block_iter_next(struct kc_ib_block_iter *biter)
 	return kc__rdma_block_iter_next(biter) && biter->__sg_numblocks--;
 }
 
-
 /**
  * rdma_umem_for_each_dma_block - iterate over contiguous DMA blocks of the umem
  * @umem: umem to iterate over
@@ -668,8 +672,6 @@ kc__rdma_umem_block_iter_next(struct kc_ib_block_iter *biter)
 #define __rdma_block_iter_next kc__rdma_block_iter_next
 
 #endif /* NEED_RDMA_UMEM_BLOCK_ITER_NEXT */
-
-
 #ifdef COPY_USER_PGADDR_VER_1
 void irdma_copy_user_pgaddrs(struct irdma_mr *iwmr, u64 *pbl,
 			     enum irdma_pble_level level);

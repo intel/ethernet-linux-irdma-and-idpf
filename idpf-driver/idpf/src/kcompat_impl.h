@@ -1807,6 +1807,7 @@ int _kc_pci_iov_vf_id(struct pci_dev *dev);
  * 3dc167ba5729 ("sched/cputime: Improve cputime_adjust()")
  */
 #ifdef NEED_MUL_U64_U64_DIV_U64
+#undef mul_u64_u64_div_u64
 u64 mul_u64_u64_div_u64(u64 a, u64 mul, u64 div);
 #endif /* NEED_MUL_U64_U64_DIV_U64 */
 
@@ -3043,6 +3044,10 @@ static inline void assign_bit(long nr, unsigned long *addr, bool value)
 }
 #endif /* NEED_ASSIGN_BIT */
 
+#ifdef NEED_BITS_TO_U32
+#define BITS_TO_U32(nr)		__KERNEL_DIV_ROUND_UP(nr, BITS_PER_TYPE(u32))
+#endif /* NEED_BITS_TO_U32 */
+
 /*
  * __has_builtin is supported on gcc >= 10, clang >= 3 and icc >= 21.
  * In the meantime, to support gcc < 10, we implement __has_builtin
@@ -3139,20 +3144,24 @@ enum netdev_xdp_act {
 typedef u32 xdp_features_t;
 
 static inline void
-xdp_set_features_flag(struct net_device *dev, xdp_features_t val)
-{
-}
-
-static inline void xdp_clear_features_flag(struct net_device *dev)
+xdp_set_features_flag(struct net_device __always_unused *dev,
+		      xdp_features_t __always_unused val)
 {
 }
 
 static inline void
-xdp_features_set_redirect_target(struct net_device *dev, bool support_sg)
+xdp_clear_features_flag(struct net_device __always_unused *dev)
 {
 }
 
-static inline void xdp_features_clear_redirect_target(struct net_device *dev)
+static inline void
+xdp_features_set_redirect_target(struct net_device __always_unused *dev,
+				 bool __always_unused support_sg)
+{
+}
+
+static inline void
+xdp_features_clear_redirect_target(struct net_device __always_unused *dev)
 {
 }
 #endif /* NEED_XDP_FEATURES */
@@ -3669,5 +3678,13 @@ void resource_set_size(struct resource *res, resource_size_t size);
 void resource_set_range(struct resource *res, resource_size_t start,
 			resource_size_t size);
 #endif /* !HAVE_RESOURCE_SET_RANGE */
+
+#ifdef NEED___COUNTED_BY
+#ifdef HAVE_CONFIG_CC_HAS_COUNTED_BY
+# define __counted_by(member)		__attribute__((__counted_by__(member)))
+#else
+# define __counted_by(member)
+#endif /* HAVE_CONFIG_CC_HAS_COUNTED_BY */
+#endif /* NEED___COUNTED_BY */
 
 #endif /* _KCOMPAT_IMPL_H_ */

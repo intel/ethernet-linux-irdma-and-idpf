@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Copyright (C) 2019-2026 Intel Corporation
 
+# SPDX-License-Identifier: GPL-2.0
+
+
+
 set -Eeuo pipefail
 
 # This file generates HAVE_ and NEED_ defines for current kernel
@@ -350,6 +354,8 @@ function gen-netdevice() {
 	gen HAVE_NDO_FDB_DEL_EXTACK if method ndo_fdb_del of net_device_ops matches 'struct netlink_ext_ack \\*extack' in "$ndh"
 	gen HAVE_NDO_FDB_DEL_NOTIFIED if method ndo_fdb_del of net_device_ops matches 'bool \\*notified' in "$ndh"
 	gen HAVE_NDO_GET_DEVLINK_PORT if method ndo_get_devlink_port of net_device_ops in "$ndh"
+	gen HAVE_NDO_GET_TSTAMP if method ndo_get_tstamp of net_device_ops in "$ndh"
+	gen HAVE_NDO_HWTSTAMP if method ndo_hwtstamp_get of net_device_ops in "$ndh"
 	gen HAVE_NDO_SETUP_TC_CHAIN_INDEX if method ndo_setup_tc of net_device_ops matches 'u32 chain_index' in "$ndh"
 	gen HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV if method '(ndo_setup_tc|ndo_setup_tc_rh)' of '(net_device_ops|netdevice_ops_extended)' matches 'void \\*type_data' in "$ndh"
 	gen HAVE_NDO_UDP_TUNNEL_CALLBACK if method ndo_udp_tunnel_add of net_device_ops in "$ndh"
@@ -460,6 +466,8 @@ function gen-vfio() {
 		PASID_SUPPORT=1
 	fi
 	gen HAVE_PASID_SUPPORT if string "${PASID_SUPPORT}" equals 1
+	# iommufd-based PASID passthrough
+	gen HAVE_IOMMUFD_BIND_FLAGS_PASID if anonymous enum matches IOMMUFD_BIND_FLAGS_PASID in include/linux/iommufd.h
 
 	gen HAVE_VFIO_FREE_DEV if fun vfio_free_device in include/linux/vfio.h
 	gen HAVE_LMV1_SUPPORT if macro VFIO_REGION_TYPE_MIGRATION in include/uapi/linux/vfio.h
@@ -469,6 +477,7 @@ function gen-other() {
 	pciaerh='include/linux/aer.h'
 	ush='include/linux/u64_stats_sync.h'
 	fsh='include/linux/fortify-string.h'
+	cah='include/linux/compiler_attributes.h'
 	cth='include/linux/compiler_types.h'
 	ch='include/linux/compiler.h'
 	gen HAVE_X86_STEPPING if struct cpuinfo_x86 matches x86_stepping in arch/x86/include/asm/processor.h
@@ -478,6 +487,7 @@ function gen-other() {
 	gen NEED_BITMAP_FROM_ARR32 if fun bitmap_from_arr32 absent in include/linux/bitmap.h
 	gen NEED_BITMAP_TO_ARR32 if fun bitmap_to_arr32 absent in include/linux/bitmap.h
 	gen NEED_ASSIGN_BIT if fun assign_bit absent in include/linux/bitops.h
+	gen NEED_BITS_TO_U32 if fun BITS_TO_U32 absent in include/linux/bitops.h
 	gen NEED_STATIC_ASSERT if macro static_assert absent in include/linux/build_bug.h
 	gen NEED____ADDRESSABLE if macro ___ADDRESSABLE absent in "$ch"
 	# special case for kernels 6.2 - 6.6 and __struct_size macro
@@ -491,6 +501,8 @@ function gen-other() {
 		__STRUCT_SIZE_NEEDED=1
 	fi
 	gen NEED___STRUCT_SIZE if string "${__STRUCT_SIZE_NEEDED}" equals 1
+	gen HAVE_CONFIG_CC_HAS_COUNTED_BY if string "$(config_has CONFIG_CC_HAS_COUNTED_BY && echo 1)" equals 1
+	gen NEED___COUNTED_BY if macro __counted_by absent in "$cth" "$cah"
 	gen HAVE_COMPLETION_RAW_SPINLOCK if struct completion matches 'struct swait_queue_head' in include/linux/completion.h
 	gen NEED_IS_CONSTEXPR if macro __is_constexpr absent in include/linux/const.h include/linux/minmax.h include/linux/kernel.h
 	gen NEED_DEBUGFS_LOOKUP if fun debugfs_lookup absent in include/linux/debugfs.h
@@ -514,19 +526,22 @@ function gen-other() {
 	gen NEED_DECLARE_STATIC_KEY_FALSE if macro DECLARE_STATIC_KEY_FALSE absent in include/linux/jump_label.h include/linux/jump_label_type.h
 	gen NEED_LOWER_16_BITS if macro lower_16_bits absent in include/linux/kernel.h
 	gen NEED_UPPER_16_BITS if macro upper_16_bits absent in include/linux/kernel.h
+	gen NEED_KTHREAD_RUN_WORKER if macro kthread_run_worker absent in include/linux/kthread.h
 	gen HAVE_LINKMODE if fun linkmode_zero in include/linux/linkmode.h
 	gen NEED_LINKMODE_SET_BIT_ARRAY if fun linkmode_set_bit_array absent in include/linux/linkmode.h
 	gen NEED_LINKMODE_ZERO if fun linkmode_zero absent in include/linux/linkmode.h
 	gen NEED_LIST_COUNT_NODES if fun list_count_nodes absent in include/linux/list.h
 
-	# On aarch64 RHEL systems, mul_u64_u64_div_u64 appears to be declared
-	# in math64 header, but is not provided by kernel
-	# so on these systems, set it to need anyway.
-	NEED_MUL_U64=0
-	if [ "$IS_ARM" ] || check fun mul_u64_u64_div_u64 absent in include/linux/math64.h ; then
-		NEED_MUL_U64=1
+	# mul_u64_u64_div_u64 was a function from Linux 5.9 until 6.19 when it was
+	# converted to a macro (wrapping the new mul_u64_add_u64_div_u64 function).
+	# On aarch64 systems the function may be declared in math64.h but not
+	# actually implemented by the kernel, so the fun check is skipped on ARM.
+	NEED_MUL_U64_U64_DIV_U64=0
+	if check macro mul_u64_u64_div_u64 absent in include/linux/math64.h &&
+	   { [ "$IS_ARM" ] || check fun mul_u64_u64_div_u64 absent in include/linux/math64.h; } ; then
+		NEED_MUL_U64_U64_DIV_U64=1
 	fi
-	gen NEED_MUL_U64_U64_DIV_U64 if string "${NEED_MUL_U64}" equals 1
+	gen NEED_MUL_U64_U64_DIV_U64 if string "${NEED_MUL_U64_U64_DIV_U64}" equals 1
 
 	gen NEED_DIV_U64_ROUND_CLOSEST if macro DIV_U64_ROUND_CLOSEST absent in include/linux/math64.h
 	gen NEED_DIV_U64_ROUND_UP if macro DIV_U64_ROUND_UP absent in include/linux/math64.h

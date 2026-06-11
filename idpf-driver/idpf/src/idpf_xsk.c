@@ -643,7 +643,7 @@ int idpf_xsk_splitq_async_xmit(struct net_device *netdev, u32 q_id)
 
 	rcu_read_lock();
 	if (unlikely(test_bit(IDPF_HR_RESET_IN_PROG, np->adapter->flags) ||
-		     mutex_is_locked(&np->adapter->vport_cfg_lock))) {
+		     mutex_is_locked(&np->adapter->vport_ctrl_lock))) {
 		ret = -EBUSY;
 		goto exit;
 	}
@@ -694,7 +694,7 @@ int idpf_xsk_singleq_async_xmit(struct net_device *netdev, u32 q_id)
 	int ret;
 
 	rcu_read_lock();
-	if (unlikely(mutex_is_locked(&np->adapter->vport_cfg_lock))) {
+	if (unlikely(mutex_is_locked(&np->adapter->vport_ctrl_lock))) {
 		ret = -EBUSY;
 		goto exit;
 	}
@@ -760,7 +760,7 @@ bool idpf_xsk_any_rxq_ena(struct idpf_vport *vport)
 {
 	int i;
 
-	for (i = 0; i < vport->dflt_grp.q_grp.num_rxq; i++) {
+	for (i = 0; i < vport->dflt_qv_rsrc.num_rxq; i++) {
 		if (xsk_get_pool_from_qid(vport->netdev, i))
 			return true;
 	}
@@ -928,17 +928,17 @@ static bool idpf_rx_singleq_buf_hw_alloc_zc_all(struct idpf_queue *rxq,
 /**
  * idpf_rx_buf_hw_alloc_zc_all - allocate a number of Rx buffers
  * @vport: current vport
- * @q_grp: Queue resources
+ * @rsrc: pointer to queue and vector resources
  * @rxq: Rx queue
  */
 void idpf_rx_buf_hw_alloc_zc_all(struct idpf_vport *vport,
-				 struct idpf_q_grp *q_grp,
+				 struct idpf_q_vec_rsrc *rsrc,
 				 struct idpf_queue *rxq)
 {
 	int i, desc_cnt;
 	bool err;
 
-	if (!idpf_is_queue_model_split(q_grp->rxq_model)) {
+	if (!idpf_is_queue_model_split(rsrc->rxq_model)) {
 		err = idpf_rx_singleq_buf_hw_alloc_zc_all(rxq,
 							  rxq->desc_count - 1);
 		if (err)
@@ -947,7 +947,7 @@ void idpf_rx_buf_hw_alloc_zc_all(struct idpf_vport *vport,
 		return;
 	}
 
-	for (i = 0; i < q_grp->num_bufqs_per_qgrp; i++) {
+	for (i = 0; i < rsrc->num_bufqs_per_qgrp; i++) {
 		struct idpf_queue *rxbufq;
 
 		rxbufq = &rxq->rxq_grp->splitq.bufq_sets[i].bufq;
@@ -1160,12 +1160,6 @@ int idpf_rx_splitq_clean_zc(struct idpf_queue *rxq, int budget)
 		idpf_post_buf_refill(refillq, buf_id);
 		ntc = idpf_rx_bump_ntc(rxq, ntc);
 
-		/* pad skb if needed (to make valid ethernet frame) */
-		if (eth_skb_pad(skb)) {
-			skb = NULL;
-			continue;
-		}
-
 		/* probably a little skewed due to removing CRC */
 		total_rx_bytes += skb->len;
 
@@ -1306,12 +1300,6 @@ int idpf_rx_singleq_clean_zc(struct idpf_queue *rxq, int budget)
 #define IDPF_RXD_ERR_S BIT(VIRTCHNL2_RX_BASE_DESC_QW1_ERROR_S)
 		if (unlikely(idpf_rx_singleq_test_staterr(rx_desc, IDPF_RXD_ERR_S))) {
 			dev_kfree_skb_any(skb);
-			skb = NULL;
-			continue;
-		}
-
-		/* pad skb if needed (to make valid ethernet frame) */
-		if (eth_skb_pad(skb)) {
 			skb = NULL;
 			continue;
 		}

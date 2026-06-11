@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2015 - 2023 Intel Corporation */
+/* Copyright (c) 2015 - 2026 Intel Corporation */
 #include "osdep.h"
 #include "hmc.h"
 #include "defs.h"
@@ -108,9 +108,10 @@ static int add_sd_direct(struct irdma_hmc_pble_rsrc *pble_rsrc,
 	chunk->size = info->pages << HMC_PAGED_BP_SHIFT;
 	chunk->vaddr = sd_entry->u.bp.addr.va + offset;
 	chunk->fpm_addr = pble_rsrc->next_fpm_addr;
-	ibdev_dbg(to_ibdev(dev),
-		  "PBLE: chunk_size[%lld] = 0x%llx vaddr=0x%pK fpm_addr = %llx\n",
-		  chunk->size, chunk->size, chunk->vaddr, chunk->fpm_addr);
+	irdma_rblog_ibdev_dbg(to_ibdev(dev),
+			      "PBLE: chunk_size[%lld] = 0x%llx vaddr=0x%pK fpm_addr = %llx\n",
+			      chunk->size, chunk->size, chunk->vaddr,
+			      chunk->fpm_addr);
 
 	return 0;
 }
@@ -275,11 +276,12 @@ static int add_pble_prm(struct irdma_hmc_pble_rsrc *pble_rsrc)
 	else
 		sd_entry_type = sd_entry->entry_type;
 
-	ibdev_dbg(to_ibdev(dev),
-		  "PBLE: pages = %d, unallocated_pble[%d] current_fpm_addr = %llx\n",
-		  pages, pble_rsrc->unallocated_pble,
-		  pble_rsrc->next_fpm_addr);
-	ibdev_dbg(to_ibdev(dev), "PBLE: sd_entry_type = %d\n", sd_entry_type);
+	irdma_rblog_ibdev_dbg(to_ibdev(dev),
+			      "PBLE: pages = %d, unallocated_pble[%d] current_fpm_addr = %llx\n",
+			      pages, pble_rsrc->unallocated_pble,
+			      pble_rsrc->next_fpm_addr);
+	irdma_rblog_ibdev_dbg(to_ibdev(dev), "PBLE: sd_entry_type = %d\n",
+			      sd_entry_type);
 	if (sd_entry_type == IRDMA_SD_TYPE_DIRECT)
 		ret_code = add_sd_direct(pble_rsrc, &info);
 
@@ -301,9 +303,10 @@ static int add_pble_prm(struct irdma_hmc_pble_rsrc *pble_rsrc)
 		goto err_bp_pages;
 
 	pble_rsrc->next_fpm_addr += chunk->size;
-	ibdev_dbg(to_ibdev(dev),
-		  "PBLE: next_fpm_addr = %llx chunk_size[%llu] = 0x%llx\n",
-		  pble_rsrc->next_fpm_addr, chunk->size, chunk->size);
+	irdma_rblog_ibdev_dbg(to_ibdev(dev),
+			      "PBLE: next_fpm_addr = %llx chunk_size[%llu] = 0x%llx\n",
+			      pble_rsrc->next_fpm_addr, chunk->size,
+			      chunk->size);
 	pble_rsrc->unallocated_pble -= (u32)(chunk->size >> 3);
 	sd_reg_val = (sd_entry_type == IRDMA_SD_TYPE_PAGED) ?
 			     sd_entry->u.pd_table.pd_page_addr.pa :

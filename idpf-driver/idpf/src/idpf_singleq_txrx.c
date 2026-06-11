@@ -644,7 +644,7 @@ static void idpf_rx_singleq_csum(struct idpf_queue *rxq, struct sk_buff *skb,
 	if (unlikely(!(csum_bits->l3l4p)))
 		return;
 
-	decoded = rxq->vport->rx_ptype_lkup[ptype];
+	decoded = rxq->rx_ptype_lkup[ptype];
 	if (unlikely(!(decoded.known && decoded.outer_ip)))
 		return;
 
@@ -865,7 +865,7 @@ void idpf_rx_singleq_process_skb_fields(struct idpf_queue *rx_q,
 					u16 ptype)
 {
 	struct idpf_rx_ptype_decoded decoded =
-					rx_q->vport->rx_ptype_lkup[ptype];
+					rx_q->rx_ptype_lkup[ptype];
 
 	/* modifies the skb - consumes the enet header */
 	skb->protocol = eth_type_trans(skb, rx_q->vport->netdev);
@@ -1184,12 +1184,6 @@ static int idpf_rx_singleq_clean(struct idpf_queue *rx_q, int budget)
 		if (unlikely(idpf_rx_singleq_test_staterr(rx_desc,
 							  IDPF_RXD_ERR_S))) {
 			dev_kfree_skb_any(skb);
-			skb = NULL;
-			continue;
-		}
-
-		/* pad skb if needed (to make valid ethernet frame) */
-		if (eth_skb_pad(skb)) {
 			skb = NULL;
 			continue;
 		}

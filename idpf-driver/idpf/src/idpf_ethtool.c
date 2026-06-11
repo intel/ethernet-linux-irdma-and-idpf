@@ -34,14 +34,14 @@ static int idpf_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd,
 	unsigned int cnt = 0;
 	int err = 0;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 	vport_config = np->adapter->vport_config[np->vport_idx];
 	user_config = &vport_config->user_config;
 
 	switch (cmd->cmd) {
 	case ETHTOOL_GRXRINGS:
-		cmd->data = vport->dflt_grp.q_grp.num_rxq;
+		cmd->data = vport->dflt_qv_rsrc.num_rxq;
 		break;
 	case ETHTOOL_GRXCLSRLCNT:
 		cmd->rule_cnt = user_config->num_fsteer_fltrs;
@@ -81,7 +81,7 @@ static int idpf_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd,
 		break;
 	}
 
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 
 	return err;
 }
@@ -354,7 +354,7 @@ static int idpf_set_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd)
 	struct idpf_adapter *adapter = idpf_netdev_to_adapter(netdev);
 	int ret = -EOPNOTSUPP;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	switch (cmd->cmd) {
 	case ETHTOOL_SRXCLSRLINS:
 		ret = idpf_add_flow_steer(netdev, cmd);
@@ -366,7 +366,7 @@ static int idpf_set_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd)
 		break;
 	}
 
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 	return ret;
 }
 #endif /* ETHTOOL_GRXRINGS */
@@ -439,7 +439,7 @@ static int idpf_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
 
 	adapter = np->adapter;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 
 	if (!idpf_is_cap_ena_all(adapter, IDPF_RSS_CAPS, IDPF_CAP_RSS)) {
 		err = -EOPNOTSUPP;
@@ -464,7 +464,7 @@ static int idpf_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
 	}
 
 unlock_mutex:
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 
 	return err;
 }
@@ -504,7 +504,7 @@ static int idpf_set_rxfh(struct net_device *netdev, const u32 *indir,
 	int err = 0;
 	u16 lut;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 	if (!idpf_is_cap_ena_all(adapter, IDPF_RSS_CAPS, IDPF_CAP_RSS)) {
 		err = -EOPNOTSUPP;
@@ -534,7 +534,7 @@ static int idpf_set_rxfh(struct net_device *netdev, const u32 *indir,
 	err = idpf_config_rss(vport, rss_data);
 
 unlock_mutex:
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 
 	return err;
 }
@@ -603,7 +603,7 @@ static int idpf_set_channels(struct net_device *netdev,
 		return -EINVAL;
 	}
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	idx = vport->idx;
@@ -647,7 +647,7 @@ static int idpf_set_channels(struct net_device *netdev,
 	}
 
 unlock_mutex:
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 
 	return err;
 }
@@ -674,16 +674,14 @@ static void idpf_get_ringparam(struct net_device *netdev,
 {
 	struct idpf_adapter *adapter = idpf_netdev_to_adapter(netdev);
 	struct idpf_vport *vport;
-	struct idpf_q_grp *q_grp;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
-	q_grp = &vport->dflt_grp.q_grp;
 	ring->rx_max_pending = IDPF_MAX_RXQ_DESC;
 	ring->tx_max_pending = IDPF_MAX_TXQ_DESC;
-	ring->rx_pending = q_grp->rxq_desc_count;
-	ring->tx_pending = q_grp->txq_desc_count;
+	ring->rx_pending = vport->dflt_qv_rsrc.rxq_desc_count;
+	ring->tx_pending = vport->dflt_qv_rsrc.txq_desc_count;
 
 #ifdef HAVE_ETHTOOL_EXTENDED_RINGPARAMS
 #if IS_ENABLED(CONFIG_ETHTOOL_NETLINK) && defined(HAVE_ETHTOOL_SUPPORT_TCP_DATA_SPLIT)
@@ -691,7 +689,7 @@ static void idpf_get_ringparam(struct net_device *netdev,
 #endif /* CONFIG_ETHTOOL_NETLINK && HAVE_ETHTOOL_SUPPORT_TCP_DATA_SPLIT */
 #endif /* HAVE_ETHTOOL_EXTENDED_RINGPARAMS */
 
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 }
 
 /**
@@ -716,14 +714,15 @@ static int idpf_set_ringparam(struct net_device *netdev,
 {
 	struct idpf_adapter *adapter = idpf_netdev_to_adapter(netdev);
 	struct idpf_vport_user_config_data *config_data;
-	u32 new_rx_count, new_tx_count;
 	struct idpf_vport *vport;
-	struct idpf_q_grp *q_grp;
-	int i, err = 0;
+	struct idpf_q_vec_rsrc *rsrc;
+	u32 new_rx_count, new_tx_count;
+	int err = 0;
 	u16 idx;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
+	rsrc = &vport->dflt_qv_rsrc;
 
 #ifdef HAVE_NETDEV_BPF_XSK_POOL
 	/* If there is a AF_XDP UMEM attached to any of Rx queues,
@@ -766,15 +765,16 @@ static int idpf_set_ringparam(struct net_device *netdev,
 		netdev_info(netdev, "Requested Tx descriptor count rounded up to %u\n",
 			    new_tx_count);
 
-	q_grp = &vport->dflt_grp.q_grp;
-	if (new_tx_count == q_grp->txq_desc_count &&
 #ifdef HAVE_ETHTOOL_EXTENDED_RINGPARAMS
-	    new_rx_count == q_grp->rxq_desc_count &&
+	if (new_tx_count == rsrc->txq_desc_count &&
+	    new_rx_count == rsrc->rxq_desc_count &&
 	    kring->tcp_data_split == idpf_vport_get_hsplit(vport))
-#else
-	    new_rx_count == q_grp->rxq_desc_count)
-#endif /* HAVE_ETHTOOL_EXTENDED_RINGPARAMS */
 		goto unlock_mutex;
+#else
+	if (new_tx_count == rsrc->txq_desc_count &&
+	    new_rx_count == rsrc->rxq_desc_count)
+		goto unlock_mutex;
+#endif /* HAVE_ETHTOOL_EXTENDED_RINGPARAMS */
 
 #ifdef HAVE_ETHTOOL_EXTENDED_RINGPARAMS
 #if IS_ENABLED(CONFIG_ETHTOOL_NETLINK) && defined(HAVE_ETHTOOL_SUPPORT_TCP_DATA_SPLIT)
@@ -795,15 +795,15 @@ static int idpf_set_ringparam(struct net_device *netdev,
 	/* Since we adjusted the RX completion queue count, the RX buffer queue
 	 * descriptor count needs to be adjusted as well
 	 */
-	for (i = 0; i < q_grp->num_bufqs_per_qgrp; i++)
-		q_grp->bufq_desc_count[i] =
+	for (unsigned int i = 0; i < rsrc->num_bufqs_per_qgrp; i++)
+		rsrc->bufq_desc_count[i] =
 			IDPF_RX_BUFQ_DESC_COUNT(new_rx_count,
-						q_grp->num_bufqs_per_qgrp);
+						rsrc->num_bufqs_per_qgrp);
 
 	err = idpf_initiate_soft_reset(vport, IDPF_SR_Q_DESC_CHANGE);
 
 unlock_mutex:
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 
 	return err;
 }
@@ -1172,14 +1172,14 @@ static int idpf_set_priv_flags(struct net_device *netdev, u32 flags)
 	if (flags > BIT(IDPF_PRIV_FLAGS_STR_LEN))
 		return -EINVAL;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	user_data = &vport->adapter->vport_config[vport->idx]->user_config;
 
 	if ((!idpf_is_cap_ena_all(vport->adapter, IDPF_HSPLIT_CAPS,
 				  IDPF_CAP_HSPLIT) ||
-	     !idpf_is_queue_model_split(vport->dflt_grp.q_grp.rxq_model)) &&
+	     !idpf_is_queue_model_split(vport->dflt_qv_rsrc.rxq_model)) &&
 	    (flags & BIT(__IDPF_PRIV_FLAGS_HDR_SPLIT))) {
 		err = -EOPNOTSUPP;
 		goto unlock_mutex;
@@ -1219,7 +1219,7 @@ static int idpf_set_priv_flags(struct net_device *netdev, u32 flags)
 		err = idpf_initiate_soft_reset(vport, IDPF_SR_HSPLIT_CHANGE);
 
 unlock_mutex:
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 
 	return err;
 }
@@ -1476,8 +1476,7 @@ static void idpf_add_port_stats(struct idpf_vport *vport, u64 **data)
 static void idpf_collect_queue_stats(struct idpf_vport *vport)
 {
 	struct idpf_port_stats *pstats = &vport->port_stats;
-	struct idpf_q_grp *q_grp = &vport->dflt_grp.q_grp;
-	int i, j;
+	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
 
 	/* zero out port stats since they're actually tracked in per
 	 * queue stats; this is only for reporting
@@ -1500,23 +1499,23 @@ static void idpf_collect_queue_stats(struct idpf_vport *vport)
 	u64_stats_set(&pstats->tx_lso_bytes, 0);
 	u64_stats_set(&pstats->tx_lso_segs_tot, 0);
 
-	for (i = 0; i < IDPF_MAX_SEGS; i++) {
+	for (unsigned int i = 0; i < IDPF_MAX_SEGS; i++) {
 		u64_stats_set(&pstats->rsc_seg[i], 0);
 		u64_stats_set(&pstats->lso_seg[i], 0);
 	}
 
 	u64_stats_update_end(&pstats->stats_sync);
 
-	for (i = 0; i < q_grp->num_rxq_grp; i++) {
-		struct idpf_rxq_group *rxq_grp = &q_grp->rxq_grps[i];
+	for (unsigned int i = 0; i < rsrc->num_rxq_grp; i++) {
+		struct idpf_rxq_group *rxq_grp = &rsrc->rxq_grps[i];
 		u16 num_rxq;
 
-		if (idpf_is_queue_model_split(q_grp->rxq_model))
+		if (idpf_is_queue_model_split(rsrc->rxq_model))
 			num_rxq = rxq_grp->splitq.num_rxq_sets;
 		else
 			num_rxq = rxq_grp->singleq.num_rxq;
 
-		for (j = 0; j < num_rxq; j++) {
+		for (unsigned int j = 0; j < num_rxq; j++) {
 			u64 hw_csum_err, hsplit, hsplit_hbo, bad_descs;
 			u64 rsc_pkts, rsc_bytes, rsc_segs_tot, k;
 			u64 page_recycles = 0, page_reallocs = 0;
@@ -1525,7 +1524,7 @@ static void idpf_collect_queue_stats(struct idpf_vport *vport)
 			struct idpf_queue *rxq;
 			unsigned int start;
 
-			if (idpf_is_queue_model_split(q_grp->rxq_model))
+			if (idpf_is_queue_model_split(rsrc->rxq_model))
 				rxq = &rxq_grp->splitq.rxq_sets[j]->rxq;
 			else
 				rxq = rxq_grp->singleq.rxqs[j];
@@ -1575,10 +1574,10 @@ static void idpf_collect_queue_stats(struct idpf_vport *vport)
 		}
 	}
 
-	for (i = 0; i < q_grp->num_txq_grp; i++) {
-		struct idpf_txq_group *txq_grp = &q_grp->txq_grps[i];
+	for (unsigned int i = 0; i < rsrc->num_txq_grp; i++) {
+		struct idpf_txq_group *txq_grp = &rsrc->txq_grps[i];
 
-		for (j = 0; j < txq_grp->num_txq; j++) {
+		for (unsigned int j = 0; j < txq_grp->num_txq; j++) {
 			u64 linearize, qbusy, skb_drops, dma_map_errs;
 			struct idpf_queue *txq = txq_grp->txqs[j];
 			u64 lso_pkts, lso_bytes, lso_segs_tot;
@@ -1640,18 +1639,17 @@ static void idpf_get_ethtool_stats(struct net_device *netdev,
 	struct idpf_netdev_priv *np = netdev_priv(netdev);
 	struct idpf_adapter *adapter = np->adapter;
 	struct idpf_vport_config *vport_config;
+	struct idpf_q_vec_rsrc *rsrc;
 	struct idpf_vport *vport;
-	struct idpf_q_grp *q_grp;
 	unsigned int total = 0;
-	unsigned int i, j;
 	bool is_splitq;
 	u16 qtype;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	if (!test_bit(IDPF_VPORT_UP, np->state)) {
-		idpf_vport_cfg_unlock(adapter);
+		idpf_vport_ctrl_unlock(adapter);
 		return;
 	}
 
@@ -1666,12 +1664,12 @@ static void idpf_get_ethtool_stats(struct net_device *netdev,
 #endif /* CONFIG_UPLINK_PORT_STATS */
 	idpf_add_port_stats(vport, &data);
 
-	q_grp = &vport->dflt_grp.q_grp;
 	qtype = VIRTCHNL2_QUEUE_TYPE_TX;
-	for (i = 0; i < q_grp->num_txq_grp; i++) {
-		struct idpf_txq_group *txq_grp = &q_grp->txq_grps[i];
+	rsrc = &vport->dflt_qv_rsrc;
+	for (unsigned int i = 0; i < rsrc->num_txq_grp; i++) {
+		struct idpf_txq_group *txq_grp = &rsrc->txq_grps[i];
 
-		for (j = 0; j < txq_grp->num_txq; j++, total++) {
+		for (unsigned int j = 0; j < txq_grp->num_txq; j++, total++) {
 			struct idpf_queue *txq = txq_grp->txqs[j];
 
 			if (!txq) {
@@ -1695,10 +1693,10 @@ static void idpf_get_ethtool_stats(struct net_device *netdev,
 		idpf_add_empty_queue_stats(&data, VIRTCHNL2_QUEUE_TYPE_TX);
 	total = 0;
 
-	is_splitq = idpf_is_queue_model_split(q_grp->rxq_model);
+	is_splitq = idpf_is_queue_model_split(rsrc->rxq_model);
 
-	for (i = 0; i < q_grp->num_rxq_grp; i++) {
-		struct idpf_rxq_group *rxq_grp = &q_grp->rxq_grps[i];
+	for (unsigned int i = 0; i < rsrc->num_rxq_grp; i++) {
+		struct idpf_rxq_group *rxq_grp = &rsrc->rxq_grps[i];
 		u16 num_rxq;
 
 		qtype = VIRTCHNL2_QUEUE_TYPE_RX;
@@ -1708,7 +1706,7 @@ static void idpf_get_ethtool_stats(struct net_device *netdev,
 		else
 			num_rxq = rxq_grp->singleq.num_rxq;
 
-		for (j = 0; j < num_rxq; j++, total++) {
+		for (unsigned int j = 0; j < num_rxq; j++, total++) {
 			struct idpf_queue *rxq;
 
 			if (is_splitq)
@@ -1722,12 +1720,12 @@ static void idpf_get_ethtool_stats(struct net_device *netdev,
 		}
 	}
 
-	for (; i < vport_config->max_q.max_rxq; i++)
+	for (unsigned int i = rsrc->num_rxq_grp; i < vport_config->max_q.max_rxq; i++)
 		idpf_add_empty_queue_stats(&data, VIRTCHNL2_QUEUE_TYPE_RX);
 
 	rcu_read_unlock();
 
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 	/* Schedule the workqueue to get the latest statistics on the next
 	 * .get_ethtool_stats request.
 	 */
@@ -1736,18 +1734,18 @@ static void idpf_get_ethtool_stats(struct net_device *netdev,
 				 msecs_to_jiffies(300));
 }
 
-static struct idpf_queue *idpf_find_rxq(const struct idpf_q_grp *q_grp,
+static struct idpf_queue *idpf_find_rxq(const struct idpf_q_vec_rsrc *rsrc,
 					int q_num)
 {
 	int rxq_grp, rxq_idx;
 
-	if (!idpf_is_queue_model_split(q_grp->rxq_model))
-		return q_grp->rxq_grps->singleq.rxqs[q_num];
+	if (!idpf_is_queue_model_split(rsrc->rxq_model))
+		return rsrc->rxq_grps->singleq.rxqs[q_num];
 
 	rxq_grp = q_num / IDPF_DFLT_SPLITQ_RXQ_PER_GROUP;
 	rxq_idx = q_num % IDPF_DFLT_SPLITQ_RXQ_PER_GROUP;
 
-	return &q_grp->rxq_grps[rxq_grp].splitq.rxq_sets[rxq_idx]->rxq;
+	return &rsrc->rxq_grps[rxq_grp].splitq.rxq_sets[rxq_idx]->rxq;
 }
 
 /**
@@ -1783,29 +1781,29 @@ static int idpf_get_q_coalesce(struct net_device *netdev,
 {
 	struct idpf_netdev_priv *np = netdev_priv(netdev);
 	struct idpf_adapter *adapter = np->adapter;
+	struct idpf_q_vec_rsrc *rsrc;
 	struct idpf_vport *vport;
-	struct idpf_q_grp *q_grp;
 	int err = 0;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	if (!test_bit(IDPF_VPORT_UP, np->state))
 		goto unlock_mutex;
 
-	q_grp = &vport->dflt_grp.q_grp;
-	if (q_num >= q_grp->num_rxq && q_num >= q_grp->num_txq) {
+	rsrc = &vport->dflt_qv_rsrc;
+	if (q_num >= rsrc->num_rxq && q_num >= rsrc->num_txq) {
 		err = -EINVAL;
 		goto unlock_mutex;
 	}
 
-	if (q_num < q_grp->num_rxq)
-		__idpf_get_q_coalesce(ec, idpf_find_rxq(q_grp, q_num));
+	if (q_num < rsrc->num_rxq)
+		__idpf_get_q_coalesce(ec, idpf_find_rxq(rsrc, q_num));
 
-	if (q_num < vport->num_txq) {
+	if (q_num < rsrc->num_txq) {
 		struct idpf_queue *q;
 
-		q = idpf_is_queue_model_split(q_grp->txq_model) ?
+		q = idpf_is_queue_model_split(rsrc->txq_model) ?
 			vport->txqs[q_num]->txq_grp->complq :
 			vport->txqs[q_num];
 
@@ -1813,7 +1811,7 @@ static int idpf_get_q_coalesce(struct net_device *netdev,
 	}
 
 unlock_mutex:
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 
 	return err;
 }
@@ -1957,13 +1955,13 @@ static int idpf_set_q_coalesce(struct idpf_vport *vport,
 			       struct ethtool_coalesce *ec,
 			       int q_num, bool is_rxq)
 {
-	struct idpf_q_grp *q_grp = &vport->dflt_grp.q_grp;
+	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
 	struct idpf_queue *q;
 
 	if (is_rxq) {
-		q = idpf_find_rxq(q_grp, q_num);
+		q = idpf_find_rxq(rsrc, q_num);
 	} else {
-		q = idpf_is_queue_model_split(q_grp->txq_model) ?
+		q = idpf_is_queue_model_split(rsrc->txq_model) ?
 			vport->txqs[q_num]->txq_grp->complq :
 			vport->txqs[q_num];
 	}
@@ -1997,27 +1995,27 @@ static int idpf_set_coalesce(struct net_device *netdev,
 	struct idpf_vport_user_config_data *user_config;
 	struct idpf_adapter *adapter = np->adapter;
 	struct idpf_q_coalesce *q_coal;
+	struct idpf_q_vec_rsrc *rsrc;
 	struct idpf_vport *vport;
-	struct idpf_q_grp *q_grp;
-	int i, err = 0;
+	int err = 0;
 
 	user_config = &np->adapter->vport_config[np->vport_idx]->user_config;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	if (!test_bit(IDPF_VPORT_UP, np->state))
 		goto unlock_mutex;
 
-	for (i = 0; i < vport->num_txq; i++) {
+	rsrc = &vport->dflt_qv_rsrc;
+	for (unsigned int i = 0; i < rsrc->num_txq; i++) {
 		q_coal = &user_config->q_coalesce[i];
 		err = idpf_set_q_coalesce(vport, q_coal, ec, i, false);
 		if (err)
 			goto unlock_mutex;
 	}
 
-	q_grp = &vport->dflt_grp.q_grp;
-	for (i = 0; i < q_grp->num_rxq; i++) {
+	for (unsigned int i = 0; i < rsrc->num_rxq; i++) {
 		q_coal = &user_config->q_coalesce[i];
 		err = idpf_set_q_coalesce(vport, q_coal, ec, i, true);
 		if (err)
@@ -2025,7 +2023,7 @@ static int idpf_set_coalesce(struct net_device *netdev,
 	}
 
 unlock_mutex:
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 
 	return err;
 }
@@ -2046,12 +2044,13 @@ static int idpf_set_per_q_coalesce(struct net_device *netdev, u32 q_num,
 	struct idpf_netdev_priv *np = netdev_priv(netdev);
 	struct idpf_vport_user_config_data *user_config;
 	struct idpf_q_coalesce *q_coal;
+	struct idpf_q_vec_rsrc *rsrc;
 	struct idpf_vport *vport;
-	struct idpf_q_grp *q_grp;
 	int err = 0;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
+	rsrc = &vport->dflt_qv_rsrc;
 	user_config = &np->adapter->vport_config[np->vport_idx]->user_config;
 	q_coal = &user_config->q_coalesce[q_num];
 
@@ -2061,12 +2060,11 @@ static int idpf_set_per_q_coalesce(struct net_device *netdev, u32 q_num,
 			goto vport_unlock;
 	}
 
-	q_grp = &vport->dflt_grp.q_grp;
-	if (q_num < q_grp->num_rxq)
+	if (q_num < rsrc->num_rxq)
 		err = idpf_set_q_coalesce(vport, q_coal, ec, q_num, true);
 
 vport_unlock:
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 
 	return err;
 }
@@ -2194,7 +2192,7 @@ static int idpf_get_ts_info(struct net_device *netdev,
 	struct idpf_vport *vport;
 	int err = 0;
 
-	if (!mutex_trylock(&np->adapter->vport_cfg_lock))
+	if (!mutex_trylock(&np->adapter->vport_ctrl_lock))
 		return -EBUSY;
 
 	vport = idpf_netdev_to_vport(netdev);
@@ -2214,7 +2212,7 @@ static int idpf_get_ts_info(struct net_device *netdev,
 	}
 
 unlock:
-	mutex_unlock(&np->adapter->vport_cfg_lock);
+	mutex_unlock(&np->adapter->vport_ctrl_lock);
 
 	return err;
 }
@@ -2234,13 +2232,13 @@ static void idpf_get_ts_stats(struct net_device *netdev,
 {
 	struct idpf_netdev_priv *np = netdev_priv(netdev);
 	struct idpf_adapter *adapter = np->adapter;
-	struct idpf_q_grp *q_grp;
+	struct idpf_q_vec_rsrc *rsrc;
 	struct idpf_vport *vport;
 	unsigned int start;
 
-	idpf_vport_cfg_lock(adapter);
+	idpf_vport_ctrl_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
-	q_grp = &vport->dflt_grp.q_grp;
+	rsrc = &vport->dflt_qv_rsrc;
 
 	do {
 		start = u64_stats_fetch_begin(&vport->tstamp_stats.stats_sync);
@@ -2252,8 +2250,8 @@ static void idpf_get_ts_stats(struct net_device *netdev,
 	if (!test_bit(IDPF_VPORT_UP, np->state))
 		goto exit;
 
-	for (u16 i = 0; i < q_grp->num_txq_grp; i++) {
-		struct idpf_txq_group *txq_grp = &q_grp->txq_grps[i];
+	for (u16 i = 0; i < rsrc->num_txq_grp; i++) {
+		struct idpf_txq_group *txq_grp = &rsrc->txq_grps[i];
 
 		for (u16 j = 0; j < txq_grp->num_txq; j++) {
 			struct idpf_queue *txq = txq_grp->txqs[j];
@@ -2276,7 +2274,7 @@ static void idpf_get_ts_stats(struct net_device *netdev,
 	}
 
 exit:
-	idpf_vport_cfg_unlock(adapter);
+	idpf_vport_ctrl_unlock(adapter);
 }
 
 #endif /* HAVE_ETHTOOL_GET_TS_STATS */

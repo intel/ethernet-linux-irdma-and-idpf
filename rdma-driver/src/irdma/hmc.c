@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2015 - 2024 Intel Corporation */
+/* Copyright (c) 2015 - 2026 Intel Corporation */
 #include "osdep.h"
 #include "hmc.h"
 #include "defs.h"
@@ -193,9 +193,9 @@ static int irdma_hmc_sd_grp(struct irdma_sc_dev *dev,
 		if (sdinfo.cnt == IRDMA_MAX_SD_ENTRIES) {
 			ret_code = dev->cqp->process_cqp_sds(dev, &sdinfo);
 			if (ret_code) {
-				ibdev_dbg(to_ibdev(dev),
-					  "HMC: sd_programming failed err=%d\n",
-					  ret_code);
+				irdma_rblog_ibdev_dbg(to_ibdev(dev),
+						      "HMC: sd_programming failed err=%d\n",
+						      ret_code);
 				return ret_code;
 			}
 
@@ -296,22 +296,30 @@ int irdma_sc_create_hmc_obj(struct irdma_sc_dev *dev,
 		return 0;
 
 	if (info->start_idx >= info->hmc_info->hmc_obj[info->rsrc_type].cnt) {
-		ibdev_dbg(to_ibdev(dev),
-			  "ERR: invalid hmc obj type %u, start = %u, req cnt %u, cnt = %u\n",
-			  info->rsrc_type, info->start_idx, info->count,
-			  info->hmc_info->hmc_obj[info->rsrc_type].cnt);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "ERR: invalid hmc obj type %u, start = %u, req cnt %u, cnt = %u\n",
+				      info->rsrc_type, info->start_idx,
+				      info->count,
+				      info->hmc_info->hmc_obj[info->rsrc_type].cnt);
 
 		return -EINVAL;
 	}
 
 	if ((info->start_idx + info->count) >
 	    info->hmc_info->hmc_obj[info->rsrc_type].cnt) {
-		ibdev_dbg(to_ibdev(dev),
-			  "ERR: error type %u, start = %u, req cnt %u, cnt = %u\n",
-			  info->rsrc_type, info->start_idx, info->count,
-			  info->hmc_info->hmc_obj[info->rsrc_type].cnt);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "ERR: error type %u, start = %u, req cnt %u, cnt = %u\n",
+				      info->rsrc_type, info->start_idx,
+				      info->count,
+				      info->hmc_info->hmc_obj[info->rsrc_type].cnt);
 		return -EINVAL;
 	}
+
+	if (dev->hw_attrs.uk_attrs.hw_rev <= IRDMA_GEN_2 &&
+	    !dev->privileged)
+		return irdma_vchnl_req_add_hmc_objs(dev, info->rsrc_type,
+						   info->start_idx,
+						   info->count);
 
 	irdma_find_sd_index_limit(info->hmc_info, info->rsrc_type,
 				  info->start_idx, info->count, &sd_idx,
@@ -409,7 +417,8 @@ static int irdma_finish_del_sd_reg(struct irdma_sc_dev *dev,
 					    info->del_sd_cnt, false);
 
 	if (ret_code)
-		ibdev_dbg(to_ibdev(dev), "HMC: error cqp sd sd_grp\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "HMC: error cqp sd sd_grp\n");
 	for (i = 0; i < info->del_sd_cnt; i++) {
 		sd_idx = info->hmc_info->sd_indexes[i];
 		sd_entry = &info->hmc_info->sd_table.sd_entry[sd_idx];
@@ -419,7 +428,8 @@ static int irdma_finish_del_sd_reg(struct irdma_sc_dev *dev,
 		       &sd_entry->u.bp.addr;
 
 		if (!mem || !mem->va)
-			ibdev_dbg(to_ibdev(dev), "HMC: error cqp sd mem\n");
+			irdma_rblog_ibdev_dbg(to_ibdev(dev),
+					      "HMC: error cqp sd mem\n");
 		else {
 			dma_free_coherent(dev->hw->device, mem->size, mem->va,
 					  mem->pa);
@@ -454,21 +464,33 @@ int irdma_sc_del_hmc_obj(struct irdma_sc_dev *dev,
 		return 0;
 
 	if (info->start_idx >= info->hmc_info->hmc_obj[info->rsrc_type].cnt) {
-		ibdev_dbg(to_ibdev(dev),
-			  "HMC: error start_idx[%04d]  >= [type %04d].cnt[%04d]\n",
-			  info->start_idx, info->rsrc_type,
-			  info->hmc_info->hmc_obj[info->rsrc_type].cnt);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "HMC: error start_idx[%04d]  >= [type %04d].cnt[%04d]\n",
+				      info->start_idx, info->rsrc_type,
+				      info->hmc_info->hmc_obj[info->rsrc_type].cnt);
 		return -EINVAL;
 	}
 
 	if ((info->start_idx + info->count) >
 	    info->hmc_info->hmc_obj[info->rsrc_type].cnt) {
-		ibdev_dbg(to_ibdev(dev),
-			  "HMC: error start_idx[%04d] + count %04d  >= [type %04d].cnt[%04d]\n",
-			  info->start_idx, info->count, info->rsrc_type,
-			  info->hmc_info->hmc_obj[info->rsrc_type].cnt);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "HMC: error start_idx[%04d] + count %04d  >= [type %04d].cnt[%04d]\n",
+				      info->start_idx, info->count,
+				      info->rsrc_type,
+				      info->hmc_info->hmc_obj[info->rsrc_type].cnt);
 		return -EINVAL;
 	}
+	if (dev->hw_attrs.uk_attrs.hw_rev <= IRDMA_GEN_2 &&
+	    !dev->privileged) {
+		if (!reset)
+			ret_code = irdma_vchnl_req_del_hmc_obj(dev,
+							      info->rsrc_type,
+							      info->start_idx,
+							      info->count);
+		if (info->rsrc_type != IRDMA_HMC_IW_PBLE)
+			return ret_code;
+	}
+
 	irdma_find_pd_index_limit(info->hmc_info, info->rsrc_type,
 				  info->start_idx, info->count, &pd_idx,
 				  &pd_lmt);
@@ -489,8 +511,8 @@ int irdma_sc_del_hmc_obj(struct irdma_sc_dev *dev,
 		    pd_table->pd_entry[rel_pd_idx].valid) {
 			ret_code = irdma_remove_pd_bp(dev, info->hmc_info, j);
 			if (ret_code) {
-				ibdev_dbg(to_ibdev(dev),
-					  "HMC: remove_pd_bp error\n");
+				irdma_rblog_ibdev_dbg(to_ibdev(dev),
+						      "HMC: remove_pd_bp error\n");
 				return ret_code;
 			}
 		}
@@ -501,7 +523,7 @@ int irdma_sc_del_hmc_obj(struct irdma_sc_dev *dev,
 				  &sd_lmt);
 	if (sd_idx >= info->hmc_info->sd_table.sd_cnt ||
 	    sd_lmt > info->hmc_info->sd_table.sd_cnt) {
-		ibdev_dbg(to_ibdev(dev), "HMC: invalid sd_idx\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(dev), "HMC: invalid sd_idx\n");
 		return -EINVAL;
 	}
 
@@ -796,8 +818,9 @@ int irdma_pf_init_vfhmc(struct irdma_sc_dev *dev, u8 vf_hmc_fn_id)
 {
 	if (vf_hmc_fn_id < dev->hw_attrs.first_hw_vf_fpm_id ||
 	    (vf_hmc_fn_id >= dev->hw_attrs.first_hw_vf_fpm_id + dev->num_vfs)) {
-		ibdev_dbg(to_ibdev(dev), "HMC: invalid vf_hmc_fn_id  0x%x\n",
-			  vf_hmc_fn_id);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "HMC: invalid vf_hmc_fn_id  0x%x\n",
+				      vf_hmc_fn_id);
 		return -EINVAL;
 	}
 

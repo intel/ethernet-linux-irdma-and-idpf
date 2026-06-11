@@ -27,7 +27,6 @@
 #define IRDMA_MIN_QP_CNT			64
 #define IRDMA_FSIAV_CNT_MAX			1048576
 #define IRDMA_MIN_IRD				8
-#define IRDMA_HMC_MIN_RRF			16
 
 enum irdma_hmc_rsrc_type {
 	IRDMA_HMC_IW_QP		 = 0,
@@ -59,10 +58,6 @@ enum irdma_sd_entry_type {
 	IRDMA_SD_TYPE_PAGED   = 1,
 	IRDMA_SD_TYPE_DIRECT  = 2,
 };
-
-#define OBJ_HOST_MEM 0x8
-#define OBJ_LOC_MEM 0x4
-#define OBJ_HOST_LOC_MEM 0xc
 
 enum irdma_hmc_obj_mem {
 	IRDMA_HOST_MEM = 0,

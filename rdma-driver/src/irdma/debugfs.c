@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2015 - 2023 Intel Corporation */
+/* Copyright (c) 2015 - 2026 Intel Corporation */
 #include <linux/fs.h>
 #include <linux/debugfs.h>
 #include <linux/list.h>
+#include <linux/seq_file.h>
 
 #include "main.h"
+
+#ifdef HAVE_POLL_T
+#include <linux/eventpoll.h>
+#endif
 
 #ifdef CONFIG_DEBUG_FS
 static const char irdma_driver_name[] = "irdma";
@@ -27,6 +32,8 @@ static char cmd_buf[64];
 #define DUMP_HMC_ALL            0xf
 
 #define OFFSET_MASK_4K          0x0000000000000fffl
+
+#define HMC_SD_SIZE (2 * 1024 * 1024)
 
 static char *irdma_dbg_dump_buf;
 static size_t irdma_dbg_dump_data_len;
@@ -809,10 +816,10 @@ static void dump_stats_cmd(struct irdma_device *iwdev)
 		      dev->cqp_cmd_stats[IRDMA_OP_MW_ALLOC]);
 	dbg_vsnprintf("cqp OP_QP_FLUSH_WQES             %lld\n",
 		      dev->cqp_cmd_stats[IRDMA_OP_QP_FLUSH_WQES]);
-	dbg_vsnprintf("cqp OP_ADD_ARP_CACHE_ENTRY       %lld\n",
-		      dev->cqp_cmd_stats[IRDMA_OP_ADD_ARP_CACHE_ENTRY]);
 	dbg_vsnprintf("cqp OP_MANAGE_PUSH_PAGE          %lld\n",
 		      dev->cqp_cmd_stats[IRDMA_OP_MANAGE_PUSH_PAGE]);
+	dbg_vsnprintf("cqp OP_QUERY_RDMA_FEATURES       %lld\n",
+		      dev->cqp_cmd_stats[IRDMA_OP_QUERY_RDMA_FEATURES]);
 	dbg_vsnprintf("cqp OP_UPDATE_PE_SDS             %lld\n",
 		      dev->cqp_cmd_stats[IRDMA_OP_UPDATE_PE_SDS]);
 	dbg_vsnprintf("cqp OP_MANAGE_HMC_PM_FUNC_TABLE  %lld\n",
@@ -883,6 +890,8 @@ static void dump_stats_cmd(struct irdma_device *iwdev)
 		      dev->cqp_cmd_stats[IRDMA_OP_COPY_DATA]);
 	dbg_vsnprintf("cqp OP_NOP                       %lld\n",
 		      dev->cqp_cmd_stats[IRDMA_OP_NOP]);
+	dbg_vsnprintf("cqp OP_GATHER_RDMA_SYSTEM_STATS  %lld\n",
+		      dev->cqp_cmd_stats[IRDMA_OP_GATHER_RDMA_SYSTEM_STATS]);
 
 	dbg_vsnprintf("AH Reused Count                  %lld\n",
 		      iwdev->ah_reused);
@@ -1215,8 +1224,12 @@ static ssize_t irdma_dbg_dump_read(struct file *filp,
 		cmdnew = true;
 		cmddone = false;
 	} else {
-		if (cmdnew)
-			dbg_vsnprintf("cmd: %s", cmd_buf);
+		if (cmdnew) {
+			len = strlen(cmd_buf);
+			if ((len) && (cmd_buf[len - 1] == '\n'))
+				cmd_buf[len - 1] = '\0';
+			dbg_vsnprintf("cmd: %s\n", cmd_buf);
+		}
 
 		if (strncasecmp(cmd_buf, "qp ", 3) == 0)
 			dump_qp_cmd(rf, &cmd_buf[3]);
@@ -1245,8 +1258,9 @@ static ssize_t irdma_dbg_dump_read(struct file *filp,
 	bytes_not_copied =
 	    copy_to_user(buf, &irdma_dbg_dump_buf[*ppos], len);
 	if (bytes_not_copied) {
-		dev_warn(iwdev->ibdev.dma_device,
-			 "copy_to_user returned 0x%x\n", bytes_not_copied);
+		irdma_rblog_dev_warn(iwdev->ibdev.dma_device,
+				     "copy_to_user returned 0x%x\n",
+				     bytes_not_copied);
 	}
 
 	*ppos += len;
@@ -1311,12 +1325,13 @@ static int irdma_dbg_prep_dump_buf(struct irdma_handler *hdl, int buflen)
 		irdma_dbg_dump_buf = kzalloc(buflen, GFP_KERNEL);
 		if (!irdma_dbg_dump_buf) {
 			irdma_dbg_dump_buf_len = 0;
-			pr_err("%s: memory alloc for snapshot failed\n",
-			       __func__);
+			irdma_rblog_pr_err("%s: memory alloc for snapshot failed\n",
+					   __func__);
 		} else {
 			irdma_dbg_dump_buf_len = buflen;
-			pr_err("%s: irdma_dbg_dump_buf_len = %d\n",
-			       __func__, (int)irdma_dbg_dump_buf_len);
+			irdma_rblog_pr_err("%s: irdma_dbg_dump_buf_len = %d\n",
+					   __func__,
+					   (int)irdma_dbg_dump_buf_len);
 		}
 	}
 
@@ -1331,6 +1346,137 @@ static const struct file_operations irdma_dbg_dump_fops = {
 };
 
 /**
+ * irdma_dbg_rblog_read - Read Ring Buffer Log via debugfs
+ * @filp: the opened file
+ * @buffer: where to write the data for the user to read
+ * @count: the size of the user's buffer
+ * @ppos: file position offset
+ */
+static ssize_t irdma_dbg_rblog_read(struct file *filp, char __user *buffer,
+				    size_t count, loff_t *ppos)
+{
+	char *kbuf;
+	int bytes_read;
+	int ret;
+
+	if (!count)
+		return 0;
+
+	/* Allocate kernel buffer for reading */
+	kbuf = kmalloc(count, GFP_KERNEL);
+	if (!kbuf)
+		return -ENOMEM;
+
+	/* Read from ring buffer */
+	bytes_read = irdma_rblog_read(filp, kbuf, count, ppos);
+	if (bytes_read <= 0) {
+		kfree(kbuf);
+		return bytes_read;
+	}
+
+	/* Copy to user space */
+	ret = copy_to_user(buffer, kbuf, bytes_read);
+	kfree(kbuf);
+
+	if (ret)
+		return -EFAULT;
+
+	return bytes_read;
+}
+
+#ifdef HAVE_POLL_T
+/**
+ * irdma_dbg_rblog_poll - Poll support for tail -f
+ * @filp: file pointer
+ * @wait: poll table
+ *
+ * Returns poll mask indicating if file is readable
+ */
+static __poll_t irdma_dbg_rblog_poll(struct file *filp, poll_table *wait)
+{
+	wait_queue_head_t *wq = irdma_rblog_get_waitqueue();
+	u64 written_bytes;
+	__poll_t mask = 0;
+
+	if (!wq)
+		return EPOLLERR;
+
+	/* Add to wait queue */
+	poll_wait(filp, wq, wait);
+
+	/* Check if there's data to read at current position */
+	written_bytes = irdma_rblog_get_written_bytes();
+	if (filp->f_pos < written_bytes)
+		mask = EPOLLIN | EPOLLRDNORM;
+
+	return mask;
+}
+
+#endif /* HAVE_POLL_T */
+static const struct file_operations irdma_dbg_rblog_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = irdma_dbg_rblog_read,
+#ifdef HAVE_POLL_T
+	.poll = irdma_dbg_rblog_poll,
+#endif
+	.llseek = generic_file_llseek,
+};
+
+/**
+ * irdma_dbg_plog_open - open handler for the persistent log debugfs file
+ * @inode: inode of the file
+ * @filp: the opened file
+ */
+static int irdma_dbg_plog_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, irdma_plog_seq_show, NULL);
+}
+
+static const struct file_operations irdma_dbg_plog_fops = {
+	.owner   = THIS_MODULE,
+	.open    = irdma_dbg_plog_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = single_release,
+};
+
+/**
+ * irdma_dbg_rblog_stats_open - open handler for the ring buffer stats debugfs file
+ * @inode: inode of the file
+ * @filp: the opened file
+ */
+static int irdma_dbg_rblog_stats_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, irdma_rblog_stats_seq_show, NULL);
+}
+
+/**
+ * irdma_dbg_rblog_stats_write - Trigger rblog and plog dump to dmesg
+ * @filp: the opened file
+ * @buffer: user buffer (content ignored, any write triggers dump)
+ * @count: the size of the user's buffer
+ * @ppos: file position offset
+ */
+static ssize_t irdma_dbg_rblog_stats_write(struct file *filp, const char __user *buffer,
+					    size_t count, loff_t *ppos)
+{
+	pr_info("irdma: Manual log dump triggered via debugfs\n");
+	irdma_rblog_panic_handler(NULL, 0, NULL);
+
+	return count;
+}
+
+static const struct file_operations irdma_dbg_rblog_stats_fops = {
+	.owner   = THIS_MODULE,
+	.open    = irdma_dbg_rblog_stats_open,
+	.read    = seq_read,
+	.write   = irdma_dbg_rblog_stats_write,
+	.llseek  = seq_lseek,
+	.release = single_release,
+};
+
+/**
  * irdma_dbg_pf_init - setup the debugfs directory for the pf
  * @hdl: the iWARP handler that is starting up
  */
@@ -1342,7 +1488,8 @@ void irdma_dbg_pf_init(struct irdma_handler *hdl)
 	spin_lock_init(&hdl->uctx_list_lock);
 	INIT_LIST_HEAD(&hdl->ucontext_list);
 	if (irdma_dbg_prep_dump_buf(hdl, IRDMA_DUMP_BUF_SIZE) == 0) {
-		pr_err("irdma_dbg_pf_init: unable to allocate debugfs dump buffer\n");
+		irdma_rblog_pr_err("%s: unable to allocate debugfs dump buffer\n",
+				   __func__);
 		return;
 	}
 
@@ -1352,7 +1499,8 @@ void irdma_dbg_pf_init(struct irdma_handler *hdl)
 		    debugfs_create_file("dump", 0600, hdl->irdma_dbg_dentry,
 					hdl, &irdma_dbg_dump_fops);
 	else
-		pr_err("%s: debugfs entry for %s failed\n", __func__, name);
+		irdma_rblog_pr_err("%s: debugfs entry for %s failed\n",
+				   __func__, name);
 }
 
 /**
@@ -1362,7 +1510,7 @@ void irdma_dbg_pf_init(struct irdma_handler *hdl)
 void irdma_dbg_pf_exit(struct irdma_handler *hdl)
 {
 	if (hdl) {
-		pr_err("%s: removing debugfs entries\n", __func__);
+		irdma_rblog_pr_err("%s: removing debugfs entries\n", __func__);
 		debugfs_remove_recursive(hdl->irdma_dbg_dentry);
 		hdl->irdma_dbg_dentry = NULL;
 	}
@@ -1375,7 +1523,23 @@ void irdma_dbg_init(void)
 {
 	irdma_dbg_root = debugfs_create_dir(irdma_driver_name, NULL);
 	if (!irdma_dbg_root)
-		pr_err("%s: init of debugfs failed\n", __func__);
+		irdma_rblog_pr_err("%s: init of debugfs failed\n", __func__);
+
+	/* Create Ring Buffer Log file if backend is active */
+	if (log_backend == IRDMA_LOG_BACKEND_RBLOG) {
+		struct dentry *rblog_dentry;
+
+		rblog_dentry = debugfs_create_file("rblog", 0400, irdma_dbg_root, NULL,
+						   &irdma_dbg_rblog_fops);
+		/* Store dentry for inotify support */
+		irdma_rblog_set_dentry(rblog_dentry);
+
+		debugfs_create_file("rblog_stats", 0600, irdma_dbg_root, NULL,
+				    &irdma_dbg_rblog_stats_fops);
+
+		debugfs_create_file("plog", 0400, irdma_dbg_root, NULL,
+				    &irdma_dbg_plog_fops);
+	}
 }
 
 /**
@@ -1383,6 +1547,8 @@ void irdma_dbg_init(void)
  */
 void irdma_dbg_exit(void)
 {
+	/* Clear dentry pointer before removing debugfs tree */
+	irdma_rblog_set_dentry(NULL);
 	kfree(irdma_dbg_dump_buf);
 	irdma_dbg_dump_buf_len = 0;
 	irdma_dbg_dump_buf = NULL;

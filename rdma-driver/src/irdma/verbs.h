@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
-/* Copyright (c) 2015 - 2024 Intel Corporation */
+/* Copyright (c) 2015 - 2025 Intel Corporation */
 #ifndef IRDMA_VERBS_H
 #define IRDMA_VERBS_H
 
@@ -415,8 +415,9 @@ static inline void set_ib_wc_op_sq(struct irdma_cq_poll_info *cq_poll_info,
 		break;
 	default:
 		qp = cq_poll_info->qp_handle;
-		ibdev_err(to_ibdev(qp->dev), "Invalid opcode = %d in CQE\n",
-			  cq_poll_info->op_type);
+		irdma_rblog_ibdev_err(to_ibdev(qp->dev),
+				      "Invalid opcode = %d in CQE\n",
+				      cq_poll_info->op_type);
 		entry->status = IB_WC_GENERAL_ERR;
 	}
 }

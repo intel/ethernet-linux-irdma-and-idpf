@@ -709,13 +709,13 @@ int idpf_ptp_request_ts(struct idpf_queue *tx_q, struct sk_buff *skb,
  * @vport: Virtual port structure
  * @rx_filter: Receive timestamp filter
  */
-static void idpf_ptp_set_rx_tstamp(struct idpf_vport *vport, int rx_filter)
+void idpf_ptp_set_rx_tstamp(struct idpf_vport *vport, int rx_filter)
 {
-	struct idpf_q_grp *q_grp = &vport->dflt_grp.q_grp;
+	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
 	bool enable = true, splitq;
 	u16 i;
 
-	splitq = idpf_is_queue_model_split(q_grp->rxq_model);
+	splitq = idpf_is_queue_model_split(rsrc->rxq_model);
 
 	if (rx_filter == HWTSTAMP_FILTER_NONE) {
 		enable = false;
@@ -724,8 +724,8 @@ static void idpf_ptp_set_rx_tstamp(struct idpf_vport *vport, int rx_filter)
 		vport->tstamp_config.rx_filter = HWTSTAMP_FILTER_ALL;
 	}
 
-	for (i = 0; i < q_grp->num_rxq_grp; i++) {
-		struct idpf_rxq_group *grp = &q_grp->rxq_grps[i];
+	for (i = 0; i < rsrc->num_rxq_grp; i++) {
+		struct idpf_rxq_group *grp = &rsrc->rxq_grps[i];
 		struct idpf_queue *rx_queue;
 		u16 j, num_rxq;
 
@@ -1094,6 +1094,8 @@ int idpf_ptp_init(struct idpf_adapter *adapter)
 		goto free_ptp;
 	}
 
+	spin_lock_init(&adapter->ptp->read_dev_clk_lock);
+
 	err = idpf_ptp_create_clock(adapter);
 	if (err)
 		goto free_ptp;
@@ -1132,9 +1134,6 @@ int idpf_ptp_init(struct idpf_adapter *adapter)
 	}
 
 #endif /* HAVE_PTP_CANCEL_WORKER_SYNC */
-
-	spin_lock_init(&adapter->ptp->read_dev_clk_lock);
-
 	pci_dbg(adapter->pdev, "PTP init successful\n");
 
 	return 0;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
-/* Copyright (c) 2017 - 2023 Intel Corporation */
+/* Copyright (c) 2017 - 2026 Intel Corporation */
 #include "osdep.h"
 #include "hmc.h"
 #include "defs.h"
@@ -8,6 +8,8 @@
 #include "virtchnl.h"
 
 #include "ws.h"
+
+#include "iidc.h"
 
 /**
  * irdma_alloc_node - Allocate a WS node and init
@@ -103,9 +105,13 @@ static int irdma_ws_cqp_cmd(struct irdma_sc_vsi *vsi,
 	node_info.tc = node->traffic_class;
 	node_info.prio_type = node->prio_type;
 	node_info.type_leaf = node->type_leaf;
+	node_info.failing_port = node->failing_port;
+	node_info.active_port = node->active_port;
+	node_info.assign_to_active_port = node->assign_to_active_port;
 	node_info.enable = node->enable;
 	if (irdma_cqp_ws_node_cmd(vsi->dev, cmd, &node_info)) {
-		ibdev_dbg(to_ibdev(vsi->dev), "WS: CQP WS CMD failed\n");
+		irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
+				      "WS: CQP WS CMD failed\n");
 		return -ENOMEM;
 	}
 
@@ -171,6 +177,75 @@ static bool irdma_ws_in_use(struct irdma_sc_vsi *vsi, u8 user_pri)
 	return false;
 }
 
+static void irdma_lag_setup_tc_node(struct irdma_sc_vsi *vsi,
+				    struct irdma_ws_node *tc_node,
+				    bool first_node)
+{
+	tc_node->assign_to_active_port = true;
+	if (first_node) {
+		/* Default first TC node to primary port unless only secondary port is up */
+		if ((vsi->lag_port_bitmap & IIDC_RDMA_BOTH_PORT) ==
+		    IIDC_RDMA_SECONDARY_PORT) {
+			tc_node->active_port =
+				vsi->lag_ports[IRDMA_LAG_SECONDARY_IDX];
+			if (tc_node->active_port == IIDC_RDMA_INVALID_PORT)
+				tc_node->active_port =
+				vsi->lag_ports[IRDMA_LAG_PRIMARY_IDX];
+			vsi->primary_port_migrated = true;
+		} else {
+			tc_node->active_port =
+				vsi->lag_ports[IRDMA_LAG_PRIMARY_IDX];
+			if (tc_node->active_port == IIDC_RDMA_INVALID_PORT)
+				tc_node->active_port =
+				vsi->lag_ports[IRDMA_LAG_SECONDARY_IDX];
+			vsi->primary_port_migrated = false;
+		}
+	} else {
+		/* If secondary port is not active default to primary if it's active */
+		if ((vsi->lag_port_bitmap & IIDC_RDMA_BOTH_PORT) ==
+		    IIDC_RDMA_SECONDARY_PORT) {
+			tc_node->active_port =
+				vsi->lag_ports[IRDMA_LAG_PRIMARY_IDX];
+			if (tc_node->active_port == IIDC_RDMA_INVALID_PORT)
+				tc_node->active_port =
+				vsi->lag_ports[IRDMA_LAG_SECONDARY_IDX];
+			vsi->secondary_port_migrated = true;
+		} else {
+			tc_node->active_port =
+				vsi->lag_ports[IRDMA_LAG_SECONDARY_IDX];
+			if (tc_node->active_port == IIDC_RDMA_INVALID_PORT)
+				tc_node->active_port =
+				vsi->lag_ports[IRDMA_LAG_PRIMARY_IDX];
+			vsi->secondary_port_migrated = false;
+		}
+	}
+}
+
+static void irdma_add_node_id(u16 *node_ids, u16 idx)
+{
+	int i;
+
+	/* Save the node ID in an available slot indicated by 0 */
+	for (i = 0; i < IRDMA_MAX_USER_PRIORITY; i++) {
+		if (!node_ids[i]) {
+			node_ids[i] = idx;
+			return;
+		}
+	}
+}
+
+static void irdma_remove_node_id(u16 *node_ids, u16 idx)
+{
+	int i;
+
+	for (i = 0; i < IRDMA_MAX_USER_PRIORITY; i++) {
+		if (node_ids[i] == idx) {
+			node_ids[i] = 0;
+			return;
+		}
+	}
+}
+
 /**
  * irdma_remove_leaf - Remove leaf node unconditionally
  * @vsi: vsi pointer
@@ -179,6 +254,7 @@ static bool irdma_ws_in_use(struct irdma_sc_vsi *vsi, u8 user_pri)
 static void irdma_remove_leaf(struct irdma_sc_vsi *vsi, u8 user_pri)
 {
 	struct irdma_ws_node *ws_tree_root, *vsi_node, *tc_node;
+	struct irdma_ws_node *tc_node2 = NULL;
 	u16 qs_handle;
 	int i;
 
@@ -194,9 +270,9 @@ static void irdma_remove_leaf(struct irdma_sc_vsi *vsi, u8 user_pri)
 		ret = irdma_vchnl_req_manage_ws_node(vsi->dev, false, user_pri,
 						     NULL);
 		if (ret)
-			ibdev_dbg(to_ibdev(vsi->dev),
-				  "VIRT: Send message failed ret = %d \n",
-				  ret);
+			irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
+					      "VIRT: Send message failed ret = %d \n",
+					      ret);
 
 		return;
 	}
@@ -217,10 +293,26 @@ static void irdma_remove_leaf(struct irdma_sc_vsi *vsi, u8 user_pri)
 		return;
 
 	list_del(&tc_node->siblings);
+	if (vsi->lag_aa) {
+		tc_node2 = ws_find_node(vsi_node,
+					vsi->qos[user_pri].traffic_class,
+					WS_MATCH_TYPE_TC);
+		if (!tc_node2)
+			return;
+		irdma_rblog_pr_info("%s: Second TC node found. Removing.\n",
+				    __func__);
+		list_del(&tc_node2->siblings);
+		irdma_ws_cqp_cmd(vsi, tc_node2, IRDMA_OP_WS_DELETE_NODE, NULL);
+
+		irdma_remove_node_id(vsi->primary_port_node_ids, tc_node->index);
+		irdma_remove_node_id(vsi->secondary_port_node_ids, tc_node2->index);
+	}
 	irdma_ws_cqp_cmd(vsi, tc_node, IRDMA_OP_WS_DELETE_NODE, NULL);
 
-	vsi->unregister_qset(vsi, tc_node);
+	vsi->unregister_qset(vsi, tc_node2, tc_node);
 	irdma_free_node(vsi, tc_node);
+	if (tc_node2)
+		irdma_free_node(vsi, tc_node2);
 	/* Check if VSI node can be freed */
 	if (list_empty(&vsi_node->child_list_head)) {
 		irdma_ws_cqp_cmd(vsi, vsi_node, IRDMA_OP_WS_DELETE_NODE, NULL);
@@ -236,23 +328,30 @@ static void irdma_remove_leaf(struct irdma_sc_vsi *vsi, u8 user_pri)
 	}
 }
 
-static int irdma_enable_leaf(struct irdma_sc_vsi *vsi,
-			     struct irdma_ws_node *tc_node)
+static int irdma_enable_leaves(struct irdma_sc_vsi *vsi,
+			       struct irdma_ws_node *tc_node1,
+			       struct irdma_ws_node *tc_node2)
 {
 	int ret;
 
-	ret = vsi->register_qset(vsi, tc_node);
+	ret = vsi->register_qset(vsi, tc_node1, tc_node2);
 	if (ret)
 		return ret;
 
-	tc_node->enable = true;
-	ret = irdma_ws_cqp_cmd(vsi, tc_node, IRDMA_OP_WS_MODIFY_NODE, NULL);
+	tc_node1->enable = true;
+	ret = irdma_ws_cqp_cmd(vsi, tc_node1, IRDMA_OP_WS_MODIFY_NODE, NULL);
 	if (ret)
 		goto enable_err;
+	if (tc_node2) {
+		tc_node2->enable = true;
+		ret = irdma_ws_cqp_cmd(vsi, tc_node2, IRDMA_OP_WS_MODIFY_NODE, NULL);
+		if (ret)
+			goto enable_err;
+	}
 	return 0;
 
 enable_err:
-	vsi->unregister_qset(vsi, tc_node);
+	vsi->unregister_qset(vsi, tc_node1, tc_node2);
 
 	return ret;
 }
@@ -263,10 +362,13 @@ static struct irdma_ws_node *irdma_add_leaf_node(struct irdma_sc_vsi *vsi,
 {
 	struct irdma_ws_node *tc_node =
 		irdma_alloc_node(vsi, user_pri, WS_NODE_TYPE_LEAF, vsi_node);
+	struct irdma_ws_node *tc_node2 = NULL;
 	int i, ret = 0;
 
 	if (!tc_node)
 		return NULL;
+	if (vsi->lag_aa)
+		irdma_lag_setup_tc_node(vsi, tc_node, true);
 	ret = irdma_ws_cqp_cmd(vsi, tc_node, IRDMA_OP_WS_ADD_NODE, &tc_node->qs_handle);
 	if (ret) {
 		irdma_free_node(vsi, tc_node);
@@ -276,9 +378,44 @@ static struct irdma_ws_node *irdma_add_leaf_node(struct irdma_sc_vsi *vsi,
 
 	list_add(&tc_node->siblings, &vsi_node->child_list_head);
 
-	ret = irdma_enable_leaf(vsi, tc_node);
-	if (ret)
+	if (vsi->lag_aa) {
+		irdma_add_node_id(vsi->primary_port_node_ids, tc_node->index);
+		irdma_rblog_pr_info("%s: First TC node ID=%d, using active_port = %d\n",
+				    __func__, tc_node->index,
+				    tc_node->active_port);
+		tc_node2 = irdma_alloc_node(vsi, user_pri, WS_NODE_TYPE_LEAF,
+					   vsi_node);
+		if (!tc_node2) {
+			irdma_remove_node_id(vsi->primary_port_node_ids, tc_node->index);
+			goto reg_err;
+		}
+		irdma_lag_setup_tc_node(vsi, tc_node2, false);
+		ret = irdma_ws_cqp_cmd(vsi, tc_node2, IRDMA_OP_WS_ADD_NODE,
+				       &tc_node2->qs_handle);
+		if (ret) {
+			irdma_remove_node_id(vsi->primary_port_node_ids,
+					     tc_node->index);
+			irdma_free_node(vsi, tc_node2);
+			tc_node2 = NULL;
+			goto reg_err;
+		}
+		vsi->qos[tc_node2->user_pri].qs_handle[1] = tc_node2->qs_handle;
+		irdma_add_node_id(vsi->secondary_port_node_ids, tc_node2->index);
+		irdma_rblog_pr_info("%s: Second TC node ID=%d, using active_port = %d\n",
+				    __func__, tc_node2->index,
+				    tc_node2->active_port);
+
+		list_add(&tc_node2->siblings, &vsi_node->child_list_head);
+	}
+
+	ret = irdma_enable_leaves(vsi, tc_node, tc_node2);
+	if (ret) {
+		irdma_remove_node_id(vsi->primary_port_node_ids, tc_node->index);
+		if (tc_node2)
+			irdma_remove_node_id(vsi->secondary_port_node_ids,
+					     tc_node2->index);
 		goto reg_err;
+	}
 
 	/*
 	 * Iterate through other UPs and update the QS handle if they have
@@ -287,12 +424,24 @@ static struct irdma_ws_node *irdma_add_leaf_node(struct irdma_sc_vsi *vsi,
 	for (i = 0; i < IRDMA_MAX_USER_PRIORITY; i++) {
 		if (vsi->qos[i].traffic_class == traffic_class) {
 			vsi->qos[i].qs_handle[0] = tc_node->qs_handle;
+			vsi->qos[i].l2_sched_node_id[0] =
+				tc_node->l2_sched_node_id;
+			if (tc_node2) {
+				vsi->qos[i].qs_handle[1] = tc_node2->qs_handle;
+				vsi->qos[i].l2_sched_node_id[1] =
+					tc_node2->l2_sched_node_id;
+			}
 			vsi->qos[i].valid = true;
 		}
 	}
 	return tc_node;
 
 reg_err:
+	if (tc_node2) {
+		irdma_ws_cqp_cmd(vsi, tc_node2, IRDMA_OP_WS_DELETE_NODE, NULL);
+		list_del(&tc_node2->siblings);
+		irdma_free_node(vsi, tc_node2);
+	}
 	irdma_ws_cqp_cmd(vsi, tc_node, IRDMA_OP_WS_DELETE_NODE, NULL);
 	list_del(&tc_node->siblings);
 	irdma_free_node(vsi, tc_node);
@@ -328,8 +477,9 @@ int irdma_ws_add(struct irdma_sc_vsi *vsi, u8 user_pri)
 		ret = irdma_vchnl_req_manage_ws_node(vsi->dev, true, user_pri,
 						     &vf_qs_handle);
 		if (ret) {
-			ibdev_dbg(to_ibdev(vsi->dev),
-				  "VIRT: Send message failed ret = %d\n", ret);
+			irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
+					      "VIRT: Send message failed ret = %d\n",
+					      ret);
 			goto exit;
 		}
 
@@ -346,8 +496,9 @@ int irdma_ws_add(struct irdma_sc_vsi *vsi, u8 user_pri)
 			ret = -ENOMEM;
 			goto exit;
 		}
-		ibdev_dbg(to_ibdev(vsi->dev), "WS: Creating root node = %d\n",
-			  ws_tree_root->index);
+		irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
+				      "WS: Creating root node = %d\n",
+				      ws_tree_root->index);
 
 		ret = irdma_ws_cqp_cmd(vsi, ws_tree_root, IRDMA_OP_WS_ADD_NODE,
 				       NULL);
@@ -365,9 +516,9 @@ int irdma_ws_add(struct irdma_sc_vsi *vsi, u8 user_pri)
 
 	/* If VSI node doesn't exist, add one */
 	if (!vsi_node) {
-		ibdev_dbg(to_ibdev(vsi->dev),
-			  "WS: Node not found matching VSI %d\n",
-			  vsi->vsi_idx);
+		irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
+				      "WS: Node not found matching VSI %d\n",
+				      vsi->vsi_idx);
 		vsi_node = irdma_alloc_node(vsi, user_pri, WS_NODE_TYPE_PARENT,
 					    ws_tree_root);
 		if (!vsi_node) {
@@ -385,17 +536,17 @@ int irdma_ws_add(struct irdma_sc_vsi *vsi, u8 user_pri)
 		list_add(&vsi_node->siblings, &ws_tree_root->child_list_head);
 	}
 
-	ibdev_dbg(to_ibdev(vsi->dev),
-		  "WS: Using node %d which represents VSI %d\n",
-		  vsi_node->index, vsi->vsi_idx);
+	irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
+			      "WS: Using node %d which represents VSI %d\n",
+			      vsi_node->index, vsi->vsi_idx);
 	traffic_class = vsi->qos[user_pri].traffic_class;
 	tc_node = ws_find_node(vsi_node, traffic_class,
 			       WS_MATCH_TYPE_TC);
 	if (!tc_node) {
 		/* Add leaf node */
-		ibdev_dbg(to_ibdev(vsi->dev),
-			  "WS: Node not found matching VSI %d and TC %d\n",
-			  vsi->vsi_idx, traffic_class);
+		irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
+				      "WS: Node not found matching VSI %d and TC %d\n",
+				      vsi->vsi_idx, traffic_class);
 		tc_node = irdma_add_leaf_node(vsi, vsi_node, user_pri,
 					      traffic_class);
 		if (!tc_node) {
@@ -403,9 +554,9 @@ int irdma_ws_add(struct irdma_sc_vsi *vsi, u8 user_pri)
 			goto leaf_add_err;
 		}
 	}
-	ibdev_dbg(to_ibdev(vsi->dev),
-		  "WS: Using node %d which represents VSI %d TC %d\n",
-		  tc_node->index, vsi->vsi_idx, traffic_class);
+	irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
+			      "WS: Using node %d which represents VSI %d TC %d\n",
+			      tc_node->index, vsi->vsi_idx, traffic_class);
 	goto exit;
 
 leaf_add_err:
@@ -462,3 +613,131 @@ void irdma_ws_reset(struct irdma_sc_vsi *vsi)
 	mutex_unlock(&vsi->dev->ws_mutex);
 }
 
+static u8 irdma_move_nodes(u16 *dest_nodes, u16 *src_nodes)
+{
+	int i;
+	u8 num_nodes = 0;
+
+	for (i = 0; i < IRDMA_MAX_USER_PRIORITY; ++i) {
+		if (src_nodes[i])
+			dest_nodes[num_nodes++] = src_nodes[i];
+	}
+	return num_nodes;
+}
+
+/**
+ * irdma_ws_move_cmd - Perform Scheduler Move CQP command
+ * @vsi: vsi pointer
+ */
+void irdma_ws_move_cmd(struct irdma_sc_vsi *vsi)
+{
+	struct irdma_ws_move_node_info move_ws_node = {};
+	int i;
+
+	mutex_lock(&vsi->dev->ws_mutex);
+	if ((vsi->lag_port_bitmap & IIDC_RDMA_BOTH_PORT) ==
+	    IIDC_RDMA_BOTH_PORT) { /* if both ports are active */
+		if (vsi->primary_port_migrated) { /* if primary port was in failed state */
+			vsi->primary_port_migrated = false;
+			/* move all primary port nodes back to the primary port */
+			move_ws_node.target_port =
+				vsi->lag_ports[IRDMA_LAG_PRIMARY_IDX];
+			move_ws_node.num_nodes =
+				irdma_move_nodes(move_ws_node.node_id,
+						 vsi->primary_port_node_ids);
+			irdma_rblog_pr_info("%s: both ports active. move primary port node_ids back to target_port=%d, num_nodes = %d, nodes:\n",
+					    __func__,
+					    move_ws_node.target_port,
+					    move_ws_node.num_nodes);
+		} else if (vsi->secondary_port_migrated) { /* secondary port was in failed state */
+			vsi->secondary_port_migrated = false;
+			/* move all secondary port nodes back to the secondary port */
+			move_ws_node.target_port =
+				vsi->lag_ports[IRDMA_LAG_SECONDARY_IDX];
+			move_ws_node.num_nodes =
+				irdma_move_nodes(move_ws_node.node_id,
+						 vsi->secondary_port_node_ids);
+			irdma_rblog_pr_info("%s: both ports active. move secondary port node_ids back to target_port=%d, num_nodes = %d, nodes:\n",
+					    __func__,
+					    move_ws_node.target_port,
+					    move_ws_node.num_nodes);
+
+		}
+		for (i = 0; i < move_ws_node.num_nodes; ++i)
+			irdma_rblog_pr_info("%d\n", move_ws_node.node_id[i]);
+		move_ws_node.resume_traffic = true;
+		if (irdma_cqp_ws_move_cmd(vsi->dev, &move_ws_node))
+			irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
+					      "WS: CQP WS MOVE CMD failed, both ports up case\n");
+	} else { /* if only one or none are active */
+		if (vsi->lag_port_bitmap == IIDC_RDMA_SECONDARY_PORT) {	/* if only secodary port is active */
+			move_ws_node.target_port =
+				vsi->lag_ports[IRDMA_LAG_SECONDARY_IDX];
+			vsi->secondary_port_migrated = false;
+			vsi->primary_port_migrated = true;
+			/* move all primary port nodes to secondary */
+			move_ws_node.num_nodes =
+				irdma_move_nodes(move_ws_node.node_id,
+						 vsi->primary_port_node_ids);
+			/* move all secodary port nodes back to secodary port */
+			move_ws_node.num_nodes =
+				irdma_move_nodes(move_ws_node.node_id,
+						 vsi->secondary_port_node_ids);
+			irdma_rblog_pr_info("%s: only secondary port is active. move all node_ids to target_port=%d, num_nodes = %d, nodes:\n",
+					    __func__,
+					    move_ws_node.target_port,
+					    move_ws_node.num_nodes);
+		} else { /* only primary port is active or none are active, move everything to primary port */
+			move_ws_node.target_port =
+				vsi->lag_ports[IRDMA_LAG_PRIMARY_IDX];
+			vsi->secondary_port_migrated = true;
+			vsi->primary_port_migrated = false;
+			/* move all primary port nodes back to primary port */
+			move_ws_node.num_nodes =
+				irdma_move_nodes(move_ws_node.node_id,
+						 vsi->primary_port_node_ids);
+			/* move all secondary port nodes to primary port */
+			move_ws_node.num_nodes =
+				irdma_move_nodes(move_ws_node.node_id,
+						 vsi->secondary_port_node_ids);
+			irdma_rblog_pr_info("%s: only primary port is active. move all node_ids to target_port=%d, num_nodes = %d, nodes:\n",
+					    __func__,
+					    move_ws_node.target_port,
+					    move_ws_node.num_nodes);
+		}
+		move_ws_node.resume_traffic = true;
+		for (i = 0; i < move_ws_node.num_nodes; ++i)
+			irdma_rblog_pr_info("%d\n", move_ws_node.node_id[i]);
+
+		if (irdma_cqp_ws_move_cmd(vsi->dev, &move_ws_node))
+			irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
+					      "WS: CQP WS MOVE CMD failed\n");
+	}
+
+	mutex_unlock(&vsi->dev->ws_mutex);
+}
+
+/**
+ * irdma_ws_failover_cmd - Perform failover CQP command
+ * @vsi: vsi pointer
+ * @cmd: Failover Start or Complete cmd
+ * @failing_port: Port number that is failing
+ * @active_port: Port number to become active
+ */
+void irdma_ws_failover_cmd(struct irdma_sc_vsi *vsi, u8 cmd, u8 failing_port,
+			   u8 active_port)
+{
+	struct irdma_ws_node ws_node;
+
+	mutex_lock(&vsi->dev->ws_mutex);
+	if (WARN_ON_ONCE(!vsi->dev->ws_tree_root)) {
+		mutex_unlock(&vsi->dev->ws_mutex);
+		return;
+	}
+	ws_node  = *vsi->dev->ws_tree_root;
+
+	ws_node.failing_port = failing_port;
+	ws_node.active_port = active_port;
+	irdma_ws_cqp_cmd(vsi, &ws_node, cmd, NULL);
+	mutex_unlock(&vsi->dev->ws_mutex);
+}

@@ -45,6 +45,7 @@ typedef int (*async_vc_cb) (struct idpf_adapter *, struct idpf_vc_xn *,
  * struct idpf_vc_xn - Data structure representing virtchnl transactions
  * @completed: virtchnl event loop uses that to signal when a reply is
  *	       available, uses kernel completion API
+ * @lock: protects the transaction state fields below
  * @state: virtchnl event loop stores the data below, protected by the
  *	   completion's lock.
  * @reply_sz: Original size of reply, may be > reply_buf.iov_len; it will be
@@ -61,6 +62,7 @@ typedef int (*async_vc_cb) (struct idpf_adapter *, struct idpf_vc_xn *,
  */
 struct idpf_vc_xn {
 	struct completion completed;
+	spinlock_t lock;
 	enum idpf_vc_xn_state state;
 	size_t reply_sz;
 	struct kvec reply;
@@ -111,6 +113,7 @@ struct idpf_adapter;
 struct idpf_netdev_priv;
 struct idpf_vec_regs;
 struct idpf_vport;
+struct idpf_vport_config;
 struct idpf_vport_max_q;
 struct idpf_vport_user_config_data;
 
@@ -122,56 +125,69 @@ int idpf_vc_core_init(struct idpf_adapter *adapter);
 void idpf_vc_core_deinit(struct idpf_adapter *adapter);
 void idpf_init_vc_xn_completion(struct idpf_vc_xn_manager *vcxn_mngr);
 void idpf_vc_xn_init(struct idpf_vc_xn_manager *vcxn_mngr);
-int idpf_get_reg_intr_vecs(struct idpf_vport *vport,
+int idpf_get_reg_intr_vecs(struct idpf_adapter *adapter,
 			   struct idpf_vec_regs *reg_vals);
-int idpf_queue_reg_init(struct idpf_vport *vport, struct idpf_q_grp *q_grp,
-			struct virtchnl2_queue_reg_chunks *chunks);
-int idpf_vport_queue_ids_init(struct idpf_q_grp *q_grp,
-			      struct virtchnl2_queue_reg_chunks *chunks);
+int idpf_queue_reg_init(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc,
+			struct idpf_queue_id_reg_info *chunks);
+int idpf_vport_queue_ids_init(struct idpf_q_vec_rsrc *rsrc,
+			      struct idpf_queue_id_reg_info *chunks);
+int idpf_vport_init_queue_reg_chunks(struct idpf_vport_config *vport_config,
+				     struct virtchnl2_queue_reg_chunks *schunks);
+
 bool idpf_vport_is_cap_ena(struct idpf_vport *vport, u16 flag);
 bool idpf_sideband_flow_type_ena(struct idpf_vport *vport, u32 flow_type);
 bool idpf_sideband_action_ena(struct idpf_vport *vport,
 			      struct ethtool_rx_flow_spec *fsp);
 unsigned int idpf_fsteer_max_rules(struct idpf_vport *vport);
-int idpf_recv_mb_msg(struct idpf_adapter *adapter);
-int idpf_send_mb_msg(struct idpf_adapter *adapter, u32 op,
-		     u16 msg_size, u8 *msg, u16 cookie);
-int idpf_send_delete_queues_msg(struct idpf_vport *vport);
-int idpf_send_add_queues_msg(const struct idpf_vport *vport, u16 num_tx_q,
-			     u16 num_complq, u16 num_rx_q, u16 num_rx_bufq);
+int idpf_recv_mb_msg(struct idpf_adapter *adapter, struct idpf_ctlq_info *arq);
+int idpf_send_mb_msg(struct idpf_adapter *adapter, struct idpf_ctlq_info *asq,
+		     u32 op, u16 msg_size, u8 *msg, u16 cookie);
+int idpf_send_delete_queues_msg(struct idpf_adapter *adapter,
+				struct idpf_queue_id_reg_info *chunks,
+				u32 vport_id);
+int idpf_send_add_queues_msg(struct idpf_adapter *adapter,
+			     struct idpf_vport_config *vport_config,
+			     struct idpf_q_vec_rsrc *rsrc,
+			     u32 vport_id);
 int idpf_vport_init(struct idpf_vport *vport, struct idpf_vport_max_q *max_q);
 u32 idpf_get_vport_id(struct idpf_vport *vport);
 int idpf_send_create_vport_msg(struct idpf_adapter *adapter,
 			       struct idpf_vport_max_q *max_q);
-int idpf_send_destroy_vport_msg(struct idpf_vport *vport);
-int idpf_send_enable_vport_msg(struct idpf_vport *vport);
-int idpf_send_disable_vport_msg(struct idpf_vport *vport);
+int idpf_send_destroy_vport_msg(struct idpf_adapter *adapter, u32 vport_id);
+int idpf_send_enable_vport_msg(struct idpf_adapter *adapter, u32 vport_id);
+int idpf_send_disable_vport_msg(struct idpf_adapter *adapter, u32 vport_id);
 
-void idpf_vport_adjust_qs(struct idpf_vport *vport);
+void idpf_vport_adjust_qs(struct idpf_vport *vport,
+			  struct idpf_q_vec_rsrc *rsrc);
 int idpf_vport_alloc_max_qs(struct idpf_adapter *adapter,
 			    struct idpf_vport_max_q *max_q);
 void idpf_vport_dealloc_max_qs(struct idpf_adapter *adapter,
 			       struct idpf_vport_max_q *max_q);
-int idpf_send_config_queues_msg(struct idpf_vport *vport,
-				struct idpf_q_grp *q_grp);
-int idpf_send_enable_queues_msg(struct idpf_vport *vport,
-				struct virtchnl2_queue_reg_chunks *chunks);
-int idpf_send_disable_queues_msg(struct idpf_vport *vport,
-				 struct idpf_vgrp *vgrp,
-				 struct virtchnl2_queue_reg_chunks *chunks);
+int idpf_send_config_queues_msg(struct idpf_adapter *adapter,
+				struct idpf_q_vec_rsrc *rsrc,
+				u32 vport_id);
+int idpf_send_enable_queues_msg(struct idpf_adapter *adapter,
+				u32 vport_id,
+				struct idpf_queue_id_reg_info *chunks);
+int idpf_send_disable_queues_msg(struct idpf_adapter *adapter,
+				 struct idpf_vport *vport,
+				 struct idpf_q_vec_rsrc *rsrc,
+				 struct idpf_queue_id_reg_info *chunks);
 
 int idpf_vport_alloc_vec_indexes(struct idpf_vport *vport,
-				 struct idpf_vgrp *vgrp);
+				 struct idpf_q_vec_rsrc *rsrc);
 int idpf_get_vec_ids(struct idpf_adapter *adapter,
 		     u16 *vecids, int num_vecids,
 		     struct virtchnl2_vector_chunks *chunks);
 int idpf_send_alloc_vectors_msg(struct idpf_adapter *adapter, u16 num_vectors);
 int idpf_send_dealloc_vectors_msg(struct idpf_adapter *adapter);
-int idpf_send_map_unmap_queue_vector_msg(struct idpf_vport *vport,
-					 struct idpf_vgrp *vgrp, bool map);
+int idpf_send_map_unmap_queue_vector_msg(struct idpf_adapter *adapter,
+					 struct idpf_q_vec_rsrc *rsrc,
+					 u32 vport_id, bool map);
 
-int idpf_add_del_mac_filters(struct idpf_vport *vport,
-			     struct idpf_netdev_priv *np,
+int idpf_add_del_mac_filters(struct idpf_adapter *adapter,
+			     struct idpf_vport_config *vport_config,
+			     const u8 *default_mac_addr, u32 vport_id,
 			     bool add, bool async);
 int idpf_add_del_fsteer_filters(struct idpf_adapter *adapter,
 				struct virtchnl2_flow_rule_add_del *rule,
@@ -180,28 +196,47 @@ int idpf_set_promiscuous(struct idpf_adapter *adapter,
 			 struct idpf_vport_user_config_data *config_data,
 			 u32 vport_id);
 int idpf_check_supported_desc_ids(struct idpf_vport *vport);
-int idpf_send_get_rx_ptype_msg(struct idpf_vport *vport);
-int idpf_send_ena_dis_loopback_msg(struct idpf_vport *vport);
-int idpf_send_get_stats_msg(struct idpf_vport *vport);
+int idpf_send_ena_dis_loopback_msg(struct idpf_adapter *adapter, u32 vport_id,
+				   bool loopback_ena);
+int idpf_send_get_stats_msg(struct idpf_netdev_priv *np,
+			    struct idpf_port_stats *port_stats);
 int idpf_send_set_sriov_vfs_msg(struct idpf_adapter *adapter, u16 num_vfs);
-int idpf_send_get_set_rss_key_msg(struct idpf_vport *vport,
+int idpf_send_get_set_rss_key_msg(struct idpf_adapter *adapter,
 				  struct idpf_rss_data *rss_data,
-				  bool get);
-int idpf_send_get_set_rss_lut_msg(struct idpf_vport *vport,
+				  u32 vport_id, bool get);
+int idpf_send_get_set_rss_lut_msg(struct idpf_adapter *adapter,
 				  struct idpf_rss_data *rss_data,
-				  bool get);
+				  u32 vport_id, bool get);
 void idpf_vc_xn_shutdown(struct idpf_vc_xn_manager *vcxn_mngr);
 int idpf_idc_rdma_vc_send_sync(struct iidc_rdma_core_dev_info *cdev_info,
 			       u8 *send_msg, u16 msg_size,
 			       u8 *recv_msg, u16 *recv_len);
-int idpf_send_get_set_rss_hash_msg(struct idpf_vport *vport, bool get);
+int idpf_send_get_set_rss_hash_msg(struct idpf_adapter *adapter,
+				   struct idpf_rss_data *rss_data,
+				   u32 vport_id, bool get);
 int idpf_set_vlan_features(struct idpf_vport *vport, netdev_features_t features);
 #ifdef CONFIG_UPLINK_PORT_STATS
-int idpf_send_get_port_stats_msg(struct idpf_vport *vport);
+int idpf_send_get_port_stats_msg(struct idpf_netdev_priv *np,
+				 struct idpf_port_stats *port_stats);
 #endif /* CONFIG_UPLINK_PORT_STATS */
 int idpf_send_create_adi_msg(struct idpf_adapter *adapter,
 			     struct virtchnl2_non_flex_create_adi *vchnl_adi);
 int idpf_send_destroy_adi_msg(struct idpf_adapter *adapter,
 			      struct virtchnl2_non_flex_destroy_adi *vchnl_adi);
+
+/**
+ * idpf_vport_deinit_queue_reg_chunks - deinitialize queue register chunks
+ * @vport_config: vport configuration to cleanup
+ */
+static inline void
+idpf_vport_deinit_queue_reg_chunks(struct idpf_vport_config *vport_config)
+{
+	if (!vport_config)
+		return;
+
+	kfree(vport_config->qid_reg_info.queue_chunks);
+	vport_config->qid_reg_info.queue_chunks = NULL;
+	vport_config->qid_reg_info.num_chunks = 0;
+}
 
 #endif /* _IDPF_VIRTCHNL_H_ */
