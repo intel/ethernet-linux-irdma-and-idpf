@@ -1,6 +1,6 @@
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/irdma-abi.h nd_linux-irdma-rdma-core/rdma-core-51.0/kernel-headers/rdma/irdma-abi.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/irdma-abi.h	2026-01-12 16:05:14.721366812 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/kernel-headers/rdma/irdma-abi.h	2026-01-12 16:05:23.023498710 -0800
+--- nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/irdma-abi.h	2026-03-24 22:03:49.994773095 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/kernel-headers/rdma/irdma-abi.h	2026-03-24 22:03:58.197903420 -0700
 @@ -1,6 +1,6 @@
 -/* SPDX-License-Identifier: (GPL-2.0 WITH Linux-syscall-note) OR Linux-OpenIB */
 +/* SPDX-License-Identifier: (GPL-2.0 WITH Linux-syscall-note) OR Linux-OpenIB) */
@@ -105,8 +105,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +};
  #endif /* IRDMA_ABI_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/abi.h nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/abi.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/abi.h	2026-01-12 16:05:15.221374755 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/abi.h	2026-01-12 16:05:23.007498455 -0800
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/abi.h	2026-03-24 22:03:48.796754059 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/abi.h	2026-03-24 22:03:58.181903166 -0700
 @@ -1,5 +1,5 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (C) 2019 - 2020 Intel Corporation */
@@ -140,8 +140,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +};
  #endif /* PROVIDER_IRDMA_ABI_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/defs.h nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/defs.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/defs.h	2026-01-12 16:05:15.222374771 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/defs.h	2026-01-12 16:05:23.008498471 -0800
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/defs.h	2026-03-24 22:03:48.797754075 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/defs.h	2026-03-24 22:03:58.182903182 -0700
 @@ -5,6 +5,7 @@
  
  #include "osdep.h"
@@ -150,7 +150,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  #define IRDMA_QP_TYPE_IWARP	1
  #define IRDMA_QP_TYPE_UDA	2
  #define IRDMA_QP_TYPE_ROCE_RC	3
-@@ -15,18 +16,26 @@
+@@ -15,18 +16,27 @@
  #define IRDMA_CQE_QTYPE_RQ	0
  #define IRDMA_CQE_QTYPE_SQ	1
  
@@ -166,9 +166,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +
  #define IRDMA_SQ_RSVD	258
  #define IRDMA_RQ_RSVD	1
- 
--#define IRDMA_FEATURE_RTS_AE			1ULL
--#define IRDMA_FEATURE_CQ_RESIZE			2ULL
++#define IRDMAQP_ATOMIC_WRITE_FRAG_LEN 	0x8
++
 +#define IRDMA_FEATURE_RTS_AE			BIT_ULL(0)
 +#define IRDMA_FEATURE_CQ_RESIZE			BIT_ULL(1)
 +#define IRDMA_FEATURE_ENFORCE_SQ_SIZE		BIT_ULL(3)
@@ -176,22 +175,26 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMA_FEATURE_ATOMIC_OPS		BIT_ULL(6)
 +#define IRDMA_FEATURE_SRQ			BIT_ULL(7)
 +#define IRDMA_FEATURE_CQE_TIMESTAMPING		BIT_ULL(8)
-+
+ 
+-#define IRDMA_FEATURE_RTS_AE			1ULL
+-#define IRDMA_FEATURE_CQ_RESIZE			2ULL
  #define IRDMAQP_OP_RDMA_WRITE			0x00
  #define IRDMAQP_OP_RDMA_READ			0x01
  #define IRDMAQP_OP_RDMA_SEND			0x03
-@@ -38,114 +47,224 @@
+@@ -38,114 +48,234 @@
  #define IRDMAQP_OP_LOCAL_INVALIDATE		0x0a
  #define IRDMAQP_OP_RDMA_READ_LOC_INV		0x0b
  #define IRDMAQP_OP_NOP				0x0c
 +#define IRDMAQP_OP_ATOMIC_FETCH_ADD		0x0f
 +#define IRDMAQP_OP_ATOMIC_COMPARE_SWAP_ADD	0x11
- 
++#define IRDMAQP_OP_ATOMIC_WRITE			0x12
++#define IRDMAQP_OP_FLUSH_MEM_REGION		0x13
++
 +#define LS_64_1(val, bits)	((__u64)(uintptr_t)(val) << (bits))
 +#define RS_64_1(val, bits)	((__u64)(uintptr_t)(val) >> (bits))
 +#define LS_32_1(val, bits)	((__u32)((val) << (bits)))
 +#define RS_32_1(val, bits)	((__u32)((val) >> (bits)))
-+
+ 
 +#define IRDMA_CQPHC_QPCTX_S 0
  #define IRDMA_CQPHC_QPCTX GENMASK_ULL(63, 0)
 +#define IRDMA_QP_DBSA_HW_SQ_TAIL_S 0
@@ -337,6 +340,12 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMAQPSQ_COMBINED_SGE_INLINE_UNRELIABLE_S 63
 +#define IRDMAQPSQ_COMBINED_SGE_INLINE_UNRELIABLE BIT_ULL(63)
 +
++#define IRDMAQPSQ_FLUSH_MEM_LEN_S 0
++#define IRDMAQPSQ_FLUSH_MEM_LEN GENMASK_ULL(31, 0)
++#define IRDMAQPSQ_SELECTIVITY_S 52
++#define IRDMAQPSQ_SELECTIVITY GENMASK_ULL(53, 52)
++#define IRDMAQPSQ_PLACEMENT_TYPE_S 48
++#define IRDMAQPSQ_PLACEMENT_TYPE GENMASK_ULL(51, 48)
 +#define IRDMAQPSQ_IMMDATA_S 0
  #define IRDMAQPSQ_IMMDATA GENMASK_ULL(63, 0)
 +#define IRDMAQPSQ_REMSTAG_S 0
@@ -362,6 +371,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMAQPSQ_BASEVA_TO_FBO_S IRDMA_CQPHC_QPCTX_S
  #define IRDMAQPSQ_BASEVA_TO_FBO IRDMA_CQPHC_QPCTX
  
++#define IRDMAQPSQ_FLUSH_MR_S 20
++#define IRDMAQPSQ_FLUSH_MR BIT_ULL(20)
 +#define IRDMAQPSQ_REMOTE_ATOMICS_EN_S 55
 +#define IRDMAQPSQ_REMOTE_ATOMICS_EN BIT_ULL(55)
 +#define IRDMAQPSQ_FAST_REG_PASID_S 0
@@ -409,7 +420,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  #define IRDMA_GET_CURRENT_CQ_ELEM(_cq) \
  	( \
  		(_cq)->cq_base[IRDMA_RING_CURRENT_HEAD((_cq)->cq_ring)].buf  \
-@@ -168,10 +287,10 @@
+@@ -168,10 +298,10 @@
  
  #define IRDMA_RING_MOVE_HEAD(_ring, _retcode) \
  	{ \
@@ -423,7 +434,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  			(_retcode) = 0; \
  		} else { \
  			(_retcode) = ENOMEM; \
-@@ -179,80 +298,41 @@
+@@ -179,80 +309,41 @@
  	}
  #define IRDMA_RING_MOVE_HEAD_BY_COUNT(_ring, _count, _retcode) \
  	{ \
@@ -517,7 +528,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  #define IRDMA_RING_MORE_WORK(_ring) \
  	( \
  		(IRDMA_RING_USED_QUANTA(_ring) != 0) \
-@@ -260,17 +340,17 @@
+@@ -260,17 +351,17 @@
  
  #define IRDMA_RING_USED_QUANTA(_ring) \
  	( \
@@ -538,15 +549,15 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	)
  
  #define IRDMA_ATOMIC_RING_MOVE_HEAD(_ring, index, _retcode) \
-@@ -330,4 +410,5 @@
+@@ -330,4 +421,5 @@
  {
  	*val = le32toh(wqe_words[byte_index >> 2]);
  }
 +
  #endif /* IRDMA_DEFS_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/i40iw_hw.h nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/i40iw_hw.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/i40iw_hw.h	2026-01-12 16:05:15.223374787 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/i40iw_hw.h	2026-01-12 16:05:23.010498503 -0800
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/i40iw_hw.h	2026-03-24 22:03:48.798754091 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/i40iw_hw.h	2026-03-24 22:03:58.183903198 -0700
 @@ -8,8 +8,8 @@
  	I40IW_MAX_SGE_RD			= 1,
  	I40IW_MAX_PUSH_PAGE_COUNT		= 0,
@@ -568,8 +579,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  #define I40IW_QP_WQE_MIN_SIZE   32
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/ice_devids.h nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/ice_devids.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/ice_devids.h	2026-01-12 16:05:15.224374803 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/ice_devids.h	2026-01-12 16:05:23.011498519 -0800
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/ice_devids.h	2026-03-24 22:03:48.799754107 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/ice_devids.h	2026-03-24 22:03:58.184903214 -0700
 @@ -6,6 +6,7 @@
  #define PCI_VENDOR_ID_INTEL		0x8086
  
@@ -585,7 +596,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/idpf_devids.h nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/idpf_devids.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/idpf_devids.h	1969-12-31 16:00:00.000000000 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/idpf_devids.h	2026-01-12 16:05:23.011498519 -0800
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/idpf_devids.h	2026-03-24 22:03:58.185903229 -0700
 @@ -0,0 +1,18 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* SPDX-License-Identifier: GPL-2.0-only */
@@ -606,9 +617,9 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +
 +#endif /* _IDPF_DEVIDS_H_ */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/irdma.h nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/irdma.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/irdma.h	2026-01-12 16:05:15.225374819 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/irdma.h	2026-01-12 16:05:23.013498551 -0800
-@@ -1,14 +1,23 @@
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/irdma.h	2026-03-24 22:03:48.800754122 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/irdma.h	2026-03-24 22:03:58.187903261 -0700
+@@ -1,14 +1,24 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (c) 2017 - 2023 Intel Corporation */
 +/* Copyright (c) 2017 - 2022 Intel Corporation */
@@ -633,10 +644,11 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	IRDMA_GEN_1 = 1,
 +	IRDMA_GEN_2 = 2,
 +	IRDMA_GEN_3 = 3,
++	IRDMA_GEN_4 = 4,
  };
  
  struct irdma_uk_attrs {
-@@ -20,6 +29,8 @@
+@@ -20,6 +30,8 @@
  	__u32 max_hw_wq_quanta;
  	__u32 min_hw_cq_size;
  	__u32 max_hw_cq_size;
@@ -645,7 +657,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	__u16 max_hw_sq_chunk;
  	__u16 min_hw_wq_size;
  	__u8 hw_rev;
-@@ -30,6 +41,7 @@
+@@ -30,6 +42,7 @@
  	__u64 max_hw_outbound_msg_size;
  	__u64 max_hw_inbound_msg_size;
  	__u64 max_mr_size;
@@ -653,7 +665,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	__u32 min_hw_qp_id;
  	__u32 min_hw_aeq_size;
  	__u32 max_hw_aeq_size;
-@@ -49,6 +61,7 @@
+@@ -49,6 +62,7 @@
  	__u32 max_sleep_count;
  	__u32 max_cqp_compl_wait_time_ms;
  	__u16 max_stat_inst;
@@ -662,8 +674,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  #endif /* IRDMA_H*/
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/osdep.h nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/osdep.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/osdep.h	2026-01-12 16:05:15.226374835 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/osdep.h	2026-01-12 16:05:23.014498567 -0800
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/osdep.h	2026-03-24 22:03:48.801754138 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/osdep.h	2026-03-24 22:03:58.187903261 -0700
 @@ -1,5 +1,5 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (c) 2015 - 2021 Intel Corporation */
@@ -732,8 +744,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#endif /* FIELD_PREP */
  #endif /* IRDMA_OSDEP_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/uk.c nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/uk.c
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/uk.c	2026-01-12 16:05:15.227374851 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/uk.c	2026-01-12 16:05:23.014498567 -0800
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/uk.c	2026-03-24 22:03:48.802754154 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/uk.c	2026-03-24 22:03:58.187903261 -0700
 @@ -1,7 +1,5 @@
  // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
  /* Copyright (c) 2015 - 2023 Intel Corporation */
@@ -808,16 +820,19 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	}
  }
  
-@@ -117,7 +122,7 @@
- 	/* valid bit is written before ringing doorbell */
- 	udma_to_device_barrier();
- 
+@@ -114,10 +119,7 @@
+  */
+ void irdma_uk_qp_post_wr(struct irdma_qp_uk *qp)
+ {
+-	/* valid bit is written before ringing doorbell */
+-	udma_to_device_barrier();
+-
 -	db_wr32(qp->qp_id, qp->wqe_alloc_db);
 +	mmio_write32(qp->wqe_alloc_db, qp->qp_id);
  	qp->initial_ring.head = qp->sq_ring.head;
  }
  
-@@ -128,59 +133,116 @@
+@@ -128,59 +130,116 @@
   */
  static void irdma_qp_ring_push_db(struct irdma_qp_uk *qp, __u32 wqe_idx)
  {
@@ -949,7 +964,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  			IRDMA_SQ_RING_FREE_QUANTA(qp->sq_ring))
  			return NULL;
  
-@@ -198,17 +260,67 @@
+@@ -198,17 +257,67 @@
  	if (!*wqe_idx)
  		qp->swqe_polarity = !qp->swqe_polarity;
  
@@ -1021,7 +1036,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	return wqe;
  }
-@@ -257,7 +369,7 @@
+@@ -257,7 +366,7 @@
  	bool read_fence = false;
  	__u16 quanta;
  
@@ -1030,7 +1045,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	op_info = &info->op.rdma_write;
  	if (op_info->num_lo_sges > qp->max_sq_frag_cnt)
-@@ -277,13 +389,13 @@
+@@ -277,13 +386,13 @@
  	if (ret_code)
  		return ret_code;
  
@@ -1048,7 +1063,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	set_64bit_val(wqe, 16,
  		      FIELD_PREP(IRDMAQPSQ_FRAG_TO, op_info->rem_addr.addr));
  
-@@ -328,17 +440,174 @@
+@@ -328,17 +437,259 @@
  	udma_to_device_barrier(); /* make sure WQE is populated before valid bit is set */
  
  	set_64bit_val(wqe, 24, hdr);
@@ -1058,6 +1073,91 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -		if (post_sq)
 -			irdma_uk_qp_post_wr(qp);
 -	}
++	if (qp->push_db)
++		irdma_qp_push_wqe(qp, wqe, quanta, wqe_idx, info->push_wqe);
++	else if (post_sq)
++		irdma_uk_qp_post_wr(qp);
++
++	return 0;
++}
++
++int irdma_uk_atomic_write(struct irdma_qp_uk *qp,
++			  struct irdma_post_sq_info *info, bool post_sq)
++{
++	struct irdma_atomic_write *op_info;
++	__u32 total_size = 0;
++	__u32 wqe_idx;
++	__u16 quanta = IRDMA_QP_WQE_MIN_QUANTA;
++	__le64 *wqe;
++	__u64 hdr;
++
++	info->push_wqe = qp->push_db ? true : false;
++
++	op_info = &info->op.atomic_write;
++	wqe = irdma_qp_get_next_send_wqe(qp, &wqe_idx, &quanta, total_size, info);
++	if (!wqe)
++		return ENOMEM;
++
++	set_64bit_val(wqe, 0, op_info->tagged_offset);
++	set_64bit_val(wqe, 8,
++		      FIELD_PREP(IRDMAQPSQ_LOCSTAG, op_info->stag) |
++		      FIELD_PREP(IRDMAQPSQ_FRAG_LEN, IRDMAQP_ATOMIC_WRITE_FRAG_LEN) |
++		      FIELD_PREP(IRDMAQPSQ_FRAG_VALID, qp->swqe_polarity));
++	set_64bit_val(wqe, 16, op_info->remote_tagged_offset);
++
++	hdr = FIELD_PREP(IRDMAQPSQ_REMSTAG, op_info->remote_stag) |
++	      FIELD_PREP(IRDMAQPSQ_OPCODE, IRDMAQP_OP_ATOMIC_WRITE) |
++	      FIELD_PREP(IRDMAQPSQ_PUSHWQE, info->push_wqe) |
++	      FIELD_PREP(IRDMAQPSQ_READFENCE, info->read_fence) |
++	      FIELD_PREP(IRDMAQPSQ_LOCALFENCE, info->local_fence) |
++	      FIELD_PREP(IRDMAQPSQ_SIGCOMPL, info->signaled) |
++	      FIELD_PREP(IRDMAQPSQ_VALID, qp->swqe_polarity);
++
++	udma_to_device_barrier(); /* make sure WQE is populated before valid bit is set */
++
++	set_64bit_val(wqe, 24, hdr);
++	if (qp->push_db)
++		irdma_qp_push_wqe(qp, wqe, quanta, wqe_idx, info->push_wqe);
++	else if (post_sq)
++		irdma_uk_qp_post_wr(qp);
++
++	return 0;
++}
++
++int irdma_uk_flush_mem_region(struct irdma_qp_uk *qp,
++			      struct irdma_post_sq_info *info, bool post_sq)
++{
++	struct irdma_flush_mem_region *op_info;
++	__u32 total_size = 0;
++	__u32 wqe_idx;
++	__u16 quanta = IRDMA_QP_WQE_MIN_QUANTA;
++	__le64 *wqe;
++	__u64 hdr;
++
++	info->push_wqe = qp->push_db ? true : false;
++
++	op_info = &info->op.flush_mem_region;
++	wqe = irdma_qp_get_next_send_wqe(qp, &wqe_idx, &quanta, total_size, info);
++	if (!wqe)
++		return ENOMEM;
++
++	set_64bit_val(wqe, 8,
++		      FIELD_PREP(IRDMAQPSQ_FLUSH_MEM_LEN, op_info->length));
++	set_64bit_val(wqe, 16, op_info->remote_tagged_offset);
++
++	hdr = FIELD_PREP(IRDMAQPSQ_REMSTAG, op_info->remote_stag) |
++	      FIELD_PREP(IRDMAQPSQ_OPCODE, IRDMAQP_OP_FLUSH_MEM_REGION) |
++	      FIELD_PREP(IRDMAQPSQ_PUSHWQE, info->push_wqe) |
++	      FIELD_PREP(IRDMAQPSQ_READFENCE, info->read_fence) |
++	      FIELD_PREP(IRDMAQPSQ_LOCALFENCE, info->local_fence) |
++	      FIELD_PREP(IRDMAQPSQ_SIGCOMPL, info->signaled) |
++	      FIELD_PREP(IRDMAQPSQ_PLACEMENT_TYPE, op_info->placement_type) |
++	      FIELD_PREP(IRDMAQPSQ_SELECTIVITY, op_info->selectivity) |
++	      FIELD_PREP(IRDMAQPSQ_VALID, qp->swqe_polarity);
++
++	udma_to_device_barrier(); /* make sure WQE is populated before valid bit is set */
++
++	set_64bit_val(wqe, 24, hdr);
 +	if (qp->push_db)
 +		irdma_qp_push_wqe(qp, wqe, quanta, wqe_idx, info->push_wqe);
 +	else if (post_sq)
@@ -1229,7 +1329,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
   * irdma_uk_rdma_read - rdma read command
   * @qp: hw qp ptr
   * @info: post sq information
-@@ -352,13 +621,14 @@
+@@ -352,13 +703,14 @@
  	int ret_code;
  	__u32 i, byte_off, total_size = 0;
  	bool local_fence = false;
@@ -1245,7 +1345,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	op_info = &info->op.rdma_read;
  	if (qp->max_sq_frag_cnt < op_info->num_lo_sges)
-@@ -371,12 +641,14 @@
+@@ -371,12 +723,14 @@
  	if (ret_code)
  		return ret_code;
  
@@ -1263,7 +1363,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	addl_frag_cnt = op_info->num_lo_sges > 1 ?
  			(op_info->num_lo_sges - 1) : 0;
-@@ -407,7 +679,8 @@
+@@ -407,7 +761,8 @@
  	      FIELD_PREP(IRDMAQPSQ_OPCODE,
  			 (inv_stag ? IRDMAQP_OP_RDMA_READ_LOC_INV : IRDMAQP_OP_RDMA_READ)) |
  	      FIELD_PREP(IRDMAQPSQ_PUSHWQE, info->push_wqe) |
@@ -1273,7 +1373,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	      FIELD_PREP(IRDMAQPSQ_LOCALFENCE, local_fence) |
  	      FIELD_PREP(IRDMAQPSQ_SIGCOMPL, info->signaled) |
  	      FIELD_PREP(IRDMAQPSQ_VALID, qp->swqe_polarity);
-@@ -415,12 +688,10 @@
+@@ -415,12 +770,10 @@
  	udma_to_device_barrier(); /* make sure WQE is populated before valid bit is set */
  
  	set_64bit_val(wqe, 24, hdr);
@@ -1290,7 +1390,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	return 0;
  }
-@@ -443,7 +714,7 @@
+@@ -443,7 +796,7 @@
  	bool read_fence = false;
  	__u16 quanta;
  
@@ -1299,7 +1399,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	op_info = &info->op.send;
  	if (qp->max_sq_frag_cnt < op_info->num_sges)
-@@ -460,13 +731,13 @@
+@@ -460,13 +813,13 @@
  	if (ret_code)
  		return ret_code;
  
@@ -1317,7 +1417,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	read_fence |= info->read_fence;
  	addl_frag_cnt = frag_cnt > 1 ? (frag_cnt - 1) : 0;
  	if (info->imm_data_valid) {
-@@ -516,12 +787,10 @@
+@@ -516,12 +869,10 @@
  	udma_to_device_barrier(); /* make sure WQE is populated before valid bit is set */
  
  	set_64bit_val(wqe, 24, hdr);
@@ -1334,7 +1434,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	return 0;
  }
-@@ -569,7 +838,7 @@
+@@ -569,7 +920,7 @@
  			sge_len -= bytes_copied;
  
  			if (!quanta_bytes_remaining) {
@@ -1343,7 +1443,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  				wqe += 16;
  				quanta_bytes_remaining = 32;
  			}
-@@ -637,7 +906,7 @@
+@@ -637,7 +988,7 @@
  			if (!quanta_bytes_remaining) {
  				quanta_bytes_remaining = 31;
  
@@ -1352,7 +1452,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  				if (first_quanta) {
  					first_quanta = false;
  					wqe += 16;
-@@ -692,8 +961,8 @@
+@@ -692,8 +1043,8 @@
  	__u64 hdr = 0;
  	__u32 wqe_idx;
  	bool read_fence = false;
@@ -1362,7 +1462,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	info->push_wqe = qp->push_db ? true : false;
  	op_info = &info->op.rdma_write;
-@@ -708,13 +977,11 @@
+@@ -708,13 +1059,11 @@
  		return EINVAL;
  
  	quanta = qp->wqe_ops.iw_inline_data_size_to_quanta(total_size);
@@ -1378,7 +1478,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	read_fence |= info->read_fence;
  	set_64bit_val(wqe, 16,
  		      FIELD_PREP(IRDMAQPSQ_FRAG_TO, op_info->rem_addr.addr));
-@@ -737,16 +1004,15 @@
+@@ -737,16 +1086,15 @@
  
  	qp->wqe_ops.iw_copy_inline_data((__u8 *)wqe, op_info->lo_sg_list,
  					op_info->num_lo_sges, qp->swqe_polarity);
@@ -1400,7 +1500,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	return 0;
  }
-@@ -765,8 +1031,8 @@
+@@ -765,8 +1113,8 @@
  	__u64 hdr;
  	__u32 wqe_idx;
  	bool read_fence = false;
@@ -1410,7 +1510,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	info->push_wqe = qp->push_db ? true : false;
  	op_info = &info->op.send;
-@@ -781,13 +1047,10 @@
+@@ -781,13 +1129,10 @@
  		return EINVAL;
  
  	quanta = qp->wqe_ops.iw_inline_data_size_to_quanta(total_size);
@@ -1425,7 +1525,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	set_64bit_val(wqe, 16,
  		      FIELD_PREP(IRDMAQPSQ_DESTQKEY, op_info->qkey) |
  		      FIELD_PREP(IRDMAQPSQ_DESTQPN, op_info->dest_qp));
-@@ -819,12 +1082,10 @@
+@@ -819,12 +1164,10 @@
  
  	set_64bit_val(wqe, 24, hdr);
  
@@ -1442,7 +1542,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	return 0;
  }
-@@ -845,18 +1106,16 @@
+@@ -845,18 +1188,16 @@
  	__u32 wqe_idx;
  	bool local_fence = false;
  	struct ibv_sge sge = {};
@@ -1463,7 +1563,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	sge.lkey = op_info->target_stag;
  	qp->wqe_ops.iw_set_fragment(wqe, 0, &sge, 0);
  
-@@ -873,13 +1132,10 @@
+@@ -873,13 +1214,10 @@
  
  	set_64bit_val(wqe, 24, hdr);
  
@@ -1481,7 +1581,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	return 0;
  }
-@@ -897,19 +1153,17 @@
+@@ -897,19 +1235,17 @@
  	struct irdma_bind_window *op_info;
  	__u64 hdr;
  	__u32 wqe_idx;
@@ -1505,7 +1605,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	qp->wqe_ops.iw_set_mw_bind_wqe(wqe, op_info);
  
  	hdr = FIELD_PREP(IRDMAQPSQ_OPCODE, IRDMA_OP_TYPE_BIND_MW) |
-@@ -923,19 +1177,17 @@
+@@ -923,19 +1259,17 @@
  	      FIELD_PREP(IRDMAQPSQ_READFENCE, info->read_fence) |
  	      FIELD_PREP(IRDMAQPSQ_LOCALFENCE, local_fence) |
  	      FIELD_PREP(IRDMAQPSQ_SIGCOMPL, info->signaled) |
@@ -1530,14 +1630,14 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	return 0;
  }
-@@ -1066,7 +1318,41 @@
+@@ -1063,10 +1397,41 @@
+ 		   FIELD_PREP(IRDMA_CQ_DBSA_ARM_NEXT, arm_next);
  
- 	udma_to_device_barrier(); /* make sure WQE is populated before valid bit is set */
- 
--	db_wr32(cq->cq_id, cq->cqe_alloc_db);
+ 	set_64bit_val(cq->shadow_area, 32, temp_val);
 +	mmio_write32(cq->cqe_alloc_db, cq->cq_id);
 +}
-+
+ 
+-	udma_to_device_barrier(); /* make sure WQE is populated before valid bit is set */
 +static int irdma_check_sq_cqe(struct irdma_qp_uk *qp, __u32 *wqe_idx)
 +{
 +	__u32 tail = IRDMA_RING_CURRENT_TAIL(qp->sq_sig_ring);
@@ -1560,7 +1660,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	__le64 *cqe;
 +	__u8 polarity;
 +	__u64 qword3;
-+
+ 
+-	db_wr32(cq->cq_id, cq->cqe_alloc_db);
 +	if (cq->avoid_mem_cflct)
 +		cqe = IRDMA_GET_CURRENT_EXTENDED_CQ_ELEM(cq);
 +	else
@@ -1573,7 +1674,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  }
  
  /**
-@@ -1080,6 +1366,9 @@
+@@ -1080,6 +1445,9 @@
  	__u64 comp_ctx, qword0, qword2, qword3;
  	__le64 *cqe;
  	struct irdma_qp_uk *qp;
@@ -1583,7 +1684,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	struct irdma_ring *pring = NULL;
  	__u32 wqe_idx;
  	int ret_code;
-@@ -1153,22 +1442,52 @@
+@@ -1153,22 +1521,52 @@
  	}
  
  	info->q_type = (__u8)FIELD_GET(IRDMA_CQ_SQ, qword3);
@@ -1640,7 +1741,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  		}
  	} else {
  		info->comp_status = IRDMA_COMPL_STATUS_SUCCESS;
-@@ -1177,59 +1496,67 @@
+@@ -1177,59 +1575,67 @@
  	get_64bit_val(cqe, 0, &qword0);
  	get_64bit_val(cqe, 16, &qword2);
  
@@ -1736,7 +1837,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  		}
  		pring = &qp->rq_ring;
  	} else { /* q_type is IRDMA_CQE_QTYPE_SQ */
-@@ -1242,8 +1569,7 @@
+@@ -1242,8 +1648,7 @@
  				IRDMA_RING_MOVE_TAIL(cq->cq_ring);
  				set_64bit_val(cq->shadow_area, 0,
  					      IRDMA_RING_CURRENT_HEAD(cq->cq_ring));
@@ -1746,7 +1847,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  				return irdma_uk_cq_poll_cmpl(cq, info);
  			}
  		}
-@@ -1256,11 +1582,27 @@
+@@ -1256,11 +1661,27 @@
  			info->wr_id = qp->sq_wrtrk_array[wqe_idx].wrid;
  			if (!info->comp_status)
  				info->bytes_xfered = qp->sq_wrtrk_array[wqe_idx].wr_len;
@@ -1774,7 +1875,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  				ret_code = ENOENT;
  				goto exit;
  			}
-@@ -1274,7 +1616,12 @@
+@@ -1274,7 +1695,12 @@
  				sw_wqe = qp->sq_base[tail].elem;
  				get_64bit_val(sw_wqe, 24,
  					      &wqe_qword);
@@ -1788,7 +1889,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  				IRDMA_RING_SET_TAIL(qp->sq_ring,
  						    tail + qp->sq_wrtrk_array[tail].quanta);
  				if (info->op_type != IRDMAQP_OP_NOP) {
-@@ -1283,9 +1630,13 @@
+@@ -1283,9 +1709,13 @@
  					break;
  				}
  			} while (1);
@@ -1803,7 +1904,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  		}
  		pring = &qp->sq_ring;
  	}
-@@ -1293,9 +1644,15 @@
+@@ -1293,9 +1723,15 @@
  	ret_code = 0;
  
  exit:
@@ -1821,7 +1922,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	if (move_cq_head) {
  		IRDMA_RING_MOVE_HEAD_NOCHECK(cq->cq_ring);
-@@ -1311,8 +1668,9 @@
+@@ -1311,8 +1747,9 @@
  		IRDMA_RING_MOVE_TAIL(cq->cq_ring);
  		if (!cq->avoid_mem_cflct && ext_valid)
  			IRDMA_RING_MOVE_TAIL(cq->cq_ring);
@@ -1833,7 +1934,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	} else {
  		qword3 &= ~IRDMA_CQ_WQEIDX;
  		qword3 |= FIELD_PREP(IRDMA_CQ_WQEIDX, pring->tail);
-@@ -1323,10 +1681,219 @@
+@@ -1323,10 +1760,219 @@
  }
  
  /**
@@ -2055,7 +2156,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  {
  	int scount = 1;
  
-@@ -1374,42 +1941,63 @@
+@@ -1374,42 +2020,63 @@
   * @sq_size: SQ size
   * @shift: shift which determines size of WQE
   * @sqdepth: depth of SQ
@@ -2081,7 +2182,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	else if (hw_quanta > uk_attrs->max_hw_wq_quanta)
  		return EINVAL;
  
-+	*sqdepth = hw_quanta;
++	*sqdepth = (__u32)hw_quanta;
  	return 0;
  }
  
@@ -2102,17 +2203,20 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	__u32 min_hw_quanta = (__u32)uk_attrs->min_hw_wq_size << shift;
 +	__u64 hw_quanta =
 +		irdma_round_up_wq(((__u64)rq_size << shift) + IRDMA_RQ_RSVD);
- 
--	*rqdepth = irdma_qp_round_up((rq_size << shift) + IRDMA_RQ_RSVD);
++
 +	if (hw_quanta < min_hw_quanta)
 +		hw_quanta = min_hw_quanta;
 +	else if (hw_quanta > uk_attrs->max_hw_rq_quanta)
 +		return EINVAL;
-+
-+	*rqdepth = hw_quanta;
+ 
+-	*rqdepth = irdma_qp_round_up((rq_size << shift) + IRDMA_RQ_RSVD);
++	*rqdepth = (__u32)hw_quanta;
 +	return 0;
 +}
-+
+ 
+-	if (*rqdepth < min_size)
+-		*rqdepth = min_size;
+-	else if (*rqdepth > uk_attrs->max_hw_rq_quanta)
 +/*
 + * irdma_get_srqdepth - get SRQ depth (quanta)
 + * @uk_attrs: qp HW attributes
@@ -2125,10 +2229,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	__u32 min_hw_quanta = (__u32)uk_attrs->min_hw_wq_size << shift;
 +	__u64 hw_quanta =
 +		irdma_round_up_wq(((__u64)srq_size << shift) + IRDMA_RQ_RSVD);
- 
--	if (*rqdepth < min_size)
--		*rqdepth = min_size;
--	else if (*rqdepth > uk_attrs->max_hw_rq_quanta)
++
 +	if (hw_quanta < min_hw_quanta)
 +		hw_quanta = min_hw_quanta;
 +	else if (hw_quanta > uk_attrs->max_hw_srq_quanta)
@@ -2138,7 +2239,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	return 0;
  }
  
-@@ -1438,10 +2026,11 @@
+@@ -1438,10 +2105,11 @@
  {
  	__u16 move_cnt = 1;
  
@@ -2153,7 +2254,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	qp->conn_wqes = move_cnt;
  	IRDMA_RING_MOVE_HEAD_BY_COUNT_NOCHECK(qp->sq_ring, move_cnt);
  	IRDMA_RING_MOVE_TAIL_BY_COUNT(qp->sq_ring, move_cnt);
-@@ -1449,6 +2038,42 @@
+@@ -1449,6 +2117,42 @@
  }
  
  /**
@@ -2196,7 +2297,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
   * irdma_uk_calc_depth_shift_sq - calculate depth and shift for SQ size.
   * @ukinfo: qp initialization info
   * @sq_depth: Returns depth of SQ
-@@ -1459,10 +2084,9 @@
+@@ -1459,10 +2163,9 @@
  {
  	bool imm_support = ukinfo->uk_attrs->hw_rev >= IRDMA_GEN_2 ? true : false;
  	int status;
@@ -2208,7 +2309,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  			    ukinfo->max_inline_data, sq_shift);
  	status = irdma_get_sqdepth(ukinfo->uk_attrs, ukinfo->sq_size,
  				   *sq_shift, sq_depth);
-@@ -1505,8 +2129,7 @@
+@@ -1505,8 +2208,7 @@
   * allowed. Then size of wqe * the number of wqes should be the
   * amount of memory allocated for sq and rq.
   */
@@ -2218,7 +2319,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  {
  	int ret_code = 0;
  	__u32 sq_ring_size;
-@@ -1525,6 +2148,7 @@
+@@ -1525,6 +2227,7 @@
  
  	qp->rq_wrid_array = info->rq_wrid_array;
  	qp->wqe_alloc_db = info->wqe_alloc_db;
@@ -2226,7 +2327,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	qp->qp_id = info->qp_id;
  	qp->sq_size = info->sq_size;
  	qp->push_mode = false;
-@@ -1532,6 +2156,7 @@
+@@ -1532,6 +2235,7 @@
  	sq_ring_size = qp->sq_size << info->sq_shift;
  	IRDMA_RING_INIT(qp->sq_ring, sq_ring_size);
  	IRDMA_RING_INIT(qp->initial_ring, sq_ring_size);
@@ -2234,7 +2335,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	if (info->first_sq_wq) {
  		irdma_setup_connection_wqes(qp, info);
  		qp->swqe_polarity = 1;
-@@ -1551,6 +2176,11 @@
+@@ -1551,6 +2255,11 @@
  		qp->wqe_ops = iw_wqe_uk_ops_gen_1;
  	else
  		qp->wqe_ops = iw_wqe_uk_ops;
@@ -2246,7 +2347,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	return ret_code;
  }
  
-@@ -1599,6 +2229,9 @@
+@@ -1599,6 +2308,9 @@
  		if (polarity != temp)
  			break;
  
@@ -2256,7 +2357,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  		get_64bit_val(cqe, 8, &comp_ctx);
  		if ((void *)(uintptr_t)comp_ctx == q)
  			set_64bit_val(cqe, 8, 0);
-@@ -1610,46 +2243,6 @@
+@@ -1610,46 +2322,6 @@
  }
  
  /**
@@ -2303,14 +2404,14 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
   * irdma_fragcnt_to_quanta_sq - calculate quanta based on fragment count for SQ
   * @frag_cnt: number of fragments
   * @quanta: quanta for frag_cnt
-@@ -1733,3 +2326,4 @@
+@@ -1733,3 +2405,4 @@
  
  	return 0;
  }
 +
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/umain.c nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.c
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/umain.c	2026-01-12 16:05:15.228374867 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.c	2026-01-12 16:05:23.015498582 -0800
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/umain.c	2026-03-24 22:03:48.802754154 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.c	2026-03-24 22:03:58.189903293 -0700
 @@ -1,6 +1,8 @@
  // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
  /* Copyright (C) 2019 - 2023 Intel Corporation */
@@ -2604,8 +2705,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  }
  
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/umain.h nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/umain.h	2026-01-12 16:05:15.228374867 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.h	2026-01-12 16:05:23.016498598 -0800
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/umain.h	2026-03-24 22:03:48.803754170 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.h	2026-03-24 22:03:58.189903293 -0700
 @@ -1,5 +1,5 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (C) 2019 - 2023 Intel Corporation */
@@ -2858,8 +2959,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +					  struct ibv_parent_domain_init_attr *int_attr);
  #endif /* IRDMA_UMAIN_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/user.h nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/user.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/user.h	2026-01-12 16:05:15.229374882 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/user.h	2026-01-12 16:05:23.018498630 -0800
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/user.h	2026-03-24 22:03:48.804754186 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/user.h	2026-03-24 22:03:58.191903325 -0700
 @@ -1,5 +1,5 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (c) 2015 - 2023 Intel Corporation */
@@ -2876,12 +2977,26 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  #define IRDMA_ACCESS_FLAGS_LOCALREAD		0x01
  #define IRDMA_ACCESS_FLAGS_LOCALWRITE		0x02
-@@ -43,10 +43,117 @@
+@@ -31,6 +31,11 @@
+ #define IRDMA_ACCESS_FLAGS_ZERO_BASED		0x20
+ #define IRDMA_ACCESS_FLAGS_ALL			0x3f
+ 
++#define IRDMA_FLUSH_MEM_REGION_PLACE_TYPE_GLOBAL_VIS BIT(0)
++#define IRDMA_FLUSH_MEM_REGION_PLACE_TYPE_PERSISTENCE BIT(1)
++#define IRDMA_FLUSH_MEM_REGION_SELECTIVITY_TYPE_WRITES_IN_RANGE 0x0
++#define IRDMA_FLUSH_MEM_REGION_SELECTIVITY_TYPE_ALL_WRITES 0x1
++
+ #define IRDMA_OP_TYPE_RDMA_WRITE		0x00
+ #define IRDMA_OP_TYPE_RDMA_READ			0x01
+ #define IRDMA_OP_TYPE_SEND			0x03
+@@ -43,10 +48,128 @@
  #define IRDMA_OP_TYPE_INV_STAG			0x0a
  #define IRDMA_OP_TYPE_RDMA_READ_INV_STAG	0x0b
  #define IRDMA_OP_TYPE_NOP			0x0c
 +#define IRDMA_OP_TYPE_ATOMIC_FETCH_AND_ADD	0x0f
 +#define IRDMA_OP_TYPE_ATOMIC_COMPARE_AND_SWAP	0x11
++#define IRDMA_OP_TYPE_ATOMIC_WRITE		0x12
++#define IRDMA_OP_TYPE_FLUSH_MEMORY_REGION	0x13
  #define IRDMA_OP_TYPE_REC	0x3e
  #define IRDMA_OP_TYPE_REC_IMM	0x3f
  
@@ -2919,6 +3034,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMA_AE_AMP_FASTREG_INVALID_PBL_HPS_CFG			0x011f
 +#define IRDMA_AE_AMP_MWBIND_WRONG_TYPE					0x0120
 +#define IRDMA_AE_AMP_FASTREG_PBLE_MISMATCH				0x0121
++#define IRDMA_AE_AMP_MEM_FLUSH_OVER_REACH				0x0125
 +#define IRDMA_AE_UDA_XMIT_DGRAM_TOO_LONG				0x0132
 +#define IRDMA_AE_UDA_XMIT_BAD_PD					0x0133
 +#define IRDMA_AE_UDA_XMIT_DGRAM_TOO_SHORT				0x0134
@@ -2942,6 +3058,13 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMA_AE_ATOMIC_MASK						0x0222
 +#define IRDMA_AE_INVALID_REQUEST					0x0223
 +#define IRDMA_AE_PCIE_ATOMIC_DISABLE					0x0224
++#define IRDMA_AE_HMC_INVALID_PBLE_INDEX					0x0229
++#define IRDMA_AE_HMC_INVALID_ARP_INDEX					0x022b
++#define IRDMA_AE_HMC_INVALID_AH_INDEX					0x022c
++#define IRDMA_AE_HMC_INVALID_Q1_INDEX					0x022d
++#define IRDMA_AE_HMC_INVALID_XMIT_INDEX					0x022e
++#define IRDMA_AE_HMC_INVALID_RDRESP_INDEX				0x022f
++#define IRDMA_AE_MEM_FLUSH_DISABLE					0x0230
 +#define IRDMA_AE_DDP_INVALID_MSN_GAP_IN_MSN				0x0301
 +#define IRDMA_AE_DDP_UBE_DDP_MESSAGE_TOO_LONG_FOR_AVAILABLE_BUFFER	0x0303
 +#define IRDMA_AE_DDP_UBE_INVALID_DDP_VERSION				0x0304
@@ -2955,6 +3078,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMA_AE_ROE_INVALID_RDMA_WRITE_OR_READ_RESP			0x0314
 +#define IRDMA_AE_ROCE_RSP_LENGTH_ERROR					0x0316
 +#define IRDMA_AE_INVALID_RSN_GAP_IN_RSN					0x0317
++#define IRDMA_ROE_AE_INVALID_RDMA_FLUSH					0x0319
 +#define IRDMA_AE_ROCE_REQ_LENGTH_ERROR					0x0318
 +#define IRDMA_AE_ROCE_EMPTY_MCG						0x0380
 +#define IRDMA_AE_ROCE_BAD_MC_IP_ADDR					0x0381
@@ -2995,7 +3119,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  enum irdma_device_caps_const {
  	IRDMA_WQE_SIZE =			4,
-@@ -59,27 +166,23 @@
+@@ -59,27 +182,23 @@
  	IRDMA_SHADOW_AREA_SIZE =		8,
  	IRDMA_GATHER_STATS_BUF_SIZE =		1024,
  	IRDMA_MIN_IW_QP_ID =			0,
@@ -3027,7 +3151,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	IRDMA_MAX_VF_FPM_ID =			47,
  	IRDMA_MAX_SQ_PAYLOAD_SIZE =		2145386496,
  	IRDMA_MAX_INLINE_DATA_SIZE =		101,
-@@ -106,6 +209,13 @@
+@@ -106,6 +225,13 @@
  	FLUSH_RETRY_EXC_ERR,
  	FLUSH_MW_BIND_ERR,
  	FLUSH_REM_INV_REQ_ERR,
@@ -3041,7 +3165,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  };
  
  enum irdma_cmpl_status {
-@@ -148,15 +258,25 @@
+@@ -148,15 +274,25 @@
  	IRDMA_PUSH_MODE      = 8,
  };
  
@@ -3067,7 +3191,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  };
  
  struct irdma_cqe {
-@@ -167,6 +287,16 @@
+@@ -167,6 +303,16 @@
  	__le64 buf[IRDMA_EXTENDED_CQE_SIZE];
  };
  
@@ -3084,7 +3208,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  struct irdma_post_send {
  	struct ibv_sge *sg_list;
  	__u32 num_sges;
-@@ -181,6 +311,14 @@
+@@ -181,6 +327,14 @@
  	__u32 num_sges;
  };
  
@@ -3099,13 +3223,13 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  struct irdma_rdma_write {
  	struct ibv_sge *lo_sg_list;
  	__u32 num_lo_sges;
-@@ -202,6 +340,24 @@
+@@ -202,8 +356,41 @@
  	bool ena_writes:1;
  	irdma_stag mw_stag;
  	bool mem_window_type_1:1;
 +	bool remote_atomics_en:1;
-+};
-+
+ };
+ 
 +struct irdma_atomic_fetch_add {
 +	__u64 tagged_offset;
 +	__u64 remote_tagged_offset;
@@ -3121,10 +3245,27 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	__u64 compare_data_bytes;
 +	__u32 stag;
 +	__u32 remote_stag;
- };
- 
++};
++
++struct irdma_atomic_write {
++	__u64 tagged_offset;
++	__u64 remote_tagged_offset;
++	__u64 write_data_bytes;
++	__u32 remote_stag;
++	__u32 stag;
++};
++
++struct irdma_flush_mem_region {
++	__u64 remote_tagged_offset;
++	__u32 remote_stag;
++	__u32 length;
++	__u8 selectivity;
++	__u8 placement_type;
++};
  struct irdma_inv_local_stag {
-@@ -221,6 +377,7 @@
+ 	irdma_stag target_stag;
+ };
+@@ -221,6 +408,7 @@
  	bool report_rtt:1;
  	bool udp_hdr:1;
  	bool defer_flag:1;
@@ -3132,7 +3273,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	__u32 imm_data;
  	__u32 stag_to_inv;
  	union {
-@@ -229,6 +386,10 @@
+@@ -229,6 +417,12 @@
  		struct irdma_rdma_read rdma_read;
  		struct irdma_bind_window bind_window;
  		struct irdma_inv_local_stag inv_local_stag;
@@ -3140,10 +3281,12 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +		struct irdma_atomic_compare_swap atomic_compare_swap;
 +		struct irdma_rdma_write_combined_inline_sge rdma_write_combined_sge_inline;
 +		struct irdma_post_send_combined_inline_sge send_combined_sge_inline;
++		struct irdma_atomic_write atomic_write;
++		struct irdma_flush_mem_region flush_mem_region;
  	} op;
  };
  
-@@ -236,7 +397,6 @@
+@@ -236,7 +430,6 @@
  	__u64 wr_id;
  	irdma_qp_handle qp_handle;
  	__u32 bytes_xfered;
@@ -3151,7 +3294,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	__u32 qp_id;
  	__u32 ud_src_qpn;
  	__u32 imm_data;
-@@ -256,8 +416,24 @@
+@@ -256,8 +449,29 @@
  	bool ud_vlan_valid:1;
  	bool ud_smac_valid:1;
  	bool imm_valid:1;
@@ -3171,6 +3314,11 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	enum irdma_qp_event_type event_type;
 +};
 +
++int irdma_uk_flush_mem_region(struct irdma_qp_uk *qp,
++			      struct irdma_post_sq_info *info, bool post_sq);
++int irdma_uk_atomic_write(struct irdma_qp_uk *qp,
++			  struct irdma_post_sq_info *info, bool post_sq);
++
 +int irdma_uk_atomic_compare_swap(struct irdma_qp_uk *qp,
 +				 struct irdma_post_sq_info *info, bool post_sq);
 +int irdma_uk_atomic_fetch_add(struct irdma_qp_uk *qp,
@@ -3178,7 +3326,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  int irdma_uk_inline_rdma_write(struct irdma_qp_uk *qp,
  			       struct irdma_post_sq_info *info, bool post_sq);
  int irdma_uk_inline_send(struct irdma_qp_uk *qp,
-@@ -280,8 +456,7 @@
+@@ -280,8 +494,7 @@
  				   bool post_sq);
  
  struct irdma_wqe_uk_ops {
@@ -3188,7 +3336,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	__u16 (*iw_inline_data_size_to_quanta)(__u32 data_size);
  	void (*iw_set_fragment)(__le64 *wqe, __u32 offset, struct ibv_sge *sge,
  				__u8 valid);
-@@ -289,6 +464,7 @@
+@@ -289,6 +502,7 @@
  				   struct irdma_bind_window *op_info);
  };
  
@@ -3196,7 +3344,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  int irdma_uk_cq_poll_cmpl(struct irdma_cq_uk *cq,
  			  struct irdma_cq_poll_info *info);
  void irdma_uk_cq_request_notification(struct irdma_cq_uk *cq,
-@@ -303,12 +479,51 @@
+@@ -303,12 +517,51 @@
  				 __u32 *sq_depth, __u8 *sq_shift);
  int irdma_uk_calc_depth_shift_rq(struct irdma_qp_uk_init_info *ukinfo,
  				 __u32 *rq_depth, __u8 *rq_shift);
@@ -3249,7 +3397,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  };
  
  struct irdma_qp_quanta {
-@@ -318,14 +533,19 @@
+@@ -318,14 +571,19 @@
  struct irdma_qp_uk {
  	struct irdma_qp_quanta *sq_base;
  	struct irdma_qp_quanta *rq_base;
@@ -3270,7 +3418,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	struct irdma_ring rq_ring;
  	struct irdma_ring initial_ring;
  	__u32 qp_id;
-@@ -343,6 +563,7 @@
+@@ -343,6 +601,7 @@
  	__u8 rwqe_polarity;
  	__u8 rq_wqe_size;
  	__u8 rq_wqe_size_multiplier;
@@ -3278,7 +3426,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	bool deferred_flag:1;
  	bool push_mode:1; /* whether the last post wqe was pushed */
  	bool push_dropped:1;
-@@ -350,11 +571,12 @@
+@@ -350,11 +609,12 @@
  	bool sq_flush_complete:1; /* Indicates flush was seen and SQ was empty after the flush */
  	bool rq_flush_complete:1; /* Indicates flush was seen and RQ was empty after the flush */
  	bool destroy_pending:1; /* Indicates the QP is being destroyed */
@@ -3294,7 +3442,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  };
  
  struct irdma_cq_uk {
-@@ -372,10 +594,12 @@
+@@ -372,10 +632,12 @@
  struct irdma_qp_uk_init_info {
  	struct irdma_qp_quanta *sq;
  	struct irdma_qp_quanta *rq;
@@ -3307,7 +3455,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	__u64 *rq_wrid_array;
  	__u32 qp_id;
  	__u32 qp_caps;
-@@ -387,9 +611,11 @@
+@@ -387,9 +649,11 @@
  	__u32 sq_depth;
  	__u32 rq_depth;
  	__u8 first_sq_wq;
@@ -3319,7 +3467,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	int abi_ver;
  	bool legacy_mode;
  };
-@@ -404,9 +630,12 @@
+@@ -404,9 +668,12 @@
  	bool avoid_mem_cflct;
  };
  
@@ -3333,7 +3481,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  __le64 *irdma_qp_get_next_recv_wqe(struct irdma_qp_uk *qp, __u32 *wqe_idx);
  void irdma_uk_clean_cq(void *q, struct irdma_cq_uk *cq);
  int irdma_nop(struct irdma_qp_uk *qp, __u64 wr_id, bool signaled, bool post_sq);
-@@ -415,10 +644,108 @@
+@@ -415,10 +682,108 @@
  void irdma_get_wqe_shift(struct irdma_uk_attrs *uk_attrs, __u32 sge,
  			 __u32 inline_data, __u8 *shift);
  int irdma_get_sqdepth(struct irdma_uk_attrs *uk_attrs, __u32 sq_size,
@@ -3446,8 +3594,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +}
  #endif /* IRDMA_USER_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/uverbs.c nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/uverbs.c
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/uverbs.c	2026-01-12 16:05:15.230374898 -0800
-+++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/uverbs.c	2026-01-12 16:05:23.020498662 -0800
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/uverbs.c	2026-03-24 22:03:48.805754202 -0700
++++ nd_linux-irdma-rdma-core/rdma-core-51.0/providers/irdma/uverbs.c	2026-03-24 22:03:58.194903372 -0700
 @@ -1,6 +1,8 @@
  // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
  /* Copyright (C) 2019 - 2023 Intel Corporation */
@@ -5127,11 +5275,13 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
   * irdma_post_send -  post send wr for user application
   * @ib_qp: qp to post wr
   * @ib_wr: work request ptr
-@@ -1595,14 +2179,14 @@
+@@ -1594,21 +2178,18 @@
+ 	struct irdma_uvcontext *iwvctx;
  	struct irdma_uk_attrs *uk_attrs;
  	struct irdma_uqp *iwuqp;
- 	bool reflush = false;
+-	bool reflush = false;
 -	int err;
++	bool posted = false;
 +	int err = 0;
  
  	iwuqp = container_of(ib_qp, struct irdma_uqp, ibv_qp);
@@ -5144,7 +5294,13 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	if (err)
  		return err;
  
-@@ -1618,10 +2202,40 @@
+-	if (!IRDMA_RING_MORE_WORK(iwuqp->qp.sq_ring) &&
+-	    ib_qp->state == IBV_QPS_ERR)
+-		reflush = true;
+ 
+ 	while (ib_wr) {
+ 		memset(&info, 0, sizeof(info));
+@@ -1618,10 +2199,40 @@
  			info.signaled = true;
  		if (ib_wr->send_flags & IBV_SEND_FENCE)
  			info.read_fence = true;
@@ -5187,7 +5343,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  		case IBV_WR_SEND_WITH_IMM:
  			if (iwuqp->qp.qp_caps & IRDMA_SEND_WITH_IMM) {
  				info.imm_data_valid = true;
-@@ -1700,28 +2314,43 @@
+@@ -1700,28 +2311,43 @@
  			err = irdma_uk_rdma_read(&iwuqp->qp, &info, false, false);
  			break;
  		case IBV_WR_BIND_MW:
@@ -5208,8 +5364,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +				info.op.bind_window.mw_stag = ib_wr->bind_mw.rkey;
 +			} else {
 +				struct verbs_mr *vmr = verbs_get_mr(ib_wr->bind_mw.bind_info.mr);
- 
--			if (ib_wr->bind_mw.bind_info.mw_access_flags & IBV_ACCESS_ZERO_BASED) {
++
 +				if (vmr->access & IBV_ACCESS_ZERO_BASED) {
 +					err = EINVAL;
 +					break;
@@ -5218,7 +5373,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +					calc_type2_mw_stag(ib_wr->bind_mw.rkey, ib_wr->bind_mw.mw->rkey);
 +				ib_wr->bind_mw.mw->rkey = info.op.bind_window.mw_stag;
 +			}
-+
+ 
+-			if (ib_wr->bind_mw.bind_info.mw_access_flags & IBV_ACCESS_ZERO_BASED) {
 +			if (ib_wr->bind_mw.bind_info.mw_access_flags & IBV_ACCESS_ZERO_BASED)
  				info.op.bind_window.addressing_type = IRDMA_ADDR_TYPE_ZERO_BASED;
 -				info.op.bind_window.va =  NULL;
@@ -5240,7 +5396,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  			err = irdma_uk_mw_bind(&iwuqp->qp, &info, false);
  			break;
-@@ -1733,6 +2362,8 @@
+@@ -1733,22 +2359,72 @@
  		default:
  			/* error */
  			err = EINVAL;
@@ -5249,14 +5405,21 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  			break;
  		}
  		if (err)
-@@ -1744,11 +2375,57 @@
+ 			break;
+ 
++		posted = true;
++
+ 		ib_wr = ib_wr->next;
+ 	}
+ 
  	if (err)
  		*bad_wr = ib_wr;
  
 -	irdma_uk_qp_post_wr(&iwuqp->qp);
+-	if (reflush)
 +	if (!iwuqp->qp.push_db)
 +		irdma_uk_qp_post_wr(&iwuqp->qp);
- 	if (reflush)
++	if (!err && posted && ib_qp->state == IBV_QPS_ERR)
  		irdma_issue_flush(ib_qp, 1, 0);
  
 -	pthread_spin_unlock(&iwuqp->lock);
@@ -5309,7 +5472,12 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  
  	return err;
  }
-@@ -1767,8 +2444,12 @@
+@@ -1763,19 +2439,19 @@
+ {
+ 	struct irdma_post_rq_info post_recv = {};
+ 	struct irdma_uqp *iwuqp;
+-	bool reflush = false;
++	bool posted = false;
  	int err;
  
  	iwuqp = container_of(ib_qp, struct irdma_uqp, ibv_qp);
@@ -5323,16 +5491,34 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	if (err)
  		return err;
  
-@@ -1797,7 +2478,7 @@
+-	if (!IRDMA_RING_MORE_WORK(iwuqp->qp.rq_ring) &&
+-	    ib_qp->state == IBV_QPS_ERR)
+-		reflush = true;
+-
+ 	while (ib_wr) {
+ 		if (ib_wr->num_sge > iwuqp->qp.max_rq_frag_cnt) {
+ 			*bad_wr = ib_wr;
+@@ -1791,13 +2467,16 @@
+ 			goto error;
+ 		}
+ 
+-		if (reflush)
+-			irdma_issue_flush(ib_qp, 0, 1);
++		posted = true;
+ 
  		ib_wr = ib_wr->next;
  	}
++
++	if (!err && posted && ib_qp->state == IBV_QPS_ERR)
++		irdma_issue_flush(ib_qp, 0, 1);
++
  error:
 -	pthread_spin_unlock(&iwuqp->lock);
 +	irdma_spin_unlock(&iwuqp->lock);
  
  	return err;
  }
-@@ -1811,13 +2492,13 @@
+@@ -1811,13 +2490,13 @@
  {
  	struct irdma_uah *ah;
  	union ibv_gid sgid;
@@ -5351,7 +5537,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  		return NULL;
  	}
  
-@@ -1899,12 +2580,15 @@
+@@ -1899,12 +2578,15 @@
  	struct irdma_cqe *cq_base = NULL;
  	struct verbs_mr new_mr = {};
  	struct irdma_ucq *iwucq;
@@ -5367,7 +5553,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	iwvctx = container_of(cq->context, struct irdma_uvcontext,
  			      ibv_ctx.context);
  	uk_attrs = &iwvctx->uk_attrs;
-@@ -1912,27 +2596,21 @@
+@@ -1912,27 +2594,21 @@
  	if (!(uk_attrs->feature_flags & IRDMA_FEATURE_CQ_RESIZE))
  		return EOPNOTSUPP;
  
@@ -5400,7 +5586,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	cq_buf = malloc(sizeof(*cq_buf));
  	if (!cq_buf) {
  		ret = ENOMEM;
-@@ -1950,7 +2628,7 @@
+@@ -1950,7 +2626,7 @@
  	if (ret)
  		goto err_dereg_mr;
  
@@ -5409,7 +5595,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	if (ret)
  		goto err_lock;
  
-@@ -1961,23 +2639,60 @@
+@@ -1961,23 +2637,60 @@
  		goto err_resize;
  
  	memcpy(&cq_buf->cq, &iwucq->cq, sizeof(cq_buf->cq));

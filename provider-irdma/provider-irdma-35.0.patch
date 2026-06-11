@@ -1,6 +1,6 @@
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/CMakeLists.txt nd_linux-irdma-rdma-core/rdma-core-35.0/CMakeLists.txt
---- nd_linux-irdma-rdma-core/rdma-core-copy/CMakeLists.txt	2026-03-10 11:32:39.776557469 -0500
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/CMakeLists.txt	2026-03-10 11:32:39.832557467 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/CMakeLists.txt	2026-06-11 15:41:32.678797644 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/CMakeLists.txt	2026-06-11 15:41:32.734797642 -0500
 @@ -669,7 +669,7 @@
  add_subdirectory(providers/efa)
  add_subdirectory(providers/efa/man)
@@ -11,8 +11,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  add_subdirectory(providers/mlx4/man)
  add_subdirectory(providers/mlx5)
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/debian/control nd_linux-irdma-rdma-core/rdma-core-35.0/debian/control
---- nd_linux-irdma-rdma-core/rdma-core-copy/debian/control	2026-03-10 11:32:39.784557469 -0500
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/debian/control	2026-03-10 11:32:39.833557467 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/debian/control	2026-06-11 15:41:32.687797644 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/debian/control	2026-06-11 15:41:32.735797642 -0500
 @@ -95,8 +95,8 @@
    - efa: Amazon Elastic Fabric Adapter
    - hfi1verbs: Intel Omni-Path HFI
@@ -24,8 +24,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
    - mlx5: Mellanox Connect-IB/X-4+ InfiniBand HCAs
    - mthca: Mellanox InfiniBand HCAs
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/debian/copyright nd_linux-irdma-rdma-core/rdma-core-35.0/debian/copyright
---- nd_linux-irdma-rdma-core/rdma-core-copy/debian/copyright	2026-03-10 11:32:39.784557469 -0500
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/debian/copyright	2026-03-10 11:32:39.833557467 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/debian/copyright	2026-06-11 15:41:32.687797644 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/debian/copyright	2026-06-11 15:41:32.735797642 -0500
 @@ -166,16 +166,16 @@
  Copyright: 2016, Hisilicon Limited.
  License: BSD-MIT or GPL-2
@@ -48,8 +48,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  Copyright: 2004-2005, Topspin Communications.
             2005-2007, Cisco, Inc.
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/CMakeLists.txt nd_linux-irdma-rdma-core/rdma-core-35.0/kernel-headers/CMakeLists.txt
---- nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/CMakeLists.txt	2026-03-10 11:32:39.794557469 -0500
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/kernel-headers/CMakeLists.txt	2026-03-10 11:32:39.833557467 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/CMakeLists.txt	2026-06-11 15:41:32.697797643 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/kernel-headers/CMakeLists.txt	2026-06-11 15:41:32.735797642 -0500
 @@ -3,12 +3,12 @@
    rdma/cxgb4-abi.h
    rdma/efa-abi.h
@@ -75,7 +75,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
    rdma/mlx5-abi.h
    rdma/mthca-abi.h
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/i40iw-abi.h nd_linux-irdma-rdma-core/rdma-core-35.0/kernel-headers/rdma/i40iw-abi.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/i40iw-abi.h	2026-03-10 11:32:39.795557469 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/i40iw-abi.h	2026-06-11 15:41:32.697797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/kernel-headers/rdma/i40iw-abi.h	1969-12-31 18:00:00.000000000 -0600
 @@ -1,107 +0,0 @@
 -/*
@@ -186,8 +186,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -
 -#endif
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/ib_user_ioctl_verbs.h nd_linux-irdma-rdma-core/rdma-core-35.0/kernel-headers/rdma/ib_user_ioctl_verbs.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/ib_user_ioctl_verbs.h	2026-03-10 11:32:39.795557469 -0500
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/kernel-headers/rdma/ib_user_ioctl_verbs.h	2026-03-10 11:32:39.833557467 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/ib_user_ioctl_verbs.h	2026-06-11 15:41:32.697797643 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/kernel-headers/rdma/ib_user_ioctl_verbs.h	2026-06-11 15:41:32.735797642 -0500
 @@ -239,7 +239,7 @@
  	RDMA_DRIVER_BNXT_RE,
  	RDMA_DRIVER_OCRDMA,
@@ -199,7 +199,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  	RDMA_DRIVER_HNS,
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/irdma-abi.h nd_linux-irdma-rdma-core/rdma-core-35.0/kernel-headers/rdma/irdma-abi.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/irdma-abi.h	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/kernel-headers/rdma/irdma-abi.h	2026-03-10 11:32:49.460557055 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/kernel-headers/rdma/irdma-abi.h	2026-06-11 15:41:42.428797305 -0500
 @@ -0,0 +1,154 @@
 +/* SPDX-License-Identifier: (GPL-2.0 WITH Linux-syscall-note) OR Linux-OpenIB) */
 +/*
@@ -356,8 +356,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +};
 +#endif /* IRDMA_ABI_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/libibverbs/verbs.h nd_linux-irdma-rdma-core/rdma-core-35.0/libibverbs/verbs.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/libibverbs/verbs.h	2026-03-10 11:32:39.805557468 -0500
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/libibverbs/verbs.h	2026-03-10 11:32:39.834557467 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/libibverbs/verbs.h	2026-06-11 15:41:32.707797643 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/libibverbs/verbs.h	2026-06-11 15:41:32.736797642 -0500
 @@ -2208,8 +2208,8 @@
  extern const struct verbs_device_ops verbs_provider_efa;
  extern const struct verbs_device_ops verbs_provider_hfi1verbs;
@@ -369,8 +369,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  extern const struct verbs_device_ops verbs_provider_mlx5;
  extern const struct verbs_device_ops verbs_provider_mthca;
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/MAINTAINERS nd_linux-irdma-rdma-core/rdma-core-35.0/MAINTAINERS
---- nd_linux-irdma-rdma-core/rdma-core-copy/MAINTAINERS	2026-03-10 11:32:39.777557469 -0500
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/MAINTAINERS	2026-03-10 11:32:39.832557467 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/MAINTAINERS	2026-06-11 15:41:32.679797644 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/MAINTAINERS	2026-06-11 15:41:32.735797642 -0500
 @@ -74,10 +74,11 @@
  S:	Supported
  F:	providers/hns/
@@ -387,7 +387,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  RDMA Communication Manager Assistant (for librdmacm.so)
  M:	Haakon Bugge <haakon.bugge@oracle.com>
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/CMakeLists.txt nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/CMakeLists.txt
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/CMakeLists.txt	2026-03-10 11:32:39.812557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/CMakeLists.txt	2026-06-11 15:41:32.714797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/CMakeLists.txt	1969-12-31 18:00:00.000000000 -0600
 @@ -1,5 +0,0 @@
 -rdma_provider(i40iw
@@ -396,7 +396,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -  i40iw_uverbs.c
 -)
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40e_devids.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40e_devids.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40e_devids.h	2026-03-10 11:32:39.812557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40e_devids.h	2026-06-11 15:41:32.714797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40e_devids.h	1969-12-31 18:00:00.000000000 -0600
 @@ -1,72 +0,0 @@
 -/*******************************************************************************
@@ -472,7 +472,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -
 -#endif /* _I40E_DEVIDS_H_ */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw-abi.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw-abi.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw-abi.h	2026-03-10 11:32:39.812557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw-abi.h	2026-06-11 15:41:32.714797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw-abi.h	1969-12-31 18:00:00.000000000 -0600
 @@ -1,55 +0,0 @@
 -/*******************************************************************************
@@ -531,7 +531,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -
 -#endif /* I40IW_ABI_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_d.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_d.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_d.h	2026-03-10 11:32:39.812557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_d.h	2026-06-11 15:41:32.715797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_d.h	1969-12-31 18:00:00.000000000 -0600
 @@ -1,1746 +0,0 @@
 -/*******************************************************************************
@@ -2281,7 +2281,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -
 -#endif
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_osdep.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_osdep.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_osdep.h	2026-03-10 11:32:39.812557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_osdep.h	2026-06-11 15:41:32.715797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_osdep.h	1969-12-31 18:00:00.000000000 -0600
 @@ -1,108 +0,0 @@
 -/*******************************************************************************
@@ -2393,7 +2393,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -
 -#endif				/* _I40IW_OSDEP_H_ */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_register.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_register.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_register.h	2026-03-10 11:32:39.812557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_register.h	2026-06-11 15:41:32.715797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_register.h	1969-12-31 18:00:00.000000000 -0600
 @@ -1,1030 +0,0 @@
 -/*******************************************************************************
@@ -3427,7 +3427,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -#define I40E_VFPE_WQEALLOC1_WQE_DESC_INDEX_MASK  (0xFFF <<  I40E_VFPE_WQEALLOC1_WQE_DESC_INDEX_SHIFT)
 -#endif /* I40IW_REGISTER_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_status.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_status.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_status.h	2026-03-10 11:32:39.812557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_status.h	2026-06-11 15:41:32.715797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_status.h	1969-12-31 18:00:00.000000000 -0600
 @@ -1,101 +0,0 @@
 -/*******************************************************************************
@@ -3532,7 +3532,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -};
 -#endif
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_uk.c nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_uk.c
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_uk.c	2026-03-10 11:32:39.812557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_uk.c	2026-06-11 15:41:32.715797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_uk.c	1969-12-31 18:00:00.000000000 -0600
 @@ -1,1266 +0,0 @@
 -/*******************************************************************************
@@ -4802,7 +4802,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -	return 0;
 -}
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_umain.c nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_umain.c
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_umain.c	2026-03-10 11:32:39.812557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_umain.c	2026-06-11 15:41:32.715797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_umain.c	1969-12-31 18:00:00.000000000 -0600
 @@ -1,226 +0,0 @@
 -/*******************************************************************************
@@ -5032,7 +5032,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -};
 -PROVIDER_DRIVER(i40iw, i40iw_udev_ops);
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_umain.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_umain.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_umain.h	2026-03-10 11:32:39.812557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_umain.h	2026-06-11 15:41:32.715797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_umain.h	1969-12-31 18:00:00.000000000 -0600
 @@ -1,181 +0,0 @@
 -/*******************************************************************************
@@ -5217,7 +5217,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -
 -#endif /* i40iw_umain_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_user.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_user.h
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_user.h	2026-03-10 11:32:39.812557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_user.h	2026-06-11 15:41:32.715797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_user.h	1969-12-31 18:00:00.000000000 -0600
 @@ -1,456 +0,0 @@
 -/*******************************************************************************
@@ -5677,7 +5677,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -enum i40iw_status_code i40iw_get_rqdepth(u32 rq_size, u8 shift, u32 *rqdepth);
 -#endif
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_uverbs.c nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_uverbs.c
---- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_uverbs.c	2026-03-10 11:32:39.813557468 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/providers/i40iw/i40iw_uverbs.c	2026-06-11 15:41:32.715797643 -0500
 +++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/i40iw/i40iw_uverbs.c	1969-12-31 18:00:00.000000000 -0600
 @@ -1,983 +0,0 @@
 -/*******************************************************************************
@@ -6665,7 +6665,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 -}
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/abi.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/abi.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/abi.h	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/abi.h	2026-03-10 11:32:49.457557056 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/abi.h	2026-06-11 15:41:42.425797305 -0500
 @@ -0,0 +1,45 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* Copyright (C) 2019 - 2023 Intel Corporation */
@@ -6714,7 +6714,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#endif /* PROVIDER_IRDMA_ABI_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/CMakeLists.txt nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/CMakeLists.txt
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/CMakeLists.txt	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/CMakeLists.txt	2026-03-10 11:32:39.839557467 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/CMakeLists.txt	2026-06-11 15:41:32.742797642 -0500
 @@ -0,0 +1,7 @@
 +# SPDX-License-Identifier: GPL-2.0 OR Linux-OpenIB
 +# Copyright (c) 2019 - 2021 Intel Corporation
@@ -6725,8 +6725,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +)
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/defs.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/defs.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/defs.h	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/defs.h	2026-03-10 11:32:49.458557056 -0500
-@@ -0,0 +1,414 @@
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/defs.h	2026-06-11 15:41:42.425797305 -0500
+@@ -0,0 +1,425 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* Copyright (c) 2015 - 2023 Intel Corporation */
 +#ifndef IRDMA_DEFS_H
@@ -6756,6 +6756,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +
 +#define IRDMA_SQ_RSVD	258
 +#define IRDMA_RQ_RSVD	1
++#define IRDMAQP_ATOMIC_WRITE_FRAG_LEN 	0x8
 +
 +#define IRDMA_FEATURE_RTS_AE			BIT_ULL(0)
 +#define IRDMA_FEATURE_CQ_RESIZE			BIT_ULL(1)
@@ -6778,6 +6779,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMAQP_OP_NOP				0x0c
 +#define IRDMAQP_OP_ATOMIC_FETCH_ADD		0x0f
 +#define IRDMAQP_OP_ATOMIC_COMPARE_SWAP_ADD	0x11
++#define IRDMAQP_OP_ATOMIC_WRITE			0x12
++#define IRDMAQP_OP_FLUSH_MEM_REGION		0x13
 +
 +#define LS_64_1(val, bits)	((__u64)(uintptr_t)(val) << (bits))
 +#define RS_64_1(val, bits)	((__u64)(uintptr_t)(val) >> (bits))
@@ -6926,6 +6929,12 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMAQPSQ_COMBINED_SGE_INLINE_UNRELIABLE_S 63
 +#define IRDMAQPSQ_COMBINED_SGE_INLINE_UNRELIABLE BIT_ULL(63)
 +
++#define IRDMAQPSQ_FLUSH_MEM_LEN_S 0
++#define IRDMAQPSQ_FLUSH_MEM_LEN GENMASK_ULL(31, 0)
++#define IRDMAQPSQ_SELECTIVITY_S 52
++#define IRDMAQPSQ_SELECTIVITY GENMASK_ULL(53, 52)
++#define IRDMAQPSQ_PLACEMENT_TYPE_S 48
++#define IRDMAQPSQ_PLACEMENT_TYPE GENMASK_ULL(51, 48)
 +#define IRDMAQPSQ_IMMDATA_S 0
 +#define IRDMAQPSQ_IMMDATA GENMASK_ULL(63, 0)
 +#define IRDMAQPSQ_REMSTAG_S 0
@@ -6951,6 +6960,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMAQPSQ_BASEVA_TO_FBO_S IRDMA_CQPHC_QPCTX_S
 +#define IRDMAQPSQ_BASEVA_TO_FBO IRDMA_CQPHC_QPCTX
 +
++#define IRDMAQPSQ_FLUSH_MR_S 20
++#define IRDMAQPSQ_FLUSH_MR BIT_ULL(20)
 +#define IRDMAQPSQ_REMOTE_ATOMICS_EN_S 55
 +#define IRDMAQPSQ_REMOTE_ATOMICS_EN BIT_ULL(55)
 +#define IRDMAQPSQ_FAST_REG_PASID_S 0
@@ -7143,7 +7154,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#endif /* IRDMA_DEFS_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/i40e_devids.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/i40e_devids.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/i40e_devids.h	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/i40e_devids.h	2026-03-10 11:32:49.458557056 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/i40e_devids.h	2026-06-11 15:41:42.425797305 -0500
 @@ -0,0 +1,36 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* Copyright (c) 2015 - 2019 Intel Corporation */
@@ -7183,7 +7194,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#endif /* I40E_DEVIDS_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/i40iw_hw.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/i40iw_hw.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/i40iw_hw.h	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/i40iw_hw.h	2026-03-10 11:32:49.458557056 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/i40iw_hw.h	2026-06-11 15:41:42.425797305 -0500
 @@ -0,0 +1,31 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* Copyright (c) 2015 - 2023 Intel Corporation */
@@ -7218,7 +7229,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#endif /* I40IW_HW_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/ice_devids.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/ice_devids.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/ice_devids.h	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/ice_devids.h	2026-03-10 11:32:49.458557056 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/ice_devids.h	2026-06-11 15:41:42.425797305 -0500
 @@ -0,0 +1,61 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* Copyright (c) 2019 - 2020 Intel Corporation */
@@ -7283,7 +7294,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/idpf_devids.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/idpf_devids.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/idpf_devids.h	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/idpf_devids.h	2026-03-10 11:32:49.458557056 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/idpf_devids.h	2026-06-11 15:41:42.425797305 -0500
 @@ -0,0 +1,18 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* SPDX-License-Identifier: GPL-2.0-only */
@@ -7305,8 +7316,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#endif /* _IDPF_DEVIDS_H_ */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/irdma.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/irdma.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/irdma.h	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/irdma.h	2026-03-10 11:32:49.458557056 -0500
-@@ -0,0 +1,67 @@
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/irdma.h	2026-06-11 15:41:42.426797305 -0500
+@@ -0,0 +1,68 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* Copyright (c) 2017 - 2022 Intel Corporation */
 +#ifndef IRDMA_H
@@ -7327,6 +7338,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	IRDMA_GEN_1 = 1,
 +	IRDMA_GEN_2 = 2,
 +	IRDMA_GEN_3 = 3,
++	IRDMA_GEN_4 = 4,
 +};
 +
 +struct irdma_uk_attrs {
@@ -7376,7 +7388,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#endif /* IRDMA_H*/
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/osdep.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/osdep.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/osdep.h	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/osdep.h	2026-03-10 11:32:49.458557056 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/osdep.h	2026-06-11 15:41:42.426797305 -0500
 @@ -0,0 +1,61 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* Copyright (c) 2015 - 2025 Intel Corporation */
@@ -7441,8 +7453,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#endif /* IRDMA_OSDEP_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/uk.c nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/uk.c
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/uk.c	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/uk.c	2026-03-10 11:32:49.458557056 -0500
-@@ -0,0 +1,2329 @@
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/uk.c	2026-06-11 15:41:42.426797305 -0500
+@@ -0,0 +1,2408 @@
 +// SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
 +/* Copyright (c) 2015 - 2023 Intel Corporation */
 +#include "osdep.h"
@@ -7564,9 +7576,6 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 + */
 +void irdma_uk_qp_post_wr(struct irdma_qp_uk *qp)
 +{
-+	/* valid bit is written before ringing doorbell */
-+	udma_to_device_barrier();
-+
 +	mmio_write32(qp->wqe_alloc_db, qp->qp_id);
 +	qp->initial_ring.head = qp->sq_ring.head;
 +}
@@ -7880,6 +7889,91 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	      FIELD_PREP(IRDMAQPSQ_READFENCE, read_fence) |
 +	      FIELD_PREP(IRDMAQPSQ_LOCALFENCE, info->local_fence) |
 +	      FIELD_PREP(IRDMAQPSQ_SIGCOMPL, info->signaled) |
++	      FIELD_PREP(IRDMAQPSQ_VALID, qp->swqe_polarity);
++
++	udma_to_device_barrier(); /* make sure WQE is populated before valid bit is set */
++
++	set_64bit_val(wqe, 24, hdr);
++	if (qp->push_db)
++		irdma_qp_push_wqe(qp, wqe, quanta, wqe_idx, info->push_wqe);
++	else if (post_sq)
++		irdma_uk_qp_post_wr(qp);
++
++	return 0;
++}
++
++int irdma_uk_atomic_write(struct irdma_qp_uk *qp,
++			  struct irdma_post_sq_info *info, bool post_sq)
++{
++	struct irdma_atomic_write *op_info;
++	__u32 total_size = 0;
++	__u32 wqe_idx;
++	__u16 quanta = IRDMA_QP_WQE_MIN_QUANTA;
++	__le64 *wqe;
++	__u64 hdr;
++
++	info->push_wqe = qp->push_db ? true : false;
++
++	op_info = &info->op.atomic_write;
++	wqe = irdma_qp_get_next_send_wqe(qp, &wqe_idx, &quanta, total_size, info);
++	if (!wqe)
++		return ENOMEM;
++
++	set_64bit_val(wqe, 0, op_info->tagged_offset);
++	set_64bit_val(wqe, 8,
++		      FIELD_PREP(IRDMAQPSQ_LOCSTAG, op_info->stag) |
++		      FIELD_PREP(IRDMAQPSQ_FRAG_LEN, IRDMAQP_ATOMIC_WRITE_FRAG_LEN) |
++		      FIELD_PREP(IRDMAQPSQ_FRAG_VALID, qp->swqe_polarity));
++	set_64bit_val(wqe, 16, op_info->remote_tagged_offset);
++
++	hdr = FIELD_PREP(IRDMAQPSQ_REMSTAG, op_info->remote_stag) |
++	      FIELD_PREP(IRDMAQPSQ_OPCODE, IRDMAQP_OP_ATOMIC_WRITE) |
++	      FIELD_PREP(IRDMAQPSQ_PUSHWQE, info->push_wqe) |
++	      FIELD_PREP(IRDMAQPSQ_READFENCE, info->read_fence) |
++	      FIELD_PREP(IRDMAQPSQ_LOCALFENCE, info->local_fence) |
++	      FIELD_PREP(IRDMAQPSQ_SIGCOMPL, info->signaled) |
++	      FIELD_PREP(IRDMAQPSQ_VALID, qp->swqe_polarity);
++
++	udma_to_device_barrier(); /* make sure WQE is populated before valid bit is set */
++
++	set_64bit_val(wqe, 24, hdr);
++	if (qp->push_db)
++		irdma_qp_push_wqe(qp, wqe, quanta, wqe_idx, info->push_wqe);
++	else if (post_sq)
++		irdma_uk_qp_post_wr(qp);
++
++	return 0;
++}
++
++int irdma_uk_flush_mem_region(struct irdma_qp_uk *qp,
++			      struct irdma_post_sq_info *info, bool post_sq)
++{
++	struct irdma_flush_mem_region *op_info;
++	__u32 total_size = 0;
++	__u32 wqe_idx;
++	__u16 quanta = IRDMA_QP_WQE_MIN_QUANTA;
++	__le64 *wqe;
++	__u64 hdr;
++
++	info->push_wqe = qp->push_db ? true : false;
++
++	op_info = &info->op.flush_mem_region;
++	wqe = irdma_qp_get_next_send_wqe(qp, &wqe_idx, &quanta, total_size, info);
++	if (!wqe)
++		return ENOMEM;
++
++	set_64bit_val(wqe, 8,
++		      FIELD_PREP(IRDMAQPSQ_FLUSH_MEM_LEN, op_info->length));
++	set_64bit_val(wqe, 16, op_info->remote_tagged_offset);
++
++	hdr = FIELD_PREP(IRDMAQPSQ_REMSTAG, op_info->remote_stag) |
++	      FIELD_PREP(IRDMAQPSQ_OPCODE, IRDMAQP_OP_FLUSH_MEM_REGION) |
++	      FIELD_PREP(IRDMAQPSQ_PUSHWQE, info->push_wqe) |
++	      FIELD_PREP(IRDMAQPSQ_READFENCE, info->read_fence) |
++	      FIELD_PREP(IRDMAQPSQ_LOCALFENCE, info->local_fence) |
++	      FIELD_PREP(IRDMAQPSQ_SIGCOMPL, info->signaled) |
++	      FIELD_PREP(IRDMAQPSQ_PLACEMENT_TYPE, op_info->placement_type) |
++	      FIELD_PREP(IRDMAQPSQ_SELECTIVITY, op_info->selectivity) |
 +	      FIELD_PREP(IRDMAQPSQ_VALID, qp->swqe_polarity);
 +
 +	udma_to_device_barrier(); /* make sure WQE is populated before valid bit is set */
@@ -8760,9 +8854,6 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +		   FIELD_PREP(IRDMA_CQ_DBSA_ARM_NEXT, arm_next);
 +
 +	set_64bit_val(cq->shadow_area, 32, temp_val);
-+
-+	udma_to_device_barrier(); /* make sure WQE is populated before valid bit is set */
-+
 +	mmio_write32(cq->cqe_alloc_db, cq->cq_id);
 +}
 +
@@ -9398,7 +9489,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	else if (hw_quanta > uk_attrs->max_hw_wq_quanta)
 +		return EINVAL;
 +
-+	*sqdepth = hw_quanta;
++	*sqdepth = (__u32)hw_quanta;
 +	return 0;
 +}
 +
@@ -9420,7 +9511,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	else if (hw_quanta > uk_attrs->max_hw_rq_quanta)
 +		return EINVAL;
 +
-+	*rqdepth = hw_quanta;
++	*rqdepth = (__u32)hw_quanta;
 +	return 0;
 +}
 +
@@ -9774,7 +9865,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/umain.c nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/umain.c
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/umain.c	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/umain.c	2026-03-10 11:32:49.458557056 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/umain.c	2026-06-11 15:41:42.426797305 -0500
 @@ -0,0 +1,397 @@
 +// SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
 +/* Copyright (C) 2019 - 2023 Intel Corporation */
@@ -10175,7 +10266,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +PROVIDER_DRIVER(irdma, irdma_udev_ops);
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/umain.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/umain.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/umain.h	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/umain.h	2026-03-10 11:32:49.458557056 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/umain.h	2026-06-11 15:41:42.426797305 -0500
 @@ -0,0 +1,289 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* Copyright (C) 2019 - 2022 Intel Corporation */
@@ -10468,8 +10559,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#endif /* IRDMA_UMAIN_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/user.h nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/user.h
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/user.h	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/user.h	2026-03-10 11:32:49.458557056 -0500
-@@ -0,0 +1,751 @@
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/user.h	2026-06-11 15:41:42.426797305 -0500
+@@ -0,0 +1,789 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* Copyright (c) 2015 - 2022 Intel Corporation */
 +#ifndef IRDMA_USER_H
@@ -10503,6 +10594,11 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMA_ACCESS_FLAGS_ZERO_BASED		0x20
 +#define IRDMA_ACCESS_FLAGS_ALL			0x3f
 +
++#define IRDMA_FLUSH_MEM_REGION_PLACE_TYPE_GLOBAL_VIS BIT(0)
++#define IRDMA_FLUSH_MEM_REGION_PLACE_TYPE_PERSISTENCE BIT(1)
++#define IRDMA_FLUSH_MEM_REGION_SELECTIVITY_TYPE_WRITES_IN_RANGE 0x0
++#define IRDMA_FLUSH_MEM_REGION_SELECTIVITY_TYPE_ALL_WRITES 0x1
++
 +#define IRDMA_OP_TYPE_RDMA_WRITE		0x00
 +#define IRDMA_OP_TYPE_RDMA_READ			0x01
 +#define IRDMA_OP_TYPE_SEND			0x03
@@ -10517,6 +10613,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMA_OP_TYPE_NOP			0x0c
 +#define IRDMA_OP_TYPE_ATOMIC_FETCH_AND_ADD	0x0f
 +#define IRDMA_OP_TYPE_ATOMIC_COMPARE_AND_SWAP	0x11
++#define IRDMA_OP_TYPE_ATOMIC_WRITE		0x12
++#define IRDMA_OP_TYPE_FLUSH_MEMORY_REGION	0x13
 +#define IRDMA_OP_TYPE_REC	0x3e
 +#define IRDMA_OP_TYPE_REC_IMM	0x3f
 +
@@ -10553,6 +10651,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMA_AE_AMP_FASTREG_INVALID_PBL_HPS_CFG			0x011f
 +#define IRDMA_AE_AMP_MWBIND_WRONG_TYPE					0x0120
 +#define IRDMA_AE_AMP_FASTREG_PBLE_MISMATCH				0x0121
++#define IRDMA_AE_AMP_MEM_FLUSH_OVER_REACH				0x0125
 +#define IRDMA_AE_UDA_XMIT_DGRAM_TOO_LONG				0x0132
 +#define IRDMA_AE_UDA_XMIT_BAD_PD					0x0133
 +#define IRDMA_AE_UDA_XMIT_DGRAM_TOO_SHORT				0x0134
@@ -10576,6 +10675,13 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMA_AE_ATOMIC_MASK						0x0222
 +#define IRDMA_AE_INVALID_REQUEST					0x0223
 +#define IRDMA_AE_PCIE_ATOMIC_DISABLE					0x0224
++#define IRDMA_AE_HMC_INVALID_PBLE_INDEX					0x0229
++#define IRDMA_AE_HMC_INVALID_ARP_INDEX					0x022b
++#define IRDMA_AE_HMC_INVALID_AH_INDEX					0x022c
++#define IRDMA_AE_HMC_INVALID_Q1_INDEX					0x022d
++#define IRDMA_AE_HMC_INVALID_XMIT_INDEX					0x022e
++#define IRDMA_AE_HMC_INVALID_RDRESP_INDEX				0x022f
++#define IRDMA_AE_MEM_FLUSH_DISABLE					0x0230
 +#define IRDMA_AE_DDP_INVALID_MSN_GAP_IN_MSN				0x0301
 +#define IRDMA_AE_DDP_UBE_DDP_MESSAGE_TOO_LONG_FOR_AVAILABLE_BUFFER	0x0303
 +#define IRDMA_AE_DDP_UBE_INVALID_DDP_VERSION				0x0304
@@ -10589,6 +10695,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#define IRDMA_AE_ROE_INVALID_RDMA_WRITE_OR_READ_RESP			0x0314
 +#define IRDMA_AE_ROCE_RSP_LENGTH_ERROR					0x0316
 +#define IRDMA_AE_INVALID_RSN_GAP_IN_RSN					0x0317
++#define IRDMA_ROE_AE_INVALID_RDMA_FLUSH					0x0319
 +#define IRDMA_AE_ROCE_REQ_LENGTH_ERROR					0x0318
 +#define IRDMA_AE_ROCE_EMPTY_MCG						0x0380
 +#define IRDMA_AE_ROCE_BAD_MC_IP_ADDR					0x0381
@@ -10832,6 +10939,21 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	__u32 remote_stag;
 +};
 +
++struct irdma_atomic_write {
++	__u64 tagged_offset;
++	__u64 remote_tagged_offset;
++	__u64 write_data_bytes;
++	__u32 remote_stag;
++	__u32 stag;
++};
++
++struct irdma_flush_mem_region {
++	__u64 remote_tagged_offset;
++	__u32 remote_stag;
++	__u32 length;
++	__u8 selectivity;
++	__u8 placement_type;
++};
 +struct irdma_inv_local_stag {
 +	irdma_stag target_stag;
 +};
@@ -10862,6 +10984,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +		struct irdma_atomic_compare_swap atomic_compare_swap;
 +		struct irdma_rdma_write_combined_inline_sge rdma_write_combined_sge_inline;
 +		struct irdma_post_send_combined_inline_sge send_combined_sge_inline;
++		struct irdma_atomic_write atomic_write;
++		struct irdma_flush_mem_region flush_mem_region;
 +	} op;
 +};
 +
@@ -10901,6 +11025,11 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	enum irdma_flush_opcode flush_code;
 +	enum irdma_qp_event_type event_type;
 +};
++
++int irdma_uk_flush_mem_region(struct irdma_qp_uk *qp,
++			      struct irdma_post_sq_info *info, bool post_sq);
++int irdma_uk_atomic_write(struct irdma_qp_uk *qp,
++			  struct irdma_post_sq_info *info, bool post_sq);
 +
 +int irdma_uk_atomic_compare_swap(struct irdma_qp_uk *qp,
 +				 struct irdma_post_sq_info *info, bool post_sq);
@@ -11223,8 +11352,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +#endif /* IRDMA_USER_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/uverbs.c nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/uverbs.c
 --- nd_linux-irdma-rdma-core/rdma-core-copy/providers/irdma/uverbs.c	1969-12-31 18:00:00.000000000 -0600
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/uverbs.c	2026-03-10 11:32:49.459557055 -0500
-@@ -0,0 +1,2698 @@
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/providers/irdma/uverbs.c	2026-06-11 15:41:42.426797305 -0500
+@@ -0,0 +1,2696 @@
 +// SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
 +/* Copyright (C) 2019 - 2023 Intel Corporation */
 +#if HAVE_CONFIG_H
@@ -13405,7 +13534,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	struct irdma_uvcontext *iwvctx;
 +	struct irdma_uk_attrs *uk_attrs;
 +	struct irdma_uqp *iwuqp;
-+	bool reflush = false;
++	bool posted = false;
 +	int err = 0;
 +
 +	iwuqp = container_of(ib_qp, struct irdma_uqp, ibv_qp);
@@ -13417,9 +13546,6 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	if (err)
 +		return err;
 +
-+	if (!IRDMA_RING_MORE_WORK(iwuqp->qp.sq_ring) &&
-+	    ib_qp->state == IBV_QPS_ERR)
-+		reflush = true;
 +
 +	while (ib_wr) {
 +		memset(&info, 0, sizeof(info));
@@ -13596,6 +13722,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +		if (err)
 +			break;
 +
++		posted = true;
++
 +		ib_wr = ib_wr->next;
 +	}
 +
@@ -13604,7 +13732,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +
 +	if (!iwuqp->qp.push_db)
 +		irdma_uk_qp_post_wr(&iwuqp->qp);
-+	if (reflush)
++	if (!err && posted && ib_qp->state == IBV_QPS_ERR)
 +		irdma_issue_flush(ib_qp, 1, 0);
 +
 +	irdma_spin_unlock(&iwuqp->lock);
@@ -13667,7 +13795,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +{
 +	struct irdma_post_rq_info post_recv = {};
 +	struct irdma_uqp *iwuqp;
-+	bool reflush = false;
++	bool posted = false;
 +	int err;
 +
 +	iwuqp = container_of(ib_qp, struct irdma_uqp, ibv_qp);
@@ -13679,10 +13807,6 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	err = irdma_spin_lock(&iwuqp->lock);
 +	if (err)
 +		return err;
-+
-+	if (!IRDMA_RING_MORE_WORK(iwuqp->qp.rq_ring) &&
-+	    ib_qp->state == IBV_QPS_ERR)
-+		reflush = true;
 +
 +	while (ib_wr) {
 +		if (ib_wr->num_sge > iwuqp->qp.max_rq_frag_cnt) {
@@ -13699,11 +13823,14 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +			goto error;
 +		}
 +
-+		if (reflush)
-+			irdma_issue_flush(ib_qp, 0, 1);
++		posted = true;
 +
 +		ib_wr = ib_wr->next;
 +	}
++
++	if (!err && posted && ib_qp->state == IBV_QPS_ERR)
++		irdma_issue_flush(ib_qp, 0, 1);
++
 +error:
 +	irdma_spin_unlock(&iwuqp->lock);
 +
@@ -13924,8 +14051,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
 +	return 0;
 +}
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/redhat/rdma-core.spec nd_linux-irdma-rdma-core/rdma-core-35.0/redhat/rdma-core.spec
---- nd_linux-irdma-rdma-core/rdma-core-copy/redhat/rdma-core.spec	2026-03-10 11:32:39.823557467 -0500
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/redhat/rdma-core.spec	2026-03-10 11:32:39.836557467 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/redhat/rdma-core.spec	2026-06-11 15:41:32.726797642 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/redhat/rdma-core.spec	2026-06-11 15:41:32.739797642 -0500
 @@ -66,7 +66,7 @@
  # Ninja was introduced in FC23
  BuildRequires: ninja-build
@@ -13959,8 +14086,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_li
  - libmlx5: Mellanox Connect-IB/X-4+ InfiniBand HCA
  - libmthca: Mellanox InfiniBand HCA
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' nd_linux-irdma-rdma-core/rdma-core-copy/suse/rdma-core.spec nd_linux-irdma-rdma-core/rdma-core-35.0/suse/rdma-core.spec
---- nd_linux-irdma-rdma-core/rdma-core-copy/suse/rdma-core.spec	2026-03-10 11:32:39.824557467 -0500
-+++ nd_linux-irdma-rdma-core/rdma-core-35.0/suse/rdma-core.spec	2026-03-10 11:32:39.837557467 -0500
+--- nd_linux-irdma-rdma-core/rdma-core-copy/suse/rdma-core.spec	2026-06-11 15:41:32.727797642 -0500
++++ nd_linux-irdma-rdma-core/rdma-core-35.0/suse/rdma-core.spec	2026-06-11 15:41:32.739797642 -0500
 @@ -185,8 +185,8 @@
  Obsoletes:      libcxgb4-rdmav2 < %{version}-%{release}
  Obsoletes:      libefa-rdmav2 < %{version}-%{release}
