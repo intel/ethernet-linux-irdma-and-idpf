@@ -24,6 +24,10 @@
 #define IRDMA_MIN_PBLE_PAGES			3
 #define IRDMA_HMC_PAGE_SIZE			2097152
 #define IRDMA_MIN_MR_PER_QP			4
+/* Provision one 4KB PBLE backing page (512 8-byte PBLEs, i.e. one full
+ * Level-1 PBL leaf) per MR in HMC resource calculation.
+ */
+#define IRDMA_MAX_PBLE_PER_MR			512
 #define IRDMA_MIN_QP_CNT			64
 #define IRDMA_FSIAV_CNT_MAX			1048576
 #define IRDMA_MIN_IRD				8
