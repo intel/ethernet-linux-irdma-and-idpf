@@ -6437,6 +6437,7 @@ static void irdma_set_host_hmc_rsrc_gen_3(struct irdma_sc_dev *dev)
 	enum irdma_hmc_obj_mem mrte_loc;
 	u32 mrwanted, pblewanted;
 	u32  avail_sds, mr_sds;
+	u64 max_pble, mr_pble;
 
 	hmc_info = dev->hmc_info;
 	hmc_fpm_misc = &dev->hmc_fpm_misc;
@@ -6452,13 +6453,21 @@ static void irdma_set_host_hmc_rsrc_gen_3(struct irdma_sc_dev *dev)
 		avail_sds -= DIV_ROUND_UP(mrwanted, MAX_MR_PER_SD);
 	}
 
-	if (FIELD_GET(IRDMA_MANAGE_RSRC_VER2, dev->feature_info[IRDMA_FTN_FLAGS]) &&
-	    pblewanted > avail_sds * MAX_PBLE_PER_SD)
-		irdma_rblog_ibdev_dbg(to_ibdev(dev),
-				      "HMC: Warn: Resource version 2: pble wanted = 0x%x available = 0x%x\n",
-				      pblewanted, avail_sds * MAX_PBLE_PER_SD);
+	max_pble = (u64)avail_sds * MAX_PBLE_PER_SD;
 
-	pblewanted = min(pblewanted, avail_sds * MAX_PBLE_PER_SD);
+	if (mrwanted > 0) {
+		mr_pble = max_t(u64, (u64)mrwanted * IRDMA_MAX_PBLE_PER_MR,
+				MAX_PBLE_PER_SD);
+		pblewanted = min_t(u64, pblewanted, mr_pble);
+	}
+
+	if (FIELD_GET(IRDMA_MANAGE_RSRC_VER2, dev->feature_info[IRDMA_FTN_FLAGS]) &&
+	    (u64)pblewanted > max_pble)
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "HMC: Warn: Resource version 2: pble wanted = 0x%x available = 0x%llx\n",
+				      pblewanted, max_pble);
+
+	pblewanted = min_t(u64, pblewanted, max_pble);
 	hmc_info->hmc_obj[IRDMA_HMC_IW_PBLE].cnt = pblewanted;
 }
 
