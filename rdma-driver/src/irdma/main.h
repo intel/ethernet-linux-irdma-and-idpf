@@ -757,6 +757,7 @@ void irdma_free_sqbuf(struct irdma_sc_vsi *vsi, void *bufp);
 void irdma_free_qp_rsrc(struct irdma_qp *iwqp);
 int irdma_setup_gsi_qp_rsrc(struct irdma_qp *iwqp, u32 *qp_num);
 void irdma_free_gsi_qp_rsrc(struct irdma_qp *iwqp, u32 qp_num);
+void irdma_drain_gsi_hw_cqes(struct irdma_pci_f *rf);
 void irdma_flush_gsi_qp(struct irdma_pci_f *rf);
 int irdma_setup_cm_core(struct irdma_device *iwdev, u8 ver);
 void irdma_cleanup_cm_core(struct irdma_cm_core *cm_core);
@@ -821,6 +822,7 @@ void irdma_set_rf_user_cfg_params(struct irdma_pci_f *rf);
 void irdma_add_ip(struct irdma_device *iwdev);
 void irdma_add_handler(struct irdma_handler *hdl);
 void irdma_del_handler(struct irdma_handler *hdl);
+void irdma_update_iwarp_rd_fence_rate(struct pci_dev *pcidev);
 void cqp_compl_worker(struct work_struct *work);
 void irdma_cleanup_dead_qps(struct irdma_sc_vsi *vsi);
 static inline void irdma_deinit_device(struct irdma_device *iwdev)

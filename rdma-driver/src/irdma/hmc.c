@@ -425,9 +425,10 @@ static int irdma_finish_del_sd_reg(struct irdma_sc_dev *dev,
 					    info->hmc_info->sd_indexes[0],
 					    info->del_sd_cnt, false);
 
-	if (ret_code)
+	if (ret_code) {
 		irdma_rblog_ibdev_dbg(to_ibdev(dev),
 				      "HMC: error cqp sd sd_grp\n");
+	}
 	for (i = 0; i < info->del_sd_cnt; i++) {
 		sd_idx = info->hmc_info->sd_indexes[i];
 		sd_entry = &info->hmc_info->sd_table.sd_entry[sd_idx];
@@ -436,9 +437,10 @@ static int irdma_finish_del_sd_reg(struct irdma_sc_dev *dev,
 		       &sd_entry->u.pd_table.pd_page_addr :
 		       &sd_entry->u.bp.addr;
 
-		if (!mem || !mem->va)
+		if (!mem || !mem->va) {
 			irdma_rblog_ibdev_dbg(to_ibdev(dev),
 					      "HMC: error cqp sd mem\n");
+		}
 		else {
 			dma_free_coherent(dev->hw->device, mem->size, mem->va,
 					  mem->pa);
@@ -466,6 +468,7 @@ int irdma_sc_del_hmc_obj(struct irdma_sc_dev *dev,
 	struct irdma_hmc_pd_table *pd_table;
 	u32 sd_idx, sd_lmt;
 	u32 pd_idx, pd_lmt, rel_pd_idx;
+	u32 pd_sd_idx;
 	u32 i, j;
 	int ret_code = 0;
 
@@ -507,17 +510,17 @@ int irdma_sc_del_hmc_obj(struct irdma_sc_dev *dev,
 				  &pd_lmt);
 
 	for (j = pd_idx; j < pd_lmt; j++) {
-		sd_idx = j / IRDMA_HMC_PD_CNT_IN_SD;
+		pd_sd_idx = j / IRDMA_HMC_PD_CNT_IN_SD;
 
-		if (!info->hmc_info->sd_table.sd_entry[sd_idx].valid)
+		if (!info->hmc_info->sd_table.sd_entry[pd_sd_idx].valid)
 			continue;
 
-		if (info->hmc_info->sd_table.sd_entry[sd_idx].entry_type !=
+		if (info->hmc_info->sd_table.sd_entry[pd_sd_idx].entry_type !=
 		    IRDMA_SD_TYPE_PAGED)
 			continue;
 
 		rel_pd_idx = j % IRDMA_HMC_PD_CNT_IN_SD;
-		pd_table = &info->hmc_info->sd_table.sd_entry[sd_idx].u.pd_table;
+		pd_table = &info->hmc_info->sd_table.sd_entry[pd_sd_idx].u.pd_table;
 		if (pd_table->pd_entry &&
 		    pd_table->pd_entry[rel_pd_idx].valid) {
 			ret_code = irdma_remove_pd_bp(dev, info->hmc_info, j);
@@ -546,9 +549,8 @@ int irdma_sc_del_hmc_obj(struct irdma_sc_dev *dev,
 			ret_code = irdma_prep_remove_pd_page(info->hmc_info, i);
 			if (ret_code)
 				break;
-			if (dev->hmc_info != info->hmc_info &&
-			    info->rsrc_type == IRDMA_HMC_IW_PBLE &&
-			    pd_table->pd_entry) {
+
+			if (pd_table->pd_entry) {
 				kfree(pd_table->pd_entry_virt_mem.va);
 				pd_table->pd_entry = NULL;
 			}
@@ -764,8 +766,10 @@ int irdma_remove_pd_bp(struct irdma_sc_dev *dev,
 				  mem->pa);
 		mem->va = NULL;
 	}
-	if (!pd_table->use_cnt)
+	if (!pd_table->use_cnt) {
 		kfree(pd_table->pd_entry_virt_mem.va);
+		pd_table->pd_entry = NULL;
+	}
 
 	return 0;
 }

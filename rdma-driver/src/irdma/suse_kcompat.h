@@ -531,6 +531,7 @@ int irdma_del_gid(struct ib_device *device,
 #define kc_ib_register_device(device, name, dev) ib_register_device(device, name, NULL)
 #define kc_rdma_udata_to_drv_context(ibpd, udata) to_ucontext((ibpd)->uobject->context)
 #define ib_device_put(dev)
+#define ib_device_try_get(dev) (1)
 #define kc_get_ucontext(udata) to_ucontext(context)
 #define ah_attr_to_dmac(attr) ((attr).roce.dmac)
 #define set_ibdev_dma_device(ibdev, dev)
@@ -595,6 +596,7 @@ int irdma_del_gid(struct ib_device *device,
 #define IB_IW_MANDATORY_AH_OP
 #define IB_UMEM_GET_V1
 #define IB_UVERBS_CQ_FLAGS_TIMESTAMP_COMPLETION IB_CQ_FLAGS_TIMESTAMP_COMPLETION
+#define IB_UVERBS_CQ_FLAGS_IGNORE_OVERRUN IB_CQ_FLAGS_IGNORE_OVERRUN
 #define IRDMA_ADD_DEL_GID
 #define IRDMA_ALLOC_MR_VER_0
 #define IRDMA_ALLOC_MW_VER_1
@@ -623,6 +625,7 @@ int irdma_del_gid(struct ib_device *device,
 #define kc_ib_register_device(device, name, dev) ib_register_device(device, NULL)
 #define kc_rdma_udata_to_drv_context(ibpd, udata) to_ucontext((ibpd)->uobject->context)
 #define ib_device_put(dev)
+#define ib_device_try_get(dev) (1)
 #define kc_get_ucontext(udata) to_ucontext(context)
 #define ah_attr_to_dmac(attr) ((attr).roce.dmac)
 #define set_ibdev_dma_device(ibdev, dev)
@@ -696,6 +699,7 @@ int irdma_del_gid(struct ib_device *device,
 #define IB_IW_PKEY
 #define IB_UMEM_GET_V1
 #define IB_UVERBS_CQ_FLAGS_TIMESTAMP_COMPLETION IB_CQ_FLAGS_TIMESTAMP_COMPLETION
+#define IB_UVERBS_CQ_FLAGS_IGNORE_OVERRUN IB_CQ_FLAGS_IGNORE_OVERRUN
 #define IRDMA_ADD_DEL_GID
 #define IRDMA_ALLOC_MR_VER_0
 #define IRDMA_ALLOC_MW_VER_1
@@ -723,6 +727,7 @@ int irdma_del_gid(struct ib_device *device,
 #define kc_ib_register_device(device, name, dev) ib_register_device(device, NULL)
 #define kc_rdma_udata_to_drv_context(ibpd, udata) to_ucontext((ibpd)->uobject->context)
 #define ib_device_put(dev)
+#define ib_device_try_get(dev) (1)
 #define kc_get_ucontext(udata) to_ucontext(context)
 #define ah_attr_to_dmac(attr) ((attr).roce.dmac)
 #define set_ibdev_dma_device(ibdev, dev)
@@ -823,6 +828,7 @@ int irdma_del_gid(struct ib_device *device,
 #define kc_ib_register_device(device, name, dev) ib_register_device(device, NULL)
 #define kc_rdma_udata_to_drv_context(ibpd, udata) to_ucontext((ibpd)->uobject->context)
 #define ib_device_put(dev)
+#define ib_device_try_get(dev) (1)
 #define kc_get_ucontext(udata) to_ucontext(context)
 #define ah_attr_to_dmac(attr) ((attr).roce.dmac)
 #define set_ibdev_dma_device(ibdev, dev)

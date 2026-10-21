@@ -648,6 +648,58 @@ void irdma_del_handler(struct irdma_handler *hdl)
 }
 
 /**
+ * irdma_update_iwarp_rd_fence_rate - sync rd_fence_rate for iWARP ports on a device
+ * @pcidev: PCI device identifying the physical NIC
+ */
+void irdma_update_iwarp_rd_fence_rate(struct pci_dev *pcidev)
+{
+	struct irdma_handler *hdl;
+	unsigned long flags;
+	u8 pci_bus = pcidev->bus->number;
+	u8 pci_slot = PCI_SLOT(pcidev->devfn);
+	int iwarp_port_count = 0;
+	u8 new_rate;
+
+	spin_lock_irqsave(&irdma_handler_lock, flags);
+
+	/* Count iWARP ports currently registered for this physical device */
+	list_for_each_entry(hdl, &irdma_handlers, list) {
+		struct irdma_device *other = hdl->iwdev;
+
+		if (other->rf->protocol_used != IRDMA_IWARP_PROTOCOL_ONLY)
+			continue;
+		if (other->rf->pcidev->bus->number != pci_bus ||
+		    PCI_SLOT(other->rf->pcidev->devfn) != pci_slot)
+			continue;
+		iwarp_port_count++;
+	}
+#define IRDMA_RD_FENCE_RATE_ENA_VAL 1
+	new_rate = iwarp_port_count > 2 ? IRDMA_RD_FENCE_RATE_ENA_VAL : 0;
+
+	/* Apply new_rate to all unoverridden iWARP ports on this device */
+	list_for_each_entry(hdl, &irdma_handlers, list) {
+		struct irdma_device *other = hdl->iwdev;
+
+		if (other->rf->protocol_used != IRDMA_IWARP_PROTOCOL_ONLY)
+			continue;
+		if (other->rf->pcidev->bus->number != pci_bus ||
+		    PCI_SLOT(other->rf->pcidev->devfn) != pci_slot)
+			continue;
+		if (other->override_rd_fence_rate)
+			continue;
+
+		/* Lock out periodic FC checks when fencing is active;
+		 * release the lock when fencing is not needed so FC can
+		 * manage the setting again.
+		 */
+		other->override_rd_fence_rate = (new_rate != 0);
+		other->rd_fence_rate = new_rate;
+	}
+
+	spin_unlock_irqrestore(&irdma_handler_lock, flags);
+}
+
+/**
  * irdma_add_ipv6_addr - add ipv6 address to the hw arp table
  * @iwdev: irdma device
  */
@@ -940,6 +992,80 @@ static bool irdma_cq_cmpl_generated_empty(struct irdma_cq *iwcq)
 	return empty;
 }
 
+/**
+ * irdma_drain_gsi_hw_cqes - drain stale HW CQEs from GSI SQ CQ during reset
+ * @rf: RDMA PCI function
+ *
+ * When HW is dead (post-FLR), stale HW CQEs block flush completion
+ * generation. This function advances the CQ head past those CQEs so
+ * that irdma_generate_flush_completions() can produce SW completions.
+ * Must only be called when rf->reset is set.
+ */
+void irdma_drain_gsi_hw_cqes(struct irdma_pci_f *rf)
+{
+	struct irdma_qp *iwqp;
+	struct irdma_cq_uk *cq;
+	unsigned long flags_cq;
+	int drained = 0;
+
+#ifdef HAVE_XARRAY
+	iwqp = xa_load(&rf->qp_xa, IW_FIRST_QPN);
+#else
+	iwqp = rf->qp_table[IW_FIRST_QPN];
+#endif /* HAVE_XARRAY */
+	if (!iwqp)
+		return;
+
+	cq = &iwqp->iwscq->sc_cq.cq_uk;
+
+	spin_lock_irqsave(&iwqp->iwscq->lock, flags_cq);
+	while (1) {
+		u32 head = IRDMA_RING_CURRENT_HEAD(cq->cq_ring);
+		u64 qw3;
+		__le64 *cqe_p;
+		u8 pol;
+		bool ext_valid;
+
+		if (cq->avoid_mem_cflct)
+			cqe_p = ((struct irdma_extended_cqe *)(cq->cq_base))[head].buf;
+		else
+			cqe_p = cq->cq_base[head].buf;
+		get_64bit_val(cqe_p, 24, &qw3);
+		pol = (u8)FIELD_GET(IRDMA_CQ_VALID, qw3);
+		if (pol != cq->polarity)
+			break;
+
+		ext_valid = (bool)FIELD_GET(IRDMA_CQ_EXTCQE, qw3);
+
+		/* Advance CQ head past this stale HW CQE */
+		IRDMA_RING_MOVE_HEAD_NOCHECK(cq->cq_ring);
+		if (!IRDMA_RING_CURRENT_HEAD(cq->cq_ring))
+			cq->polarity ^= 1;
+		if (ext_valid && !cq->avoid_mem_cflct) {
+			IRDMA_RING_MOVE_HEAD_NOCHECK(cq->cq_ring);
+			if (!IRDMA_RING_CURRENT_HEAD(cq->cq_ring))
+				cq->polarity ^= 1;
+		}
+
+		IRDMA_RING_MOVE_TAIL(cq->cq_ring);
+		if (ext_valid && !cq->avoid_mem_cflct)
+			IRDMA_RING_MOVE_TAIL(cq->cq_ring);
+
+		if (IRDMA_RING_CURRENT_HEAD(cq->cq_ring) & 0x3F ||
+		    irdma_uk_cq_empty(cq))
+			set_64bit_val(cq->shadow_area, 0,
+				      IRDMA_RING_CURRENT_HEAD(cq->cq_ring));
+		drained++;
+	}
+	spin_unlock_irqrestore(&iwqp->iwscq->lock, flags_cq);
+
+	if (drained) {
+		irdma_rblog_ibdev_dbg(&rf->iwdev->ibdev,
+				      "CM: drain_gsi_hw_cqes: drained %d stale HW CQEs from GSI SQ CQ during reset\n",
+				      drained);
+	}
+}
+
 void irdma_flush_gsi_qp(struct irdma_pci_f *rf)
 {
 	struct irdma_qp *iwqp;
@@ -970,9 +1096,10 @@ void irdma_flush_gsi_qp(struct irdma_pci_f *rf)
 	}
 
 	if (!irdma_cq_cmpl_generated_empty(iwqp->iwscq) ||
-	    !irdma_cq_cmpl_generated_empty(iwqp->iwrcq))
+	    !irdma_cq_cmpl_generated_empty(iwqp->iwrcq)) {
 		irdma_rblog_ibdev_dbg(&rf->iwdev->ibdev,
 				      "CM: timeout waiting for generated flush GSI QP completions to drain\n");
+	}
 
 	/*
 	 * Set flush_issued so subsequent QP1 sends (for example CM DREQ posted
@@ -2188,9 +2315,31 @@ struct irdma_sc_qp *irdma_ieq_get_qp(struct irdma_sc_dev *dev,
 		return NULL;
 
 	iwqp = cm_node->iwqp;
+	if (!iwqp) {
+		irdma_rem_ref_cmnode(cm_node);
+		return NULL;
+	}
+
+	irdma_qp_add_ref(&iwqp->ibqp);
 	irdma_rem_ref_cmnode(cm_node);
 
 	return &iwqp->sc_qp;
+}
+
+/**
+ * irdma_ieq_put_qp - release qp reference acquired for IEQ processing
+ * @qp: qp pointer returned from irdma_ieq_get_qp
+ */
+void irdma_ieq_put_qp(struct irdma_sc_qp *qp)
+{
+	struct irdma_qp *iwqp;
+
+	if (!qp)
+		return;
+
+	iwqp = qp->qp_uk.back_qp;
+	if (iwqp)
+		irdma_qp_rem_ref(&iwqp->ibqp);
 }
 
 /**
@@ -2344,6 +2493,14 @@ static int irdma_gen1_puda_get_tcpip_info(struct irdma_puda_cmpl_info *info,
 	}
 
 	buf->tcphlen = tcph->doff << 2;
+	/* Validate TCP header length and ensure packet contains all headers */
+	if (buf->tcphlen < sizeof(struct tcphdr) ||
+	    pkt_len < iphlen + buf->tcphlen) {
+		irdma_rblog_ibdev_dbg(to_ibdev(buf->vsi->dev),
+				      "ERR: Invalid TCP header length tcphlen=0x%x or packet too small pkt_len=0x%x iphlen=0x%x\n",
+				      buf->tcphlen, pkt_len, iphlen);
+		return -EINVAL;
+	}
 	buf->datalen = pkt_len - iphlen - buf->tcphlen;
 	buf->data = buf->datalen ? buf->tcph + buf->tcphlen : NULL;
 	buf->hdrlen = buf->maclen + iphlen + buf->tcphlen;
@@ -2383,6 +2540,14 @@ int irdma_puda_get_tcpip_info(struct irdma_puda_cmpl_info *info,
 	pkt_len = info->payload_len;
 	buf->totallen = pkt_len;
 	buf->tcphlen = tcph->doff << 2;
+	/* Validate TCP header length and ensure packet contains all headers */
+	if (buf->tcphlen < sizeof(struct tcphdr) ||
+	    pkt_len < IRDMA_TCP_OFFSET + buf->tcphlen) {
+		irdma_rblog_ibdev_dbg(to_ibdev(buf->vsi->dev),
+				      "ERR: Invalid TCP header length tcphlen=0x%x or packet too small pkt_len=0x%x\n",
+				      buf->tcphlen, pkt_len);
+		return -EINVAL;
+	}
 	buf->datalen = pkt_len - IRDMA_TCP_OFFSET - buf->tcphlen;
 	buf->data = buf->datalen ? buf->tcph + buf->tcphlen : NULL;
 	buf->hdrlen = IRDMA_TCP_OFFSET + buf->tcphlen;
@@ -3341,7 +3506,7 @@ void irdma_unmap_vm_page_list(struct irdma_hw *hw, dma_addr_t *pg_dma, u32 pg_cn
 
 	for (i = 0; i < pg_cnt; i++)
 		dma_unmap_page(hw->device, pg_dma[i], PAGE_SIZE,
-		               DMA_BIDIRECTIONAL);
+			       DMA_BIDIRECTIONAL);
 }
 
 /**
@@ -3628,12 +3793,13 @@ int irdma_upload_qp_context(struct irdma_pci_f *rf, u32 qpn,
 		u32 i, j;
 
 		clear_qp_ctx_addr(dma_mem.va);
-		for (i = 0, j = 0; i < 32; i++, j += 4)
+		for (i = 0, j = 0; i < 32; i++, j += 4) {
 			irdma_rblog_ibdev_info(to_ibdev(dev),
 					       "QP: [%u] %u:\t [%08X %08x %08X %08X]\n",
 					       info->qp_id, (j * 4), ctx[j],
 					       ctx[j + 1], ctx[j + 2],
 					       ctx[j + 3]);
+		}
 	}
 error:
 	irdma_put_cqp_request(iwcqp, cqp_request);

@@ -5,7 +5,7 @@
 
 #define DRV_VER_MAJOR 0
 #define DRV_VER_MINOR 0
-#define DRV_VER_BUILD 129
+#define DRV_VER_BUILD 130
 #define DRV_VER	__stringify(DRV_VER_MAJOR) "."		\
 	__stringify(DRV_VER_MINOR) "." __stringify(DRV_VER_BUILD) "-hvl"
 
@@ -51,10 +51,9 @@ static ulong roce_port_cfg;
 module_param(roce_port_cfg, ulong, 0444);
 MODULE_PARM_DESC(roce_port_cfg, "RoCEv2 per port enable: 1=port0 RoCEv2 all others iWARP, 2=port1 RoCEv2 etc. not supported on X722");
 
-static int arr_argc = 4;
-static u8 roce_pci_cfg[4];
-module_param_array(roce_pci_cfg, byte, &arr_argc, 0444);
-MODULE_PARM_DESC(roce_pci_cfg, "RoCEv2 per PCIe bus number enable: RoCEv2 overridden for all devices with given bus number (up to 4).");
+static char *roce_pci_cfg;
+module_param(roce_pci_cfg, charp, 0444);
+MODULE_PARM_DESC(roce_pci_cfg, "RoCEv2 per PCIe bus: comma-separated bus:mask pairs, e.g. \"0xb1:01,0xca:1010\"");
 
 static bool en_rem_endpoint_trk;
 module_param(en_rem_endpoint_trk, bool, 0444);
@@ -90,7 +89,7 @@ MODULE_PARM_DESC(host_mem_mrte, "true if mrte host memory false local memory def
 
 bool irdma_rca_ena;
 module_param(irdma_rca_ena, bool, 0444);
-MODULE_PARM_DESC(irdma_rca_ena, "driver enable rca default=true");
+MODULE_PARM_DESC(irdma_rca_ena, "driver enable rca default=false");
 
 bool irdma_rca_rq_post = true;
 module_param(irdma_rca_rq_post, bool, 0444);
@@ -194,13 +193,51 @@ MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRV_VER);
 
 /**
+ * process_roce_pci_cfg_token - parse one bus:mask token and update protocol
+ * @rf: RDMA PCI function
+ * @token: single comma-separated token from roce_pci_cfg
+ */
+static void process_roce_pci_cfg_token(struct irdma_pci_f *rf, char *token)
+{
+	char *colon = strchr(token, ':');
+	u8 bus = 0, mask = 0xFF, rev = 0;
+	int err, j;
+
+	if (colon)
+		*colon = '\0';
+	err = kstrtou8(token, 0, &bus);
+	if (err)
+		goto error;
+	if (colon) {
+		if (strlen(colon + 1) > 8)
+			goto error;
+		err = kstrtou8(colon + 1, 2, &mask);
+		if (err)
+			goto error;
+		/* Reverse bit order so leftmost digit in string maps to function 0 */
+		rev = 0;
+		for (j = 0; j < strlen(colon + 1) && j < 8; j++)
+			rev |= ((mask >> j) & 1) << (strlen(colon + 1) - 1 - j);
+		mask = rev;
+	}
+	if (bus == rf->pcidev->bus->number) {
+		pr_info("irdma: roce_pci_cfg: bus 0x%02x matches, mask=0x%02x, func=%d\n", bus, mask, PCI_FUNC(rf->pcidev->devfn));
+		rf->protocol_used = mask & BIT(PCI_FUNC(rf->pcidev->devfn)) ?
+			IRDMA_ROCE_PROTOCOL_ONLY : IRDMA_IWARP_PROTOCOL_ONLY;
+	}
+	return;
+error:
+	pr_warn("irdma: roce_pci_cfg: invalid input, ignoring\n");
+}
+
+/**
  * set_protocol_used - set protocol_used against HW generation and roce_ena flag
  * @rf: RDMA PCI function
  * @roce_ena: RoCE enabled bit flag
  */
 static inline void set_protocol_used(struct irdma_pci_f *rf, uint roce_ena)
 {
-	int i;
+	char *orig, *buf, *token;
 
 	switch (rf->rdma_ver) {
 	case IRDMA_GEN_3:
@@ -210,9 +247,13 @@ static inline void set_protocol_used(struct irdma_pci_f *rf, uint roce_ena)
 	case IRDMA_GEN_2:
 		rf->protocol_used = roce_ena & BIT(PCI_FUNC(rf->pcidev->devfn)) ?
 			IRDMA_ROCE_PROTOCOL_ONLY : IRDMA_IWARP_PROTOCOL_ONLY;
-		for (i = 0; i < 4; i++) {
-			if (roce_pci_cfg[i] == rf->pcidev->bus->number)
-				rf->protocol_used = IRDMA_ROCE_PROTOCOL_ONLY;
+		if (roce_pci_cfg) {
+			orig = buf = kstrdup(roce_pci_cfg, GFP_KERNEL);
+			if (buf) {
+				while ((token = strsep(&buf, ",")) != NULL)
+					process_roce_pci_cfg_token(rf, token);
+				kfree(orig);
+			}
 		}
 
 		break;
@@ -386,14 +427,16 @@ int irdma_vchnl_send_sync(struct irdma_sc_dev *dev, u8 *msg, u16 len,
 
 void irdma_log_invalid_mtu(u16 mtu, struct irdma_sc_dev *dev)
 {
-	if (mtu < IRDMA_MIN_MTU_IPV4)
+	if (mtu < IRDMA_MIN_MTU_IPV4) {
 		irdma_rblog_ibdev_warn(to_ibdev(dev),
 				       "MTU setting [%d] too low for RDMA traffic. Minimum MTU is 576 for IPv4\n",
 				       mtu);
-	else if (mtu < IRDMA_MIN_MTU_IPV6)
+	}
+	else if (mtu < IRDMA_MIN_MTU_IPV6) {
 		irdma_rblog_ibdev_warn(to_ibdev(dev),
 				       "MTU setting [%d] too low for RDMA traffic. Minimum MTU is 1280 for IPv6\\n",
 				       mtu);
+	}
 }
 
 /*
@@ -543,10 +586,8 @@ static int __init irdma_init_module(void)
 
 static void __exit irdma_exit_module(void)
 {
-	//auxiliary_driver_unregister(&ig3rdma_core_auxiliary_drv.adrv);
 	auxiliary_driver_unregister(&ig3rdma_vport_auxiliary_drv.adrv);
 	auxiliary_driver_unregister(&ig3rdma_core_auxiliary_drv.adrv);
-	//auxiliary_driver_unregister(&ig3rdma_vport_auxiliary_drv.adrv);
 	auxiliary_driver_unregister(&icrdma_core_auxiliary_drv.adrv);
 	auxiliary_driver_unregister(&i40iw_auxiliary_drv);
 	irdma_deinit_dbg_and_configfs();

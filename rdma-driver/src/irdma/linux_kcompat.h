@@ -3,6 +3,11 @@
 #ifndef LINUX_KCOMPAT_H
 #define LINUX_KCOMPAT_H
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
+/* Handle NULL udata: bad4e98893afdfe0b1a03433d3af53972bafc67c */
+#define NEED_CHECK_NULL_UDATA
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0)
 /* Renamed to resize_user_cq: ce68351be075db89ff68de17e57dbe9b48374110 */
 /* Change 2nd arg to unsigned: dc76086a2d94d09aea9fd41a65ed56e0f7a6ec50 */
@@ -213,6 +218,7 @@
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
 #define IB_UVERBS_CQ_FLAGS_TIMESTAMP_COMPLETION IB_CQ_FLAGS_TIMESTAMP_COMPLETION
+#define IB_UVERBS_CQ_FLAGS_IGNORE_OVERRUN IB_CQ_FLAGS_IGNORE_OVERRUN
 #endif
 
 /* IRDMA_DESTROY_CQ */
@@ -335,6 +341,7 @@ int irdma_del_gid(struct ib_device *device,
 #define ib_umem_get(udata, addr, size, access, dmasync) \
 	ib_umem_get(pd->uobject->context, addr, size, access, dmasync)
 #define ib_device_put(dev)
+#define ib_device_try_get(dev) (1)
 #define ib_alloc_device(irdma_device, ibdev) \
 	((struct irdma_device *)ib_alloc_device(sizeof(struct irdma_device)))
 #else
@@ -428,7 +435,11 @@ void irdma_dealloc_pd(struct ib_pd *ibpd);
 #define SET_ROCE_CM_INFO_VER_3
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
+/* af841056860d2dc2754a122fb79abbe92f3752f3: Rename ib_umem_get() to
+ * ib_umem_get_va() */
+#define IB_UMEM_GET_V4
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
 #define IB_UMEM_GET_V3
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 5, 0)
 #define IB_UMEM_GET_V2
@@ -463,5 +474,9 @@ void irdma_dealloc_pd(struct ib_pd *ibpd);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)) && \
 (LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0))
 #define IRDMA_AUX_GET_SET_DRV_DATA
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
+#define NO_PCI_ENABLE_ATOMIC_API
 #endif
 #endif /* LINUX_KCOMPAT_H */

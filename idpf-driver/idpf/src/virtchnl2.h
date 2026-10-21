@@ -726,6 +726,7 @@ VIRTCHNL2_CHECK_STRUCT_VAR_LEN(80, virtchnl2_oem_config_rx_queues_ext, qinfo);
  * @type: See enum virtchnl2_queue_type.
  * @queue_id: Queue ID.
  * @quanta_profile_idx: Quanta profile index.
+ * @tc_id: Traffic class id. Values: <0,7>.
  * @pad3: Padding.
  *
  */
@@ -733,7 +734,8 @@ struct virtchnl2_oem_txq_ext_info {
 	__le32 type;
 	__le32 queue_id;
 	u8 quanta_profile_idx;
-	u8 pad3[7];
+	u8 tc_id;
+	u8 pad3[6];
 };
 VIRTCHNL2_CHECK_STRUCT_LEN(16, virtchnl2_oem_txq_ext_info);
 
@@ -2649,9 +2651,10 @@ virtchnl2_vc_validate_vf_msg(struct virtchnl2_version_info *ver, u32 v_opcode,
 {
 	bool err_msg_format = false;
 	bool is_flex_array = true;
-	__le32 valid_len = 0;
+	u32 valid_len = 0;
 	__le32 num_chunks;
 	__le32 num_qgrps;
+	u32 qgrp_min_len;
 
 	/* It is possible that the FLEX_ARRAY_SUPPORT flag is not defined
 	 * by all the users of virtchnl2 header file. Let's take an example
@@ -2812,8 +2815,21 @@ virtchnl2_vc_validate_vf_msg(struct virtchnl2_version_info *ver, u32 v_opcode,
 		if (!is_flex_array)
 			valid_len -= sizeof(struct virtchnl2_queue_group_info);
 
+		/* Minimum bytes occupied by a single queue group info with
+		 * zero chunks.
+		 */
+		qgrp_min_len = sizeof(struct virtchnl2_queue_group_info);
+		if (!is_flex_array)
+			qgrp_min_len -= sizeof(struct virtchnl2_queue_reg_chunk);
+
 		while (num_qgrps--) {
 			struct virtchnl2_queue_group_info *qgrp_info;
+
+			if (valid_len > msglen ||
+			    (u32)msglen - valid_len < qgrp_min_len) {
+				err_msg_format = true;
+				break;
+			}
 
 			qgrp_info = (struct virtchnl2_queue_group_info *)
 					((u8 *)msg + valid_len);

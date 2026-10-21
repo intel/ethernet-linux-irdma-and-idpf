@@ -181,6 +181,8 @@ static void idpf_destroy_sf(struct idpf_sf *sf)
 	if (sf->vport) {
 		u16 idx = sf->vport->idx;
 
+		idpf_stats_task_stop(adapter);
+
 		/*
 		 * The vport dealloc function does not free the vport config
 		 * because it saves some information across resets. However
@@ -188,8 +190,14 @@ static void idpf_destroy_sf(struct idpf_sf *sf)
 		 * associated config can also be freed.
 		 */
 		idpf_vport_dealloc(sf->vport);
+		kfree(adapter->vport_config[idx]->user_config.q_coalesce);
+#ifndef HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS
+		kfree(adapter->vport_config[idx]->affinity_config);
+#endif /* !HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
 		kfree(adapter->vport_config[idx]);
 		adapter->vport_config[idx] = NULL;
+
+		idpf_stats_task_start(adapter);
 	}
 
 #ifdef HAVE_DEVL_PORT_REG_WITH_OPS_AND_UNREG
@@ -339,9 +347,11 @@ static int idpf_dl_port_fn_state_set(struct devlink *unused,
 		NL_SET_ERR_MSG_MOD(extack, "No more free vport slot");
 		return -ENOMEM;
 	}
-	INIT_WORK(&adapter->init_task.work, idpf_init_task);
-	schedule_work(&adapter->init_task.work);
-	flush_work(&adapter->init_task.work);
+	idpf_stats_task_stop(adapter);
+	cancel_delayed_work_sync(&adapter->init_task);
+	queue_delayed_work(adapter->init_wq, &adapter->init_task, 0);
+	flush_delayed_work(&adapter->init_task);
+	idpf_stats_task_start(adapter);
 	if (!adapter->vports[next_vport]) {
 		NL_SET_ERR_MSG_MOD(extack, "vport allocation failed");
 		return -ENOMEM;
@@ -404,7 +414,6 @@ void idpf_devlink_deinit(struct idpf_adapter *adapter)
 	idpf_destroy_sf_list(adapter);
 	flush_delayed_work(&adapter->cleanup_task);
 	devlink_unregister(priv_to_devlink(adapter));
-	mutex_destroy(&adapter->sf_mutex);
 }
 
 /**
@@ -422,7 +431,6 @@ void idpf_devlink_init(struct idpf_adapter *adapter, struct device *dev)
 	devlink_register(priv_to_devlink(adapter));
 #endif
 	INIT_LIST_HEAD(&adapter->sf_list);
-	mutex_init(&adapter->sf_mutex);
 	INIT_DELAYED_WORK(&adapter->cleanup_task, idpf_cleanup_task);
 	adapter->sf_id = 0;
 }

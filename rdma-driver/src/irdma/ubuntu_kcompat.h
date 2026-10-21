@@ -568,6 +568,7 @@
 #define IB_IW_PKEY
 #define IB_UMEM_GET_V0
 #define IB_UVERBS_CQ_FLAGS_TIMESTAMP_COMPLETION IB_CQ_FLAGS_TIMESTAMP_COMPLETION
+#define IB_UVERBS_CQ_FLAGS_IGNORE_OVERRUN IB_CQ_FLAGS_IGNORE_OVERRUN
 #define IRDMA_ADD_DEL_GID
 #define IRDMA_ALLOC_MR_VER_0
 #define IRDMA_ALLOC_MW_VER_1
@@ -592,6 +593,7 @@
 #define USE_KMAP
 #define NEED_IDA_ALLOC_MIN_MAX_RANGE_FREE
 #define SET_PCIDEV_PARENT
+#define NO_PCI_ENABLE_ATOMIC_API
 
 enum ib_port_phys_state {
 	IB_PORT_PHYS_STATE_SLEEP = 1,
@@ -637,6 +639,7 @@ int irdma_del_gid(struct ib_device *device,
 #define kc_rdma_udata_to_drv_context(ibpd, udata) to_ucontext((ibpd)->uobject->context)
 #define kc_typeq_ib_wr
 #define ib_device_put(dev)
+#define ib_device_try_get(dev) (1)
 #define ib_alloc_device(irdma_device, ibdev) \
 	((struct irdma_device *)ib_alloc_device(sizeof(struct irdma_device)))
 #endif /* UBUNTU_1804 */

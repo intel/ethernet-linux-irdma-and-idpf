@@ -674,7 +674,7 @@ kc__rdma_umem_block_iter_next(struct kc_ib_block_iter *biter)
 #endif /* NEED_RDMA_UMEM_BLOCK_ITER_NEXT */
 #ifdef COPY_USER_PGADDR_VER_1
 void irdma_copy_user_pgaddrs(struct irdma_mr *iwmr, u64 *pbl,
-			     enum irdma_pble_level level);
+			     u32 pbl_len, enum irdma_pble_level level);
 #endif
 
 void irdma_del_memlist(struct irdma_mr *iwmr,
@@ -812,7 +812,8 @@ static inline int cq_validate_flags(u32 flags, u8 hw_rev)
 	if (hw_rev <= IRDMA_GEN_2)
 		return flags ? -EOPNOTSUPP : 0;
 
-	return flags & ~IB_UVERBS_CQ_FLAGS_TIMESTAMP_COMPLETION ? -EOPNOTSUPP : 0;
+	return flags & ~(IB_UVERBS_CQ_FLAGS_TIMESTAMP_COMPLETION |
+	       IB_UVERBS_CQ_FLAGS_IGNORE_OVERRUN) ? -EOPNOTSUPP : 0;
 }
 
 #ifdef COPY_USER_PGADDR_VER_1

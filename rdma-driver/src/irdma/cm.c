@@ -3,7 +3,8 @@
 #include "main.h"
 #include "trace.h"
 
-#define IRDMA_MAX_TCP_OPTION_SPACE 40
+#define IRDMA_MAX_TCP_OPT_SPACE 40
+#define IRDMA_MAX_TCP_OPT_WNDSCL 14
 
 static void irdma_cm_post_event(struct irdma_cm_event *event);
 static void irdma_disconnect_worker(struct work_struct *work);
@@ -676,8 +677,8 @@ static void irdma_passive_open_err(struct irdma_cm_node *cm_node, bool reset)
 	cm_node->cm_core->stats_passive_errs++;
 	irdma_cm_node_set_state(cm_node, IRDMA_CM_STATE_CLOSED);
 	irdma_rblog_ibdev_dbg(&cm_node->iwdev->ibdev,
-		              "CM: cm_node=%p state=%d\n", cm_node,
-		              cm_node->state);
+			      "CM: cm_node=%p state=%d\n", cm_node,
+			      cm_node->state);
 	trace_irdma_passive_open_err(cm_node, reset,
 				     __builtin_return_address(0));
 	if (reset)
@@ -767,6 +768,8 @@ static int irdma_process_options(struct irdma_cm_node *cm_node, u8 *optionsloc,
 		case OPTION_NUM_WINDOW_SCALE:
 			if (optlen != 3)
 				return -EINVAL;
+			if (all_options->windowscale.shiftcount > IRDMA_MAX_TCP_OPT_WNDSCL)
+				return -EINVAL;
 			cm_node->tcp_cntxt.snd_wscale =
 				all_options->windowscale.shiftcount;
 			break;
@@ -798,7 +801,7 @@ static int irdma_handle_tcp_options(struct irdma_cm_node *cm_node,
 	u8 *optionsloc = (u8 *)&tcph[1];
 	int ret;
 
-	if (optionsize < 0 || optionsize > IRDMA_MAX_TCP_OPTION_SPACE) {
+	if (optionsize < 0 || optionsize > IRDMA_MAX_TCP_OPT_SPACE) {
 		ret = -EINVAL;
 	} else if (optionsize > 0) {
 		ret = irdma_process_options(cm_node, optionsloc, optionsize,
@@ -1130,6 +1133,9 @@ static int irdma_parse_mpa(struct irdma_cm_node *cm_node, u8 *buf, u32 *type,
 		}
 	}
 
+	if (mpa_frame->rev == IETF_MPA_V2)
+		mpa_hdr_len += IETF_RTR_MSG_SIZE;
+
 	if (priv_data_len + mpa_hdr_len > len) {
 		irdma_rblog_ibdev_dbg(&cm_node->iwdev->ibdev,
 				      "CM: ietf buffer len(%x + %x != %x)\n",
@@ -1145,7 +1151,6 @@ static int irdma_parse_mpa(struct irdma_cm_node *cm_node, u8 *buf, u32 *type,
 
 	switch (mpa_frame->rev) {
 	case IETF_MPA_V2:
-		mpa_hdr_len += IETF_RTR_MSG_SIZE;
 		ret = irdma_negotiate_mpa_v2_ird_ord(cm_node, buf);
 		if (ret)
 			return ret;
@@ -1537,9 +1542,9 @@ irdma_find_listener(struct irdma_cm_core *cm_core, u32 *dst_addr, bool ipv4, u16
 		    !(listener_state & listen_node->listener_state))
 			continue;
 		/* compare node pair, return node handle if a match */
-		if (!memcmp(listen_addr, ip_zero, sizeof(listen_addr)) ||
-		    (!memcmp(listen_addr, dst_addr, sizeof(listen_addr)) &&
-		     vlan_id == listen_node->vlan_id)) {
+		if (vlan_id == listen_node->vlan_id &&
+		    (!memcmp(listen_addr, ip_zero, sizeof(listen_addr)) ||
+		     !memcmp(listen_addr, dst_addr, sizeof(listen_addr)))) {
 			refcount_inc(&listen_node->refcnt);
 			spin_unlock_irqrestore(&cm_core->listen_list_lock,
 					       flags);
@@ -1572,18 +1577,20 @@ static int irdma_del_multiple_qhash(struct irdma_device *iwdev,
 			    &cm_parent_listen_node->child_listen_list) {
 		child_listen_node = list_entry(pos, struct irdma_cm_listener,
 					       child_listen_list);
-		if (child_listen_node->ipv4)
+		if (child_listen_node->ipv4) {
 			irdma_rblog_ibdev_dbg(&iwdev->ibdev,
 					      "CM: removing child listen for IP=%pI4, port=%d, vlan=%d\n",
 					      child_listen_node->loc_addr,
 					      child_listen_node->loc_port,
 					      child_listen_node->vlan_id);
-		else
+		}
+		else {
 			irdma_rblog_ibdev_dbg(&iwdev->ibdev,
 					      "CM: removing child listen for IP=%pI6, port=%d, vlan=%d\n",
 					      child_listen_node->loc_addr,
 					      child_listen_node->loc_port,
 					      child_listen_node->vlan_id);
+		}
 		trace_irdma_del_multiple_qhash(child_listen_node);
 		list_del(pos);
 		memcpy(cm_info->loc_addr, child_listen_node->loc_addr,
@@ -2323,10 +2330,11 @@ irdma_make_cm_node(struct irdma_cm_core *cm_core, struct irdma_device *iwdev,
 	cm_node->tos = cm_info->tos;
 	cm_node->user_pri = cm_info->user_pri;
 	if (listener) {
-		if (listener->tos != cm_info->tos)
+		if (listener->tos != cm_info->tos) {
 			irdma_rblog_ibdev_warn(&iwdev->ibdev,
 					       "application TOS[%d] and remote client TOS[%d] mismatch\n",
 					       listener->tos, cm_info->tos);
+		}
 		if (iwdev->vsi.dscp_mode) {
 			cm_node->user_pri = listener->user_pri;
 		} else {
@@ -2651,9 +2659,10 @@ static void irdma_handle_rcv_mpa(struct irdma_cm_node *cm_node,
 
 	switch (cm_node->state) {
 	case IRDMA_CM_STATE_ESTABLISHED:
-		if (res_type == IRDMA_MPA_REQUEST_REJECT)
+		if (res_type == IRDMA_MPA_REQUEST_REJECT) {
 			irdma_rblog_ibdev_dbg(&cm_node->iwdev->ibdev,
 					      "CM: state for reject\n");
+		}
 		irdma_cm_node_set_state(cm_node, IRDMA_CM_STATE_MPAREQ_RCVD);
 		type = IRDMA_CM_EVENT_MPA_REQ;
 		irdma_send_ack(cm_node); /* ACK received MPA request */
@@ -2715,9 +2724,10 @@ static int irdma_check_seq(struct irdma_cm_node *cm_node, struct tcphdr *tcph)
 	if (ack_seq != loc_seq_num ||
 	    !between(seq, rcv_nxt, (rcv_nxt + rcv_wnd)))
 		err = -1;
-	if (err)
+	if (err) {
 		irdma_rblog_ibdev_dbg(&cm_node->iwdev->ibdev,
 				      "CM: seq number err\n");
+	}
 
 	return err;
 }
@@ -3142,9 +3152,10 @@ static int irdma_cm_reject(struct irdma_cm_node *cm_node, const void *pdata,
 		return 0;
 
 	irdma_cm_node_set_state(cm_node, IRDMA_CM_STATE_CLOSED);
-	if (irdma_send_reset(cm_node))
+	if (irdma_send_reset(cm_node)) {
 		irdma_rblog_ibdev_dbg(&cm_node->iwdev->ibdev,
 				      "CM: send reset failed\n");
+	}
 
 	return ret;
 }
@@ -3188,9 +3199,10 @@ static int irdma_cm_close(struct irdma_cm_node *cm_node)
 		irdma_rem_ref_cmnode(cm_node);
 		break;
 	case IRDMA_CM_STATE_OFFLOADED:
-		if (cm_node->send_entry)
+		if (cm_node->send_entry) {
 			irdma_rblog_ibdev_dbg(&cm_node->iwdev->ibdev,
 					      "CM: CM send_entry in OFFLOADED state\n");
+		}
 		irdma_rem_ref_cmnode(cm_node);
 		break;
 	}
@@ -3716,19 +3728,21 @@ static void irdma_cm_disconn_true(struct irdma_qp *iwqp)
 		err = irdma_send_cm_event(iwqp->cm_node, cm_id,
 					  IW_CM_EVENT_DISCONNECT,
 					  disconn_status);
-		if (err)
+		if (err) {
 			irdma_rblog_ibdev_dbg(&iwdev->ibdev,
 					      "CM: disconnect event failed: - cm_id = %p\n",
 					      cm_id);
+		}
 	}
 	if (issue_close) {
 		cm_id->provider_data = iwqp;
 		err = irdma_send_cm_event(iwqp->cm_node, cm_id,
 					  IW_CM_EVENT_CLOSE, 0);
-		if (err)
+		if (err) {
 			irdma_rblog_ibdev_dbg(&iwdev->ibdev,
 					      "CM: close event failed: - cm_id = %p\n",
 					      cm_id);
+		}
 		irdma_qp_disconnect(iwqp);
 	}
 	irdma_rem_ref_cmnode(iwqp->cm_node);
@@ -4093,14 +4107,16 @@ int irdma_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	return 0;
 
 err:
-	if (cm_info.ipv4)
+	if (cm_info.ipv4) {
 		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
 				      "CM: connect() FAILED: dest addr=%pI4",
 				      cm_info.rem_addr);
-	else
+	}
+	else {
 		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
 				      "CM: connect() FAILED: dest addr=%pI6",
 				      cm_info.rem_addr);
+	}
 	irdma_rem_ref_cmnode(cm_node);
 	iwdev->cm_core.stats_connect_errs++;
 
@@ -4242,9 +4258,10 @@ int irdma_destroy_listen(struct iw_cm_id *cm_id)
 	if (cm_id->provider_data)
 		irdma_cm_del_listen(&iwdev->cm_core, cm_id->provider_data,
 				    true);
-	else
+	else {
 		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
 				      "CM: cm_id->provider_data was NULL\n");
+	}
 
 	cm_id->rem_ref(cm_id);
 
@@ -4395,12 +4412,13 @@ static void irdma_cm_event_connected(struct irdma_cm_event *event)
 		wait_ret = wait_event_interruptible_timeout(iwqp->waitq,
 							    iwqp->rts_ae_rcvd,
 							    IRDMA_MAX_TIMEOUT);
-		if (!wait_ret)
+		if (!wait_ret) {
 			irdma_rblog_ibdev_dbg(&iwdev->ibdev,
 					      "CM: Slow Connection: cm_node=%p, loc_port=%d, rem_port=%d, cm_id=%p\n",
 					      cm_node, cm_node->loc_port,
 					      cm_node->rem_port,
 					      cm_node->cm_id);
+		}
 	}
 
 	irdma_send_cm_event(cm_node, cm_id, IW_CM_EVENT_CONNECT_REPLY, 0);

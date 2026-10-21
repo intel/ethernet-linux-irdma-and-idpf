@@ -48,7 +48,7 @@ struct idpf_rss_data;
 #endif
 
 #define IDPF_DRV_NAME "idpf"
-#define IDPF_DRV_VER "1.0.13"
+#define IDPF_DRV_VER "1.0.15"
 
 #define IDPF_M(m, s)	((m) << (s))
 
@@ -150,6 +150,7 @@ enum idpf_state {
  * @IDPF_MB_INTR_MODE: Mailbox in interrupt mode
  * @IDPF_VC_CORE_INIT: virtchnl core has been init
  * @IDPF_CORER_IN_PROG: CORER is in progress
+ * @IDPF_PCI_CB_RESET: Reset via the PCI callbacks
  * @IDPF_FLAGS_NBITS: Must be last
  */
 enum idpf_flags {
@@ -160,6 +161,7 @@ enum idpf_flags {
 	IDPF_MB_INTR_MODE,
 	IDPF_VC_CORE_INIT,
 	IDPF_CORER_IN_PROG,
+	IDPF_PCI_CB_RESET,
 	IDPF_FLAGS_NBITS,
 };
 
@@ -1152,6 +1154,46 @@ static inline u8 idpf_get_min_tx_pkt_len(struct idpf_adapter *adapter)
 }
 
 /**
+ * idpf_reg_offset_in_region - Check a u32 access fits inside a BAR region
+ * @region: mapped LAN BAR region to test against
+ * @reg_offset: register offset value
+ *
+ * Return: true when the full u32 access falls inside @region.
+ */
+static inline bool
+idpf_reg_offset_in_region(const struct idpf_mmio_reg *region,
+			  resource_size_t reg_offset)
+{
+	if (reg_offset < region->addr_start ||
+	    region->addr_len < sizeof(u32))
+		return false;
+
+	return reg_offset - region->addr_start <=
+	       region->addr_len - sizeof(u32);
+}
+
+/**
+ * idpf_reg_offset_is_mapped - Check whether a BAR0 register is mapped
+ * @adapter: private data struct
+ * @reg_offset: register offset value
+ *
+ * Return: true when the full u32 register access falls inside a mapped LAN
+ *	   BAR region, false otherwise.
+ */
+static inline bool idpf_reg_offset_is_mapped(struct idpf_adapter *adapter,
+					     resource_size_t reg_offset)
+{
+	struct idpf_hw *hw = &adapter->hw;
+
+	for (int i = 0; i < hw->num_lan_regs; i++) {
+		if (idpf_reg_offset_in_region(&hw->lan_regs[i], reg_offset))
+			return true;
+	}
+
+	return false;
+}
+
+/**
  * idpf_get_mbx_reg_addr - Get BAR0 mailbox register address
  * @adapter: private data struct
  * @reg_offset: register offset value
@@ -1194,8 +1236,7 @@ static inline void __iomem *idpf_get_reg_addr(struct idpf_adapter *adapter,
 	for (int i = 0; i < hw->num_lan_regs; i++) {
 		struct idpf_mmio_reg *region = &hw->lan_regs[i];
 
-		if (reg_offset >= region->addr_start &&
-		    reg_offset < (region->addr_start + region->addr_len)) {
+		if (idpf_reg_offset_in_region(region, reg_offset)) {
 			/* Convert the offset so that it is relative to the
 			 * start of the region.  Then add the base address of
 			 * the region to get the final address.
@@ -1311,23 +1352,27 @@ static inline bool idpf_is_rca_enabled(struct idpf_adapter *adapter)
 #endif /* CONFIG_RCA_SUPPORT */
 /**
  * idpf_vport_ctrl_lock - Acquire the vport control lock
- * @adapter: private data struct
+ * @netdev: Network interface device structure
  *
  * This lock should be used by non-datapath code to protect against vport
  * destruction.
  */
-static inline void idpf_vport_ctrl_lock(struct idpf_adapter *adapter)
+static inline void idpf_vport_ctrl_lock(struct net_device *netdev)
 {
-	mutex_lock(&adapter->vport_ctrl_lock);
+	struct idpf_netdev_priv *np = netdev_priv(netdev);
+
+	mutex_lock(&np->adapter->vport_ctrl_lock);
 }
 
 /**
  * idpf_vport_ctrl_unlock - Release the vport control lock
- * @adapter: private data struct
+ * @netdev: Network interface device structure
  */
-static inline void idpf_vport_ctrl_unlock(struct idpf_adapter *adapter)
+static inline void idpf_vport_ctrl_unlock(struct net_device *netdev)
 {
-	mutex_unlock(&adapter->vport_ctrl_lock);
+	struct idpf_netdev_priv *np = netdev_priv(netdev);
+
+	mutex_unlock(&np->adapter->vport_ctrl_lock);
 }
 
 void idpf_statistics_task(struct work_struct *work);
@@ -1403,6 +1448,8 @@ void idpf_xdp_flush(struct net_device *dev);
 #endif /* HAVE_XDP_SUPPORT */
 int idpf_sriov_configure(struct pci_dev *pdev, int num_vfs);
 int idpf_sriov_config_vfs(struct pci_dev *pdev, int num_vfs);
+void idpf_stats_task_stop(struct idpf_adapter *adapter);
+void idpf_stats_task_start(struct idpf_adapter *adapter);
 /**
  * idpf_is_feature_ena - Determine if a particular feature is enabled
  * @vport: Vport to check

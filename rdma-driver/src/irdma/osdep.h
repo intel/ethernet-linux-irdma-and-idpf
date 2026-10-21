@@ -124,8 +124,6 @@ struct ib_device *to_ibdev(struct irdma_sc_dev *dev);
 void irdma_ieq_mpa_crc_ae(struct irdma_sc_dev *dev, struct irdma_sc_qp *qp);
 int irdma_ieq_check_mpacrc(struct shash_desc *desc, void *addr, u32 len,
 			   u32 val);
-struct irdma_sc_qp *irdma_ieq_get_qp(struct irdma_sc_dev *dev,
-				     struct irdma_puda_buf *buf);
 void irdma_send_ieq_ack(struct irdma_sc_qp *qp);
 void irdma_ieq_update_tcpip_info(struct irdma_puda_buf *buf, u16 len,
 				 u32 seqnum);

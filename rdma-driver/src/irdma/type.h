@@ -579,8 +579,6 @@ struct irdma_sc_cq {
 	bool check_overflow:1;
 	bool ceq_id_valid:1;
 	bool tph_en:1;
-	bool pasid_valid:1;
-	u32 pasid;
 };
 
 struct irdma_sc_qp {

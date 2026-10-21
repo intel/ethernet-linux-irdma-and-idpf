@@ -269,10 +269,11 @@ static void irdma_remove_leaf(struct irdma_sc_vsi *vsi, u8 user_pri)
 
 		ret = irdma_vchnl_req_manage_ws_node(vsi->dev, false, user_pri,
 						     NULL);
-		if (ret)
+		if (ret) {
 			irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
 					      "VIRT: Send message failed ret = %d \n",
 					      ret);
+		}
 
 		return;
 	}
@@ -663,12 +664,14 @@ void irdma_ws_move_cmd(struct irdma_sc_vsi *vsi)
 					    move_ws_node.num_nodes);
 
 		}
-		for (i = 0; i < move_ws_node.num_nodes; ++i)
+		for (i = 0; i < move_ws_node.num_nodes; ++i) {
 			irdma_rblog_pr_info("%d\n", move_ws_node.node_id[i]);
+		}
 		move_ws_node.resume_traffic = true;
-		if (irdma_cqp_ws_move_cmd(vsi->dev, &move_ws_node))
+		if (irdma_cqp_ws_move_cmd(vsi->dev, &move_ws_node)) {
 			irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
 					      "WS: CQP WS MOVE CMD failed, both ports up case\n");
+		}
 	} else { /* if only one or none are active */
 		if (vsi->lag_port_bitmap == IIDC_RDMA_SECONDARY_PORT) {	/* if only secodary port is active */
 			move_ws_node.target_port =
@@ -706,12 +709,14 @@ void irdma_ws_move_cmd(struct irdma_sc_vsi *vsi)
 					    move_ws_node.num_nodes);
 		}
 		move_ws_node.resume_traffic = true;
-		for (i = 0; i < move_ws_node.num_nodes; ++i)
+		for (i = 0; i < move_ws_node.num_nodes; ++i) {
 			irdma_rblog_pr_info("%d\n", move_ws_node.node_id[i]);
+		}
 
-		if (irdma_cqp_ws_move_cmd(vsi->dev, &move_ws_node))
+		if (irdma_cqp_ws_move_cmd(vsi->dev, &move_ws_node)) {
 			irdma_rblog_ibdev_dbg(to_ibdev(vsi->dev),
 					      "WS: CQP WS MOVE CMD failed\n");
+		}
 	}
 
 	mutex_unlock(&vsi->dev->ws_mutex);
