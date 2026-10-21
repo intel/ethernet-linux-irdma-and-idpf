@@ -303,6 +303,15 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 				      info->ae_src);
 
 		if (info->qp) {
+#ifndef HAVE_XARRAY
+			if (info->qp_cq_id >= rf->max_qp) {
+				irdma_rblog_ibdev_warn(&iwdev->ibdev,
+						       "qp_id %u out of range (max_qp=%u)\n",
+						       info->qp_cq_id,
+						       rf->max_qp);
+				continue;
+			}
+#endif /* !HAVE_XARRAY */
 #ifdef HAVE_XARRAY
 			xa_lock_irqsave(&rf->qp_xa, flags);
 			iwqp = xa_load(&rf->qp_xa, info->qp_cq_id);
@@ -424,6 +433,13 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 			irdma_rblog_ibdev_err(&iwdev->ibdev,
 					      "Processing CQ[0x%x] op error, AE 0x%04X\n",
 					      info->qp_cq_id, info->ae_id);
+			if (info->qp_cq_id >= rf->max_cq) {
+				irdma_rblog_ibdev_warn(&iwdev->ibdev,
+						       "cq_id %u out of range (max_cq=%u)\n",
+						       info->qp_cq_id,
+						       rf->max_cq);
+				continue;
+			}
 			spin_lock_irqsave(&rf->cqtable_lock, flags);
 			iwcq = rf->cq_table[info->qp_cq_id];
 			if (!iwcq) {
@@ -450,6 +466,13 @@ bool irdma_process_aeq(struct irdma_pci_f *rf)
 		case IRDMA_AE_SRQ_LIMIT:
 		case IRDMA_AE_SRQ_CATASTROPHIC_ERROR:
 			srq_id = info->compl_ctx;
+			if (srq_id >= rf->max_srq) {
+				irdma_rblog_ibdev_warn(&iwdev->ibdev,
+						       "srq_id %llu out of range (max_srq=%u)\n",
+						       (unsigned long long)srq_id,
+						       rf->max_srq);
+				continue;
+			}
 			spin_lock_irqsave(&rf->srqtable_lock, flags);
 			iwsrq = rf->srq_table[srq_id];
 			if (!iwsrq) {
@@ -2929,6 +2952,9 @@ struct irdma_apbvt_entry *irdma_add_apbvt(struct irdma_device *iwdev, u16 port)
 	spin_unlock_irqrestore(&cm_core->apbvt_lock, flags);
 
 	if (irdma_cqp_manage_apbvt_cmd(iwdev, port, true)) {
+		spin_lock_irqsave(&cm_core->apbvt_lock, flags);
+		hash_del(&entry->hlist);
+		spin_unlock_irqrestore(&cm_core->apbvt_lock, flags);
 		kfree(entry);
 		return NULL;
 	}

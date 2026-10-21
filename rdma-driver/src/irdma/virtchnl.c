@@ -1214,12 +1214,11 @@ int irdma_vchnl_req_aeq_vec_map(struct irdma_sc_dev *dev, u32 v_idx)
 		return -EBUSY;
 
 	qvl_size = struct_size(qvl, qv_info, num_vectors);
-
 	qvl = kzalloc(qvl_size, GFP_KERNEL);
 	if (!qvl)
 		return -ENOMEM;
 
-	qvl->num_vectors = 1;
+	qvl->num_vectors = num_vectors;
 	qv = qvl->qv_info;
 
 	qv->ceq_idx = IRDMA_Q_INVALID_IDX;
@@ -1255,7 +1254,6 @@ int irdma_vchnl_req_ceq_vec_map(struct irdma_sc_dev *dev, u16 ceq_id, u32 v_idx)
 		return -EBUSY;
 
 	qvl_size = struct_size(qvl, qv_info, num_vectors);
-
 	qvl = kzalloc(qvl_size, GFP_KERNEL);
 	if (!qvl)
 		return -ENOMEM;

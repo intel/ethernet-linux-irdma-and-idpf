@@ -516,7 +516,7 @@ int irdma_reg_user_mr_type_mem(struct irdma_mr *iwmr, int access,
 int irdma_ib_register_device(struct irdma_device *iwdev);
 void irdma_ib_unregister_device(struct irdma_device *iwdev);
 void irdma_ib_qp_event(struct irdma_qp *iwqp, enum irdma_qp_event_type event);
-void irdma_generate_flush_completions(struct irdma_qp *iwqp);
+void irdma_generate_flush_completions(struct irdma_qp *iwqp, bool reschedule);
 void irdma_remove_cmpls_list(struct irdma_cq *iwcq);
 int irdma_generated_cmpls(struct irdma_cq *iwcq, struct irdma_cq_poll_info *cq_poll_info);
 void irdma_sched_qp_flush_work(struct irdma_qp *iwqp);

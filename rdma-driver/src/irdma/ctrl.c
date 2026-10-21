@@ -167,8 +167,10 @@ static void irdma_set_qos_info(struct irdma_sc_vsi  *vsi, struct irdma_l2params 
 {
 	u8 i;
 
-	if (vsi->dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_3)
-		return irdma_set_qos_info_gen_3(vsi);
+	if (vsi->dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_3) {
+		irdma_set_qos_info_gen_3(vsi);
+		return;
+	}
 
 	vsi->qos_rel_bw = l2p->vsi_rel_bw;
 	vsi->qos_prio_type = l2p->vsi_prio_type;
@@ -1269,7 +1271,7 @@ static void irdma_sc_qp_setctx_roce_gen_3(struct irdma_sc_qp *qp, __le64 *qp_ctx
 	set_64bit_val(qp_ctx, 176,
 		      FIELD_PREP(IRDMAQPC_SQTPHVAL, qp->sq_tph_val) |
 		      FIELD_PREP(IRDMAQPC_RQTPHVAL, qp->rq_tph_val) |
-		      FIELD_PREP(IRDMAQPC_QSHANDLE, qp->qs_handle));
+		      FIELD_PREP(IRDMAQPC_QSHANDLE_GEN_3, qp->qs_handle));
 	set_64bit_val(qp_ctx, 184,
 		      FIELD_PREP(IRDMAQPC_LOCAL_IPADDR3, udp->local_ipaddr[3]) |
 		      FIELD_PREP(IRDMAQPC_LOCAL_IPADDR2, udp->local_ipaddr[2]));
@@ -4004,7 +4006,7 @@ static int irdma_sc_parse_fpm_query_buf(struct irdma_sc_dev *dev, __le64 *buf,
 		      dev->feature_info[IRDMA_FTN_FLAGS])) {
 		ird_encoding = (u8)FIELD_GET(IRDMA_QUERY_FPM_MAX_IRD, temp);
 		hmc_fpm_misc->ird =
-			irdma_sc_get_decoded_ird_size_gen_3(ird_encoding) / 2;
+			(u8)(irdma_sc_get_decoded_ird_size_gen_3(ird_encoding) / 2);
 		dev->hw_attrs.max_hw_ird = hmc_fpm_misc->ird;
 		dev->hw_attrs.max_hw_ord = hmc_fpm_misc->ird;
 	}

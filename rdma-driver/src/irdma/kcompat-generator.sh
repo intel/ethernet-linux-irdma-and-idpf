@@ -6,7 +6,7 @@ set -Eeuo pipefail
 # This file generates HAVE_ and NEED_ defines for current kernel
 # (or KSRC if provided).
 #
-# It does so by 'gen' function calls (see body of 'gen-devlink' for examples).
+# It does so by 'gen' function calls (see body of 'gen_devlink' for examples).
 # 'gen' could look for various kinds of declarations in provided kernel headers,
 # eg look for an enum in one of files specified and check if given enumeration
 # (single value) is present. See 'Documentation' or comment above the 'gen' fun
@@ -41,7 +41,7 @@ source "$SCRIPT_DIR"/kcompat-lib.sh
 # handy line of DOC copy-pasted form kcompat-lib.sh:
 #   gen DEFINE if (KIND [METHOD of]) NAME [(matches|lacks) PATTERN|absent] in <list-of-files>
 
-function gen-aux() {
+function gen_aux() {
 	ah='include/linux/auxiliary_bus.h'
 	mh='include/linux/mod_devicetable.h'
 	if grep -qE CONFIG_AUXILIARY_BUS.+1 "$CONFFILE"; then
@@ -54,14 +54,14 @@ function gen-aux() {
 	fi
 }
 
-function gen-bitfield() {
+function gen_bitfield() {
 	bf='include/linux/bitfield.h'
 	gen HAVE_INCLUDE_BITFIELD if macro FIELD_PREP in "$bf"
 	gen NEED_BITFIELD_FIELD_FIT if macro FIELD_FIT absent in "$bf"
 	gen NEED_BITFIELD_FIELD_MAX if macro FIELD_MAX absent in "$bf"
 }
 
-function gen-device() {
+function gen_device() {
 	dh='include/linux/device.h'
 	dph='include/linux/dev_printk.h'
 	gen NEED_BUS_FIND_DEVICE_CONST_DATA if fun bus_find_device lacks 'const void \\*data' in "$dh"
@@ -72,7 +72,7 @@ function gen-device() {
 	gen NEED_DEVM_KZALLOC if fun devm_kzalloc absent in "$dh"
 }
 
-function gen-devlink() {
+function gen_devlink() {
 	dh='include/net/devlink.h'
 	gen HAVE_DEVLINK_FLASH_UPDATE_BEGIN_END_NOTIFY if fun devlink_flash_update_begin_notify in "$dh"
 	gen HAVE_DEVLINK_FLASH_UPDATE_PARAMS    if struct devlink_flash_update_params in "$dh"
@@ -93,7 +93,7 @@ function gen-devlink() {
 	# keep devlink_region_ops body in variable, to not look 4 times for
 	# exactly the same thing in big file
 	# please consider it as an example of "how to speed up if needed"
-	REGION_OPS="$(find-struct-decl devlink_region_ops "$dh")"
+	REGION_OPS="$(find_struct_decl devlink_region_ops "$dh")"
 	gen HAVE_DEVLINK_REGIONS if struct devlink_region_ops in - <<< "$REGION_OPS"
 	gen HAVE_DEVLINK_REGION_OPS_SNAPSHOT if fun snapshot in - <<< "$REGION_OPS"
 	gen HAVE_DEVLINK_REGION_OPS_SNAPSHOT_OPS if fun snapshot matches devlink_region_ops in - <<< "$REGION_OPS"
@@ -110,7 +110,7 @@ function gen-devlink() {
 	gen NEED_DEVLINK_UNLOCKED_RESOURCE if fun devl_resource_size_get absent in "$dh"
 }
 
-function gen-ethtool() {
+function gen_ethtool() {
 	eth='include/linux/ethtool.h'
 	ueth='include/uapi/linux/ethtool.h'
 	gen HAVE_ETHTOOL_COALESCE_EXTACK if method get_coalesce of ethtool_ops matches 'struct kernel_ethtool_coalesce \\*' in "$eth"
@@ -119,20 +119,20 @@ function gen-ethtool() {
 	gen HAVE_ETHTOOL_FLOW_RSS if macro FLOW_RSS in "$ueth"
 }
 
-function gen-filter() {
+function gen_filter() {
 	fh='include/linux/filter.h'
 	gen HAVE_XDP_DO_FLUSH if fun xdp_do_flush_map in "$fh"
 	gen NEED_NO_NETDEV_PROG_XDP_WARN_ACTION if fun bpf_warn_invalid_xdp_action lacks 'struct net_device \\*' in "$fh"
 }
 
-function gen-flow-dissector() {
+function gen_flow_dissector() {
 	gen HAVE_FLOW_DISSECTOR_KEY_PPPOE if enum flow_dissector_key_id matches FLOW_DISSECTOR_KEY_PPPOE in include/net/flow_dissector.h include/net/flow_keys.h
 	# following HAVE ... CVLAN flag is mistakenly named after an enum key,
 	# but guards code around function call that was introduced later
 	gen HAVE_FLOW_DISSECTOR_KEY_CVLAN if fun flow_rule_match_cvlan in include/net/flow_offload.h
 }
 
-function gen-gnss() {
+function gen_gnss() {
 	cdh='include/linux/cdev.h'
 	clh='include/linux/device/class.h'
 	dh='include/linux/device.h'
@@ -153,7 +153,7 @@ function gen-gnss() {
 	fi
 }
 
-function gen-netdevice() {
+function gen_netdevice() {
 	ndh='include/linux/netdevice.h'
 	gen HAVE_NDO_ETH_IOCTL if fun ndo_eth_ioctl in "$ndh"
 	gen HAVE_NDO_EXTENDED_SET_TX_MAXRATE if method ndo_set_tx_maxrate of net_device_ops_extended in "$ndh"
@@ -169,7 +169,7 @@ function gen-netdevice() {
 	gen NEED_NET_PREFETCH if fun net_prefetch absent in "$ndh"
 }
 
-function gen-pci() {
+function gen_pci() {
 	pcih='include/linux/pci.h'
 	gen HAVE_PCI_MSIX_ALLOC_IRQ_AT if fun pci_msix_alloc_irq_at in "$pcih"
 	gen HAVE_PCI_MSIX_CAN_ALLOC_DYN if fun pci_msix_can_alloc_dyn in "$pcih"
@@ -180,7 +180,7 @@ function gen-pci() {
 	gen NEED_PCI_ENABLE_PTM if fun pci_enable_ptm absent in "$pcih"
 }
 
-function gen-other() {
+function gen_other() {
 	ush='include/linux/u64_stats_sync.h'
 	gen NEED_PCI_AER_CLEAR_NONFATAL_STATUS if fun pci_aer_clear_nonfatal_status absent in include/linux/aer.h
 	gen NEED_BITMAP_COPY_CLEAR_TAIL if fun bitmap_copy_clear_tail absent in include/linux/bitmap.h
@@ -222,7 +222,7 @@ function gen-other() {
 	gen HAVE_LMV1_SUPPORT if macro VFIO_REGION_TYPE_MIGRATION in include/uapi/linux/vfio.h
 }
 
-function gen-rdma() {
+function gen_rdma() {
 	um='include/rdma/ib_umem.h'
 	iv='include/rdma/ib_verbs.h'
 	gen HAVE_IB_UMEM_SG_HEAD if struct ib_umem matches sg_head in "$um"
@@ -233,25 +233,25 @@ function gen-rdma() {
 
 # all the generations, extracted from main() to keep normal code and various
 # prep separated
-function gen-all() {
+function gen_all() {
 	if grep -qE CONFIG_NET_DEVLINK.+1 "$CONFFILE"; then
-		gen-devlink
+		gen_devlink
 	fi
-	gen-netdevice
+	gen_netdevice
 	# code above is covered by unit_tests/test_gold.sh
 	if [ -n "${JUST_UNIT_TESTING-}" ]; then
 		return
 	fi
-	gen-aux
-	gen-bitfield
-	gen-device
-	gen-ethtool
-	gen-filter
-	gen-flow-dissector
-	gen-gnss
-	gen-pci
-	gen-other
-	gen-rdma
+	gen_aux
+	gen_bitfield
+	gen_device
+	gen_ethtool
+	gen_filter
+	gen_flow_dissector
+	gen_gnss
+	gen_pci
+	gen_other
+	gen_rdma
 }
 
 function main() {
@@ -280,7 +280,7 @@ function main() {
 	fi
 
 	# check if KSRC was ok/if we are in proper place to look for headers
-	if [ -z "$(filter-out-bad-files include/linux/kernel.h)" ]; then
+	if [ -z "$(filter_out_bad_files include/linux/kernel.h)" ]; then
 		echo >&2 "seems that there are no kernel includes placed in KSRC=${KSRC}
 			pwd=$(pwd); ls -l:"
 		ls -l >&2
@@ -296,7 +296,7 @@ function main() {
 
 	echo "#ifndef $OUT_DEFINE"
 	echo "#define $OUT_DEFINE"
-	gen-all
+	gen_all
 	echo "#endif /* $OUT_DEFINE */"
 
 	if [ -n "${OUT-}" ]; then

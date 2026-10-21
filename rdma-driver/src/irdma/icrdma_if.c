@@ -10,6 +10,37 @@
 /* Used for testing in CNV */
 extern bool mod_rdpu_bw;
 
+static inline int irdma_validate_iidc_cdev_info(struct iidc_core_dev_info *cdev_info)
+{
+	const u16 major_min = IIDC_MAJOR_VER;
+	const u16 major_max = IIDC_MAJOR_VER;
+
+	if (cdev_info->ver.major < major_min || cdev_info->ver.major > major_max) {
+		irdma_rblog_pr_info("irdma: RDMA/LAN interface major version mismatch (Expected %0d.%0d Received %0d.%0d). Unable to initialize RDMA.\n",
+				    IIDC_MAJOR_VER, IIDC_MINOR_VER,
+				    cdev_info->ver.major,
+				    cdev_info->ver.minor);
+		irdma_rblog_pr_info("irdma: Please update both LAN and RDMA drivers from same release for interface compatibility\n");
+		return -EINVAL;
+	}
+
+	if (cdev_info->ver.minor != IIDC_MINOR_VER) {
+		irdma_rblog_pr_info("irdma: RDMA/LAN interface minor version mismatch (Expected %0d.%0d Received %0d.%0d).\n",
+				    IIDC_MAJOR_VER, IIDC_MINOR_VER,
+				    cdev_info->ver.major,
+				    cdev_info->ver.minor);
+		irdma_rblog_pr_info("irdma: Please update both LAN and RDMA drivers from same release for interface compatibility\n");
+	}
+
+	if (cdev_info->cdev_info_id != IIDC_RDMA_ID) {
+		irdma_rblog_pr_info("irdma: invalid IIDC core device id (expected 0x%x got 0x%x), unable to initialize RDMA.\n",
+				    IIDC_RDMA_ID, cdev_info->cdev_info_id);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static void icrdma_prep_tc_change(struct irdma_device *iwdev)
 {
 	iwdev->vsi.tc_change_pending = true;
@@ -485,20 +516,10 @@ static int icrdma_probe(struct auxiliary_device *aux_dev, const struct auxiliary
 	int err;
 	struct irdma_handler *hdl;
 
-#define MIN_COMPATIBLE_IIDC_MAJOR_VER (11)
-	if (cdev_info->ver.major < MIN_COMPATIBLE_IIDC_MAJOR_VER) {
-		irdma_rblog_pr_info("irdma: RDMA/LAN interface version mismatch (Expected %0d.%0d Received %0d.%0d). Unable to initialize RDMA.\n",
-				    IIDC_MAJOR_VER, IIDC_MINOR_VER,
-				    cdev_info->ver.major,
-				    cdev_info->ver.minor);
-		irdma_rblog_pr_info("irdma: Please update both LAN and RDMA drivers from same release for interface compatibility\n");
-		return -EINVAL;
-	}
-	if (cdev_info->ver.minor != IIDC_MINOR_VER)
-		irdma_rblog_pr_info("probe: minor version mismatch: expected %0d.%0d caller specified %0d.%0d\n",
-				    IIDC_MAJOR_VER, IIDC_MINOR_VER,
-				    cdev_info->ver.major,
-				    cdev_info->ver.minor);
+	err = irdma_validate_iidc_cdev_info(cdev_info);
+	if (err)
+		return err;
+
 	irdma_rblog_pr_info("probe: cdev_info=%p, cdev_info->dev.aux_dev.bus->number=%d, cdev_info->rdma_active_port=0x%x netdev=%s\n",
 			    cdev_info, cdev_info->pdev->bus->number,
 			    cdev_info->rdma_active_port,

@@ -438,8 +438,10 @@ static int ig3rdma_vport_probe(struct auxiliary_device *aux_dev,
 	iwdev->aux_dev = aux_dev;
 
 	hdl = kzalloc(sizeof(*hdl), GFP_KERNEL);
-	if (!hdl)
+	if (!hdl) {
+		err = -ENOMEM;
 		goto err_hdl;
+	}
 
 	hdl->iwdev = iwdev;
 	iwdev->hdl = hdl;

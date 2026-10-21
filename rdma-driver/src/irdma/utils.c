@@ -925,6 +925,65 @@ static int irdma_get_def_timeout_threshold(struct irdma_sc_dev *dev)
 	return time_s * 1000 / dev->hw_attrs.max_cqp_compl_wait_time_ms;
 }
 
+static bool irdma_cq_cmpl_generated_empty(struct irdma_cq *iwcq)
+{
+	unsigned long flags;
+	bool empty;
+
+	if (!iwcq)
+		return true;
+
+	spin_lock_irqsave(&iwcq->lock, flags);
+	empty = list_empty(&iwcq->cmpl_generated);
+	spin_unlock_irqrestore(&iwcq->lock, flags);
+
+	return empty;
+}
+
+void irdma_flush_gsi_qp(struct irdma_pci_f *rf)
+{
+	struct irdma_qp *iwqp;
+	unsigned long timeout;
+	int i;
+
+#ifdef HAVE_XARRAY
+	iwqp = xa_load(&rf->qp_xa, IW_FIRST_QPN);
+#else
+	iwqp = rf->qp_table[IW_FIRST_QPN];
+#endif /* HAVE_XARRAY */
+	if (!iwqp)
+		return;
+
+	irdma_qp_add_ref(&iwqp->ibqp);
+	irdma_generate_flush_completions(iwqp, false);
+#define GSI_POLL_WAIT_TIMEOUT_MS 500
+	timeout = jiffies + msecs_to_jiffies(GSI_POLL_WAIT_TIMEOUT_MS);
+
+	for (i = 0; i < (GSI_POLL_WAIT_TIMEOUT_MS * 10) &&
+	     time_before(jiffies, timeout); i++) {
+		if (irdma_cq_cmpl_generated_empty(iwqp->iwscq) &&
+		    irdma_cq_cmpl_generated_empty(iwqp->iwrcq))
+			break;
+
+		udelay(100);
+		cpu_relax();
+	}
+
+	if (!irdma_cq_cmpl_generated_empty(iwqp->iwscq) ||
+	    !irdma_cq_cmpl_generated_empty(iwqp->iwrcq))
+		irdma_rblog_ibdev_dbg(&rf->iwdev->ibdev,
+				      "CM: timeout waiting for generated flush GSI QP completions to drain\n");
+
+	/*
+	 * Set flush_issued so subsequent QP1 sends (for example CM DREQ posted
+	 * during device teardown) take the SW flush path and complete from the
+	 * cleanup worker even while hardware is resetting.
+	 */
+	atomic_cmpxchg(&iwqp->flush_issued, 0, 1);
+
+	irdma_qp_rem_ref(&iwqp->ibqp);
+}
+
 /**
  * irdma_wait_event - wait for completion
  * @rf: RDMA PCI function
@@ -978,6 +1037,8 @@ static int irdma_wait_event(struct irdma_pci_f *rf,
 		if (!rf->reset) {
 			rf->reset = true;
 			rf->irdma_initiated_reset = true;
+			if (rdma_protocol_roce(&rf->iwdev->ibdev, 1))
+				irdma_flush_gsi_qp(rf);
 			rf->gen_ops.request_reset(rf);
 		}
 		return -ETIMEDOUT;
@@ -3687,7 +3748,7 @@ static inline void irdma_comp_handler(struct irdma_cq *cq)
  * irdma_generate_flush_completions - generate completion from WRs
  * @iwqp: pointer to QP
  */
-void irdma_generate_flush_completions(struct irdma_qp *iwqp)
+void irdma_generate_flush_completions(struct irdma_qp *iwqp, bool reschedule)
 {
 	struct irdma_qp_uk *qp = &iwqp->sc_qp.qp_uk;
 	struct irdma_ring *sq_ring = &qp->sq_ring;
@@ -3743,7 +3804,8 @@ void irdma_generate_flush_completions(struct irdma_qp *iwqp)
 		}
 	} else {
 		spin_unlock_irqrestore(&iwqp->iwscq->lock, flags1);
-		irdma_sched_qp_flush_work(iwqp);
+		if (reschedule)
+			irdma_sched_qp_flush_work(iwqp);
 	}
 
 	spin_lock_irqsave(&iwqp->iwrcq->lock, flags1);
@@ -3782,7 +3844,8 @@ void irdma_generate_flush_completions(struct irdma_qp *iwqp)
 			irdma_comp_handler(iwqp->iwrcq);
 	} else {
 		spin_unlock_irqrestore(&iwqp->iwrcq->lock, flags1);
-		irdma_sched_qp_flush_work(iwqp);
+		if (reschedule)
+			irdma_sched_qp_flush_work(iwqp);
 	}
 }
 
