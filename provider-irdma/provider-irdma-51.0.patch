@@ -1,6 +1,6 @@
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/irdma-abi.h irdma-rdma-core/rdma-core-51.0/kernel-headers/rdma/irdma-abi.h
---- irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/irdma-abi.h	2026-08-21 07:59:23.927358205 -0700
-+++ irdma-rdma-core/rdma-core-51.0/kernel-headers/rdma/irdma-abi.h	2026-08-21 07:59:31.417381056 -0700
+--- irdma-rdma-core/rdma-core-copy/kernel-headers/rdma/irdma-abi.h	2026-10-02 10:00:00.648098124 -0700
++++ irdma-rdma-core/rdma-core-51.0/kernel-headers/rdma/irdma-abi.h	2026-10-02 10:00:07.720115764 -0700
 @@ -1,6 +1,6 @@
 -/* SPDX-License-Identifier: (GPL-2.0 WITH Linux-syscall-note) OR Linux-OpenIB */
 +/* SPDX-License-Identifier: (GPL-2.0 WITH Linux-syscall-note) OR Linux-OpenIB) */
@@ -105,8 +105,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
 +};
  #endif /* IRDMA_ABI_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/abi.h irdma-rdma-core/rdma-core-51.0/providers/irdma/abi.h
---- irdma-rdma-core/rdma-core-copy/providers/irdma/abi.h	2026-08-21 07:59:24.204359051 -0700
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/abi.h	2026-08-21 07:59:31.407381025 -0700
+--- irdma-rdma-core/rdma-core-copy/providers/irdma/abi.h	2026-10-02 10:00:00.969098925 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/abi.h	2026-10-02 10:00:07.711115741 -0700
 @@ -1,5 +1,5 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (C) 2019 - 2020 Intel Corporation */
@@ -140,8 +140,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
 +};
  #endif /* PROVIDER_IRDMA_ABI_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/defs.h irdma-rdma-core/rdma-core-51.0/providers/irdma/defs.h
---- irdma-rdma-core/rdma-core-copy/providers/irdma/defs.h	2026-08-21 07:59:24.204359051 -0700
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/defs.h	2026-08-21 07:59:31.408381028 -0700
+--- irdma-rdma-core/rdma-core-copy/providers/irdma/defs.h	2026-10-02 10:00:00.970098927 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/defs.h	2026-10-02 10:00:07.712115744 -0700
 @@ -1,10 +1,11 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (c) 2015 - 2023 Intel Corporation */
@@ -561,8 +561,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
 +
  #endif /* IRDMA_DEFS_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/i40iw_hw.h irdma-rdma-core/rdma-core-51.0/providers/irdma/i40iw_hw.h
---- irdma-rdma-core/rdma-core-copy/providers/irdma/i40iw_hw.h	2026-08-21 07:59:24.205359053 -0700
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/i40iw_hw.h	2026-08-21 07:59:31.409381031 -0700
+--- irdma-rdma-core/rdma-core-copy/providers/irdma/i40iw_hw.h	2026-10-02 10:00:00.971098930 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/i40iw_hw.h	2026-10-02 10:00:07.713115746 -0700
 @@ -1,15 +1,14 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (c) 2015 - 2023 Intel Corporation */
@@ -592,8 +592,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
  
  #define I40IW_QP_WQE_MIN_SIZE   32
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/ice_devids.h irdma-rdma-core/rdma-core-51.0/providers/irdma/ice_devids.h
---- irdma-rdma-core/rdma-core-copy/providers/irdma/ice_devids.h	2026-08-21 07:59:24.206359057 -0700
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/ice_devids.h	2026-08-21 07:59:31.410381034 -0700
+--- irdma-rdma-core/rdma-core-copy/providers/irdma/ice_devids.h	2026-10-02 10:00:00.971098930 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/ice_devids.h	2026-10-02 10:00:07.714115749 -0700
 @@ -1,11 +1,12 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (c) 2019 - 2020 Intel Corporation */
@@ -654,7 +654,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
  #endif /* ICE_DEVIDS_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/idpf_devids.h irdma-rdma-core/rdma-core-51.0/providers/irdma/idpf_devids.h
 --- irdma-rdma-core/rdma-core-copy/providers/irdma/idpf_devids.h	1969-12-31 16:00:00.000000000 -0800
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/idpf_devids.h	2026-08-21 07:59:31.410381034 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/idpf_devids.h	2026-10-02 10:00:07.714115749 -0700
 @@ -0,0 +1,18 @@
 +/* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 +/* SPDX-License-Identifier: GPL-2.0-only */
@@ -675,8 +675,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
 +
 +#endif /* _IDPF_DEVIDS_H_ */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/irdma.h irdma-rdma-core/rdma-core-51.0/providers/irdma/irdma.h
---- irdma-rdma-core/rdma-core-copy/providers/irdma/irdma.h	2026-08-21 07:59:24.206359057 -0700
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/irdma.h	2026-08-21 07:59:31.411381037 -0700
+--- irdma-rdma-core/rdma-core-copy/providers/irdma/irdma.h	2026-10-02 10:00:00.972098932 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/irdma.h	2026-10-02 10:00:07.715115751 -0700
 @@ -1,14 +1,24 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (c) 2017 - 2023 Intel Corporation */
@@ -732,8 +732,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
  
  #endif /* IRDMA_H*/
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/osdep.h irdma-rdma-core/rdma-core-51.0/providers/irdma/osdep.h
---- irdma-rdma-core/rdma-core-copy/providers/irdma/osdep.h	2026-08-21 07:59:24.207359060 -0700
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/osdep.h	2026-08-21 07:59:31.412381040 -0700
+--- irdma-rdma-core/rdma-core-copy/providers/irdma/osdep.h	2026-10-02 10:00:00.972098932 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/osdep.h	2026-10-02 10:00:07.716115754 -0700
 @@ -1,5 +1,5 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (c) 2015 - 2021 Intel Corporation */
@@ -802,8 +802,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
 +#endif /* FIELD_PREP */
  #endif /* IRDMA_OSDEP_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/uk.c irdma-rdma-core/rdma-core-51.0/providers/irdma/uk.c
---- irdma-rdma-core/rdma-core-copy/providers/irdma/uk.c	2026-08-21 07:59:24.208359063 -0700
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/uk.c	2026-08-21 07:59:31.412381040 -0700
+--- irdma-rdma-core/rdma-core-copy/providers/irdma/uk.c	2026-10-02 10:00:00.974098937 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/uk.c	2026-10-02 10:00:07.716115754 -0700
 @@ -1,7 +1,5 @@
  // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
 -/* Copyright (c) 2015 - 2023 Intel Corporation */
@@ -2603,8 +2603,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
  }
 +
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/umain.c irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.c
---- irdma-rdma-core/rdma-core-copy/providers/irdma/umain.c	2026-08-21 07:59:24.208359063 -0700
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.c	2026-08-21 07:59:31.413381044 -0700
+--- irdma-rdma-core/rdma-core-copy/providers/irdma/umain.c	2026-10-02 10:00:00.974098937 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.c	2026-10-02 10:00:07.716115754 -0700
 @@ -1,6 +1,8 @@
  // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
  /* Copyright (C) 2019 - 2023 Intel Corporation */
@@ -2798,7 +2798,7 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
  	free(iwvctx);
  
  	return NULL;
-@@ -219,19 +286,112 @@
+@@ -219,19 +286,111 @@
  {
  	struct irdma_udevice *dev;
  
@@ -2862,7 +2862,6 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
 +			irdma_spin_unlock(&dbg_uqp->lock);
 +		}
 +	}
-+	pthread_mutex_unlock(&sigusr1_wait_mutex);
 +}
 +
 +static void irdma_signal_handler(int signum)
@@ -2912,8 +2911,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
  }
  
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/umain.h irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.h
---- irdma-rdma-core/rdma-core-copy/providers/irdma/umain.h	2026-08-21 07:59:24.209359066 -0700
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.h	2026-08-21 07:59:31.414381047 -0700
+--- irdma-rdma-core/rdma-core-copy/providers/irdma/umain.h	2026-10-02 10:00:00.975098939 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/umain.h	2026-10-02 10:00:07.717115756 -0700
 @@ -1,5 +1,5 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (C) 2019 - 2023 Intel Corporation */
@@ -3166,8 +3165,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
 +					  struct ibv_parent_domain_init_attr *int_attr);
  #endif /* IRDMA_UMAIN_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/user.h irdma-rdma-core/rdma-core-51.0/providers/irdma/user.h
---- irdma-rdma-core/rdma-core-copy/providers/irdma/user.h	2026-08-21 07:59:24.210359069 -0700
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/user.h	2026-08-21 07:59:31.414381047 -0700
+--- irdma-rdma-core/rdma-core-copy/providers/irdma/user.h	2026-10-02 10:00:00.975098939 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/user.h	2026-10-02 10:00:07.718115759 -0700
 @@ -1,10 +1,9 @@
  /* SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB */
 -/* Copyright (c) 2015 - 2023 Intel Corporation */
@@ -3808,8 +3807,8 @@ diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma
 +}
  #endif /* IRDMA_USER_H */
 diff -N -u -r -x .clang-format -x '.git*' -x '.tr*' -x '.ma*' -x 'pandoc*' irdma-rdma-core/rdma-core-copy/providers/irdma/uverbs.c irdma-rdma-core/rdma-core-51.0/providers/irdma/uverbs.c
---- irdma-rdma-core/rdma-core-copy/providers/irdma/uverbs.c	2026-08-21 07:59:24.211359072 -0700
-+++ irdma-rdma-core/rdma-core-51.0/providers/irdma/uverbs.c	2026-08-21 07:59:31.415381050 -0700
+--- irdma-rdma-core/rdma-core-copy/providers/irdma/uverbs.c	2026-10-02 10:00:00.975098939 -0700
++++ irdma-rdma-core/rdma-core-51.0/providers/irdma/uverbs.c	2026-10-02 10:00:07.718115759 -0700
 @@ -1,6 +1,8 @@
  // SPDX-License-Identifier: GPL-2.0 or Linux-OpenIB
  /* Copyright (C) 2019 - 2023 Intel Corporation */
