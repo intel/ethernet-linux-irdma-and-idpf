@@ -44,7 +44,11 @@
 #include <rdma/rdma_cm.h>
 #include <rdma/iw_cm.h>
 #include <rdma/ib_user_verbs.h>
+#ifdef NEED_RDMA_BLOCK_ITER_HEADER
+#include <rdma/iter.h>
+#else
 #include <rdma/ib_umem.h>
+#endif
 #include <rdma/ib_cache.h>
 #include "osdep.h"
 #include "defs.h"
@@ -66,6 +70,7 @@ extern struct list_head irdma_handlers;
 extern spinlock_t irdma_handler_lock;
 extern bool irdma_upload_context;
 extern bool mod_rdpu_bw;
+extern unsigned long mmap_kmem_max_size;
 #define MEV_PCI_VER_A0	0
 #define MEV_PCI_VER_B0	16
 #define MEV_PCI_VER_C0	32
@@ -752,6 +757,7 @@ void irdma_free_sqbuf(struct irdma_sc_vsi *vsi, void *bufp);
 void irdma_free_qp_rsrc(struct irdma_qp *iwqp);
 int irdma_setup_gsi_qp_rsrc(struct irdma_qp *iwqp, u32 *qp_num);
 void irdma_free_gsi_qp_rsrc(struct irdma_qp *iwqp, u32 qp_num);
+void irdma_flush_gsi_qp(struct irdma_pci_f *rf);
 int irdma_setup_cm_core(struct irdma_device *iwdev, u8 ver);
 void irdma_cleanup_cm_core(struct irdma_cm_core *cm_core);
 void irdma_next_iw_state(struct irdma_qp *iwqp, u8 state, u8 del_hash, u8 term,

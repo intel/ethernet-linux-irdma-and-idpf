@@ -977,6 +977,8 @@ static int irdma_create_ah_wait(struct irdma_pci_f *rf,
 			if (err == -ETIMEDOUT && !rf->reset) {
 				rf->reset = true;
 				rf->irdma_initiated_reset = true;
+				if (rdma_protocol_roce(&rf->iwdev->ibdev, 1))
+					irdma_flush_gsi_qp(rf);
 				rf->gen_ops.request_reset(rf);
 			}
 			return err;
@@ -999,6 +1001,8 @@ static int irdma_create_ah_wait(struct irdma_pci_f *rf,
 			irdma_put_cqp_request(&rf->cqp, cqp_request);
 			if (!cnt && !rf->reset) {
 				rf->reset = true;
+				if (rdma_protocol_roce(&rf->iwdev->ibdev, 1))
+					irdma_flush_gsi_qp(rf);
 				rf->gen_ops.request_reset(rf);
 			}
 			return err;
@@ -2938,8 +2942,14 @@ int irdma_dereg_mr(struct ib_mr *ib_mr)
 	}
 
 	ret = irdma_hwdereg_mr(ib_mr);
-	if (ret)
-		return ret;
+	if (ret) {
+		if (!iwdev->rf->reset)
+			return ret;
+
+		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
+				      "VERBS: hw dereg mr failed during reset, forcing sw cleanup ret=%d\n",
+				      ret);
+	}
 
 	irdma_free_stag(iwdev, iwmr->stag);
 done:

@@ -3,6 +3,14 @@
 #ifndef LINUX_KCOMPAT_H
 #define LINUX_KCOMPAT_H
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0)
+/* Renamed to resize_user_cq: ce68351be075db89ff68de17e57dbe9b48374110 */
+/* Change 2nd arg to unsigned: dc76086a2d94d09aea9fd41a65ed56e0f7a6ec50 */
+#define IB_DEV_OPS_RESIZE_USER_CQ
+/* Moved RDMA block iter to iter.h: 6094ea64c69520ed1e770e7c79c43412de202bfa */
+#define NEED_RDMA_BLOCK_ITER_HEADER
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
 #ifndef HAVE_POLL_T
 #define HAVE_POLL_T

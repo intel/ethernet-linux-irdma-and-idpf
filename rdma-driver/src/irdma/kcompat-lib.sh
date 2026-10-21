@@ -25,7 +25,7 @@ function die() {
 # note: outputs nothing if all input files are "bad" (eg. not existing), but it
 #	is left for caller to decide if this is an erorr condition;
 # note: whitespaces are considered "bad" as part of filename, it's an error.
-function filter-out-bad-files() {
+function filter_out_bad_files() {
 	if [[ $# = 1 && "$1" = '-' ]]; then
 		echo -
 		return 0
@@ -71,13 +71,13 @@ WB='[ \t]'
 
 # wrapper over find-something-decl() functions below, to avoid repetition
 # pass $what as $1, $end as $2, and $files to look in as rest of args
-function find-decl() {
+function find_decl() {
 	test $# -ge 3 # ensure that there are at least 3 params
 	local what end files
 	what="$1"
 	end="$2"
 	shift 2
-	files="$(filter-out-bad-files "$@")" || die
+	files="$(filter_out_bad_files "$@")" || die
 	if [ -z "$files" ]; then
 		return 0
 	fi
@@ -90,7 +90,7 @@ function find-decl() {
 
 # yield $1 function declaration (signature), don't pass return type in $1
 # looks only in files specified ($2, $3...)
-function find-fun-decl() {
+function find_fun_decl() {
 	test $# -ge 2
 	local what end
 	# match start of line, or previous word/pointer end. Allow return types.
@@ -98,42 +98,42 @@ function find-fun-decl() {
 	what="/(^|[^a-zA-Z0-9_])$1[ \t]*($|[()])/"
 	end='/\);?$/'
 	shift
-	find-decl "$what" "$end" "$@"
+	find_decl "$what" "$end" "$@"
 }
 
 # yield $1 enum declaration (type/body)
-function find-enum-decl() {
+function find_enum_decl() {
 	test $# -ge 2
 	local what end
 	what="/^$WB*enum$WB+$1"' \{$/'
 	end='/\};$/'
 	shift
-	find-decl "$what" "$end" "$@"
+	find_decl "$what" "$end" "$@"
 }
 
 # yield $1 struct declaration (type/body)
-function find-struct-decl() {
+function find_struct_decl() {
 	test $# -ge 2
 	local what end
 	what="/^$WB*struct$WB+$1"' \{$/'
 	end='/^\};$/' # that's (^) different from enum-decl
 	shift
-	find-decl "$what" "$end" "$@"
+	find_decl "$what" "$end" "$@"
 }
 
 # yield first line of $1 macro definition
-function find-macro-decl() {
+function find_macro_decl() {
 	test $# -ge 2
 	local what end
 	# only unindented defines, only whole-word match
 	what="/^#define$WB+$1"'([ \t(]|$)/'
-	end=1 # only first line; use find-macro-implementation-decl for full body
+	end=1 # only first line; use find_macro_implementation_decl for full body
 	shift
-	find-decl "$what" "$end" "$@"
+	find_decl "$what" "$end" "$@"
 }
 
 # yield full macro implementation
-function find-macro-implementation-decl() {
+function find_macro_implementation_decl() {
 	test $# -ge 2
 	local what end
 	# only unindented defines, only whole-word match
@@ -142,27 +142,27 @@ function find-macro-implementation-decl() {
 	# Does not handle macros with comments embedded within the definition.
 	end='/[^\\]$/'
 	shift
-	find-decl "$what" "$end" "$@"
+	find_decl "$what" "$end" "$@"
 }
 
 # yield first line of $1 typedef definition (simple typedefs only)
 # this probably won't handle typedef struct { \n int foo;\n};
-function find-typedef-decl() {
+function find_typedef_decl() {
 	test $# -ge 2
 	local what end
 	what="/^typedef .* $1"';$/'
 	end=1
 	shift
-	find-decl "$what" "$end" "$@"
+	find_decl "$what" "$end" "$@"
 }
 # yield $1 variable/symbol declaration
-function find-variable-decl() {
+function find_variable_decl() {
 	test $# -ge 2
 	local what end
 	what="/$WB*$1$WB*(\[[0-9]*\])?$WB*(;|\[)/"
 	end=1
 	shift
-	find-decl "$what" "$end" "$@"
+	find_decl "$what" "$end" "$@"
 }
 # gen() - DSL-like function to wrap around all the other
 #
@@ -234,7 +234,7 @@ function gen() {
 		shift 3
 		[ "$of_kw" != of ] && die 29 "$src_line: 'of' keyword expected, '$of_kw' given"
 		[ "$kind" != macro ] && die 30 "$src_line: implementation only supports 'macro', '$kind' given"
-		kind=macro-implementation
+		kind=macro_implementation
 	;;
 	*) die 24 "$src_line: unknown KIND ($kind) to look for" ;;
 	esac
@@ -263,7 +263,7 @@ function gen() {
 
 	local first_decl=
 	if [ "$kind" = method ]; then
-		first_decl="$(find-struct-decl "$name" "$@")" || exit 28
+		first_decl="$(find_struct_decl "$name" "$@")" || exit 28
 		# prepare params for next lookup phase
 		set -- - # overwrite $@ to be single dash (-)
 		name="$method_name"
@@ -275,7 +275,7 @@ function gen() {
 
 	# lookup the NAME
 	local body
-	body="$(find-$kind-decl "$name" "$@" <<< "$first_decl")" || exit 29
+	body="$(find_${kind}_decl "$name" "$@" <<< "$first_decl")" || exit 29
 	awk -v define="$define" -v pattern="$pattern" -v "$operator"=1 '
 		/./ { not_empty = 1 }
 		$0 ~ pattern { found = 1 }

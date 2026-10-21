@@ -68,6 +68,10 @@ static u8 fragment_count_limit = 6;
 module_param(fragment_count_limit, byte, 0444);
 MODULE_PARM_DESC(fragment_count_limit, "adjust maximum values for queue depth and inline data size, default=6, Range: 2-13");
 
+unsigned long mmap_kmem_max_size;
+module_param(mmap_kmem_max_size, ulong, 0644);
+MODULE_PARM_DESC(mmap_kmem_max_size, "Maximum kmem mmap size in bytes, 0=disabled(default)");
+
 u8 rrf_m = 8;
 module_param(rrf_m, byte, 0444);
 MODULE_PARM_DESC(rrf_m, "rrf_multiplier for HMC resource default to 8");

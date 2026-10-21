@@ -604,11 +604,16 @@ static void irdma_puda_qp_setctx(struct irdma_puda_rsrc *rsrc)
 		      FIELD_PREP(IRDMAQPC_USESTATSINSTANCE, rsrc->stats_idx_valid));
 	set_64bit_val(qp_ctx, 168,
 		      FIELD_PREP(IRDMAQPC_QPCOMPCTX, (uintptr_t)qp));
-	set_64bit_val(qp_ctx, 176,
-		      FIELD_PREP(IRDMAQPC_SQTPHVAL, qp->sq_tph_val) |
-		      FIELD_PREP(IRDMAQPC_RQTPHVAL, qp->rq_tph_val) |
-		      FIELD_PREP(IRDMAQPC_QSHANDLE, qp->qs_handle));
-
+	if (qp->dev->hw_attrs.uk_attrs.hw_rev >= IRDMA_GEN_3)
+		set_64bit_val(qp_ctx, 176,
+			      FIELD_PREP(IRDMAQPC_SQTPHVAL, qp->sq_tph_val) |
+			      FIELD_PREP(IRDMAQPC_RQTPHVAL, qp->rq_tph_val) |
+			      FIELD_PREP(IRDMAQPC_QSHANDLE_GEN_3, qp->qs_handle));
+	else
+		set_64bit_val(qp_ctx, 176,
+			      FIELD_PREP(IRDMAQPC_SQTPHVAL, qp->sq_tph_val) |
+			      FIELD_PREP(IRDMAQPC_RQTPHVAL, qp->rq_tph_val) |
+			      FIELD_PREP(IRDMAQPC_QSHANDLE, qp->qs_handle));
 	irdma_rblog_hex_dump("PUDA: PUDA QP CONTEXT", DUMP_PREFIX_OFFSET, 16,
 			     8, qp_ctx, IRDMA_QP_CTX_SIZE, false);
 }

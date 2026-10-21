@@ -251,13 +251,14 @@ static const struct vm_operations_struct irdma_vm_ops = {
 
 static int irdma_mmap_kmem(struct ib_ucontext *context, struct vm_area_struct *vma)
 {
-	struct irdma_ucontext *ucontext;
+	struct irdma_ucontext *ucontext = to_ucontext(context);
 	int ret;
 	void *buf;
 	unsigned long size = vma->vm_end - vma->vm_start;
 	struct irdma_mmap_info *info;
 
-	ucontext = to_ucontext(context);
+	if (!size || !mmap_kmem_max_size || size > mmap_kmem_max_size)
+		return -EINVAL;
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (!info)
@@ -331,11 +332,9 @@ static int irdma_mmap(struct ib_ucontext *context, struct vm_area_struct *vma)
 	struct rdma_user_mmap_entry *rdma_entry;
 #endif
 	struct irdma_user_mmap_entry *entry;
-	struct irdma_ucontext *ucontext;
+	struct irdma_ucontext *ucontext = to_ucontext(context);
 	u64 pfn;
 	int ret;
-
-	ucontext = to_ucontext(context);
 
 	/* Legacy support for libi40iw with hard-coded mmap key */
 	if (ucontext->legacy_mode)
@@ -1004,7 +1003,7 @@ void irdma_kern_flush_worker(struct work_struct *work)
 	struct delayed_work *dwork = to_delayed_work(work);
 	struct irdma_qp *iwqp = container_of(dwork, struct irdma_qp, dwork_flush);
 
-	irdma_generate_flush_completions(iwqp);
+	irdma_generate_flush_completions(iwqp, true);
 	/* For the add in irdma_sched_qp_flush_work */
 	irdma_qp_rem_ref(&iwqp->ibqp);
 }
@@ -1855,8 +1854,13 @@ int irdma_process_resize_list(struct irdma_cq *iwcq,
  * @entries: desired cq size
  * @udata: user data
  */
+#ifdef IB_DEV_OPS_RESIZE_USER_CQ
+static int irdma_resize_cq(struct ib_cq *ibcq, unsigned int entries,
+			   struct ib_udata *udata)
+#else
 static int irdma_resize_cq(struct ib_cq *ibcq, int entries,
 			   struct ib_udata *udata)
+#endif
 {
 #define IRDMA_RESIZE_CQ_MIN_REQ_LEN offsetofend(struct irdma_resize_cq_req, user_cq_buffer)
 	struct irdma_cq *iwcq = to_iwcq(ibcq);
@@ -3204,9 +3208,20 @@ int irdma_reg_user_mr_type_cq(struct irdma_mem_reg_req req,
 	u32 total;
 	int err;
 	u8 lvl;
+	bool split_shadow_pg;
 
-	total = req.cq_pages +
-		((iwdev->rf->sc_dev.hw_attrs.uk_attrs.feature_flags & IRDMA_FEATURE_CQ_RESIZE) ? 0 : IRDMA_SHADOW_PGCNT);
+	ucontext = kc_rdma_udata_to_drv_context(iwmr->ibmr.pd, udata);
+	split_shadow_pg = (iwdev->rf->sc_dev.hw_attrs.uk_attrs.feature_flags &
+		 IRDMA_FEATURE_CQ_RESIZE) && !ucontext->legacy_mode;
+	/* Must be set before irdma_handle_q_mem() so CQ resize does not read
+	 * the shadow DMA address from the PBLE array.
+	 */
+	iwpbl->cq_mr.split = split_shadow_pg;
+
+	total = req.cq_pages;
+	if (!split_shadow_pg)
+		total += IRDMA_SHADOW_PGCNT;
+
 	if (total > iwmr->page_cnt)
 		return -EINVAL;
 
@@ -3214,8 +3229,6 @@ int irdma_reg_user_mr_type_cq(struct irdma_mem_reg_req req,
 	err = irdma_handle_q_mem(iwdev, &req, iwpbl, lvl);
 	if (err)
 		return err;
-
-	ucontext = kc_rdma_udata_to_drv_context(iwmr->ibmr.pd, udata);
 	spin_lock_irqsave(&ucontext->cq_reg_mem_list_lock, flags);
 	list_add_tail(&iwpbl->list, &ucontext->cq_reg_mem_list);
 	iwpbl->on_list = true;
@@ -4553,7 +4566,11 @@ static const struct ib_device_ops irdma_dev_ops = {
 	.reg_user_mr = irdma_reg_user_mr,
 	.rereg_user_mr = irdma_rereg_user_mr,
 	.req_notify_cq = irdma_req_notify_cq,
+#ifdef IB_DEV_OPS_RESIZE_USER_CQ
+	.resize_user_cq = irdma_resize_cq,
+#else
 	.resize_cq = irdma_resize_cq,
+#endif
 #ifdef INIT_RDMA_OBJ_SIZE
 	INIT_RDMA_OBJ_SIZE(ib_pd, irdma_pd, ibpd),
 	INIT_RDMA_OBJ_SIZE(ib_ucontext, irdma_ucontext, ibucontext),
@@ -4851,6 +4868,8 @@ void irdma_port_ibevent(struct irdma_device *iwdev)
 void irdma_ib_unregister_device(struct irdma_device *iwdev)
 {
 	iwdev->iw_status = 0;
+	if (rdma_protocol_roce(&iwdev->ibdev, 1))
+		irdma_flush_gsi_qp(iwdev->rf);
 	irdma_port_ibevent(iwdev);
 	ib_unregister_device(&iwdev->ibdev);
 #ifndef NETDEV_TO_IBDEV_SUPPORT

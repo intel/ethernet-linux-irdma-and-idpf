@@ -3,6 +3,8 @@
 #include "main.h"
 #include "trace.h"
 
+#define IRDMA_MAX_TCP_OPTION_SPACE 40
+
 static void irdma_cm_post_event(struct irdma_cm_event *event);
 static void irdma_disconnect_worker(struct work_struct *work);
 
@@ -721,6 +723,7 @@ static int irdma_process_options(struct irdma_cm_node *cm_node, u8 *optionsloc,
 {
 	u32 tmp;
 	u32 offset = 0;
+	u8 optlen;
 	union all_known_options *all_options;
 	char got_mss_option = 0;
 
@@ -729,17 +732,28 @@ static int irdma_process_options(struct irdma_cm_node *cm_node, u8 *optionsloc,
 		switch (all_options->base.optionnum) {
 		case OPTION_NUM_EOL:
 			offset = optionsize;
-			break;
+			continue;
 		case OPTION_NUM_NONE:
 			offset += 1;
 			continue;
+		default:
+			break;
+		}
+
+		if (offset + 1 >= optionsize)
+			return -EINVAL;
+
+		optlen = all_options->base.len;
+		if (optlen < 2 || offset + optlen > optionsize)
+			return -EINVAL;
+
+		switch (all_options->base.optionnum) {
 		case OPTION_NUM_MSS:
 			irdma_rblog_ibdev_dbg(&cm_node->iwdev->ibdev,
 					      "CM: MSS Length: %d Offset: %d Size: %d\n",
-					      all_options->mss.len, offset,
-					      optionsize);
+					      optlen, offset, optionsize);
 			got_mss_option = 1;
-			if (all_options->mss.len != 4)
+			if (optlen != 4)
 				return -EINVAL;
 			tmp = ntohs(all_options->mss.mss);
 			if ((cm_node->ipv4 &&
@@ -751,6 +765,8 @@ static int irdma_process_options(struct irdma_cm_node *cm_node, u8 *optionsloc,
 				cm_node->tcp_cntxt.mss = tmp;
 			break;
 		case OPTION_NUM_WINDOW_SCALE:
+			if (optlen != 3)
+				return -EINVAL;
 			cm_node->tcp_cntxt.snd_wscale =
 				all_options->windowscale.shiftcount;
 			break;
@@ -760,7 +776,7 @@ static int irdma_process_options(struct irdma_cm_node *cm_node, u8 *optionsloc,
 					      all_options->base.optionnum);
 			break;
 		}
-		offset += all_options->base.len;
+		offset += optlen;
 	}
 	if (!got_mss_option && syn_pkt)
 		cm_node->tcp_cntxt.mss = IRDMA_CM_DEFAULT_MSS;
@@ -782,19 +798,23 @@ static int irdma_handle_tcp_options(struct irdma_cm_node *cm_node,
 	u8 *optionsloc = (u8 *)&tcph[1];
 	int ret;
 
-	if (optionsize) {
+	if (optionsize < 0 || optionsize > IRDMA_MAX_TCP_OPTION_SPACE) {
+		ret = -EINVAL;
+	} else if (optionsize > 0) {
 		ret = irdma_process_options(cm_node, optionsloc, optionsize,
 					    (u32)tcph->syn);
-		if (ret) {
-			irdma_rblog_ibdev_dbg(&cm_node->iwdev->ibdev,
-					      "CM: Node %p, Sending Reset\n",
-					      cm_node);
-			if (passive)
-				irdma_passive_open_err(cm_node, true);
-			else
-				irdma_active_open_err(cm_node, true);
-			return ret;
-		}
+	} else {
+		ret = 0;
+	}
+
+	if (ret) {
+		irdma_rblog_ibdev_dbg(&cm_node->iwdev->ibdev,
+				      "CM: Node %p, Sending Reset\n", cm_node);
+		if (passive)
+			irdma_passive_open_err(cm_node, true);
+		else
+			irdma_active_open_err(cm_node, true);
+		return ret;
 	}
 
 	cm_node->tcp_cntxt.snd_wnd = ntohs(tcph->window)
@@ -2103,10 +2123,10 @@ static int irdma_addr_resolve_neigh_ipv6(struct irdma_device *iwdev, u32 *src,
 	dst = irdma_get_dst_ipv6(&src_addr, &dst_addr);
 	if (!dst || dst->error) {
 		if (dst) {
-			dst_release(dst);
 			irdma_rblog_ibdev_dbg(&iwdev->ibdev,
 					      "CM: ip6_route_output returned dst->error = %d\n",
 					      dst->error);
+			dst_release(dst);
 		}
 		return -EINVAL;
 	}
@@ -3064,6 +3084,9 @@ static int irdma_create_cm_node(struct irdma_cm_core *cm_core,
 	struct irdma_cm_node *cm_node;
 	u16 private_data_len = conn_param->private_data_len;
 	const void *private_data = conn_param->private_data;
+
+	if (private_data_len > IETF_MAX_PRIV_DATA_LEN)
+		return -EINVAL;
 
 	/* create a CM connection node */
 	cm_node = irdma_make_cm_node(cm_core, iwdev, cm_info, NULL);

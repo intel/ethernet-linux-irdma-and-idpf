@@ -3557,7 +3557,6 @@ restart:
 
 	pci_sriov_set_totalvfs(adapter->pdev, idpf_get_max_vfs(adapter));
 	num_max_vports = idpf_get_max_vports(adapter);
-	adapter->max_vports = num_max_vports;
 	adapter->vports = kcalloc(num_max_vports, sizeof(*adapter->vports),
 				  GFP_KERNEL);
 	if (!adapter->vports)
@@ -3579,6 +3578,12 @@ restart:
 			err);
 		goto err_netdev_alloc;
 	}
+
+	/* Set max_vports only after vports, netdevs and vport_config buffers
+	 * are allocated to make sure max_vport bound loops don't end up
+	 * crashing, following allocation errors on init.
+	 */
+	adapter->max_vports = num_max_vports;
 
 	idpf_send_get_edt_caps(adapter);
 
@@ -3757,6 +3762,7 @@ unsigned int idpf_fsteer_max_rules(struct idpf_vport *vport)
  */
 void idpf_vc_core_deinit(struct idpf_adapter *adapter)
 {
+	struct idpf_hw *hw = &adapter->hw;
 	bool remove_in_prog;
 
 	if (!test_bit(IDPF_VC_CORE_INIT, adapter->flags))
@@ -3777,6 +3783,10 @@ void idpf_vc_core_deinit(struct idpf_adapter *adapter)
 	cancel_delayed_work_sync(&adapter->serv_task);
 
 	idpf_vport_params_buf_rel(adapter);
+
+	kfree(hw->lan_regs);
+	hw->lan_regs = NULL;
+	hw->num_lan_regs = 0;
 
 	kfree(adapter->vports);
 	adapter->vports = NULL;

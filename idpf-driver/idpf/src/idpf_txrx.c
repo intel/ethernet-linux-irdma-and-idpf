@@ -1594,13 +1594,6 @@ static int idpf_txq_group_alloc(struct idpf_vport *vport, struct idpf_q_vec_rsrc
 			struct idpf_queue *q = tx_qgrp->txqs[j];
 
 			u64_stats_init(&q->stats_sync);
-#ifdef CONFIG_IOMMU_BYPASS
-#ifdef CONFIG_ARM64
-			if (adapter->iommu_byp.ddev)
-				q->dev = adapter->iommu_byp.ddev;
-			else
-#endif /* CONFIG_ARM64 */
-#endif /* CONFIG_IOMMU_BYPASS */
 			q->dev = idpf_adapter_to_dev(adapter);
 			q->netdev = vport->netdev;
 			q->vport = vport;
@@ -1641,13 +1634,6 @@ static int idpf_txq_group_alloc(struct idpf_vport *vport, struct idpf_q_vec_rsrc
 			goto err_alloc;
 
 		u64_stats_init(&tx_qgrp->complq->stats_sync);
-#ifdef CONFIG_IOMMU_BYPASS
-#ifdef CONFIG_ARM64
-		if (adapter->iommu_byp.ddev)
-			tx_qgrp->complq->dev = adapter->iommu_byp.ddev;
-		else
-#endif /* CONFIG_ARM64 */
-#endif /* CONFIG_IOMMU_BYPASS */
 		tx_qgrp->complq->dev = idpf_adapter_to_dev(adapter);
 		tx_qgrp->complq->netdev = vport->netdev;
 		tx_qgrp->complq->desc_count = rsrc->complq_desc_count;
@@ -1728,13 +1714,6 @@ static void __idpf_rxq_init(struct idpf_vport *vport, struct idpf_queue *q)
 	struct idpf_adapter *adapter = vport->adapter;
 
 	u64_stats_init(&q->stats_sync);
-#ifdef CONFIG_IOMMU_BYPASS
-#ifdef CONFIG_ARM64
-	if (adapter->iommu_byp.ddev)
-		q->dev = adapter->iommu_byp.ddev;
-	else
-#endif /* CONFIG_ARM64 */
-#endif /* CONFIG_IOMMU_BYPASS */
 	q->dev = idpf_adapter_to_dev(adapter);
 	q->vport = vport;
 	q->rx_buffer_low_watermark = IDPF_LOW_WATERMARK;
@@ -3518,10 +3497,7 @@ static netdev_tx_t idpf_tx_splitq_frame(struct sk_buff *skb,
 
 		tx_params.dtype = IDPF_TX_DESC_DTYPE_FLEX_FLOW_SCHE;
 		tx_params.eop_cmd = IDPF_TXD_FLEX_FLOW_CMD_EOP;
-		/* Set the RE bit to periodically "clean" the descriptor ring.
-		 * MIN_GAP is set to MIN_RING size to ensure it will be set at
-		 * least once each time around the ring.
-		 */
+		/* Set the RE bit to periodically "clean" the descriptor ring */
 		if (idpf_tx_splitq_need_re(tx_q)) {
 			tx_params.eop_cmd |= IDPF_TXD_FLEX_FLOW_CMD_RE;
 			tx_q->txq_grp->num_completions_pending++;
@@ -5145,7 +5121,7 @@ static void idpf_update_dim_sample(struct idpf_q_vector *q_vector,
 static void idpf_net_dim(struct idpf_q_vector *q_vector)
 {
 	struct dim_sample dim_sample = { };
-	u64 packets, bytes;
+	u64 packets, bytes, pkts, bts;
 	u32 i;
 
 	if (!IDPF_ITR_IS_DYNAMIC(q_vector->tx_intr_mode))
@@ -5157,9 +5133,12 @@ static void idpf_net_dim(struct idpf_q_vector *q_vector)
 
 		do {
 			start = u64_stats_fetch_begin(&txq->stats_sync);
-			packets += u64_stats_read(&txq->q_stats.tx.packets);
-			bytes += u64_stats_read(&txq->q_stats.tx.bytes);
+			pkts = u64_stats_read(&txq->q_stats.tx.packets);
+			bts = u64_stats_read(&txq->q_stats.tx.bytes);
 		} while (u64_stats_fetch_retry(&txq->stats_sync, start));
+
+		packets += pkts;
+		bytes += bts;
 	}
 
 	idpf_update_dim_sample(q_vector, &dim_sample, &q_vector->tx_dim,
@@ -5176,9 +5155,12 @@ check_rx_itr:
 
 		do {
 			start = u64_stats_fetch_begin(&rxq->stats_sync);
-			packets += u64_stats_read(&rxq->q_stats.rx.packets);
-			bytes += u64_stats_read(&rxq->q_stats.rx.bytes);
+			pkts = u64_stats_read(&rxq->q_stats.rx.packets);
+			bts = u64_stats_read(&rxq->q_stats.rx.bytes);
 		} while (u64_stats_fetch_retry(&rxq->stats_sync, start));
+
+		packets += pkts;
+		bytes += bts;
 	}
 
 	idpf_update_dim_sample(q_vector, &dim_sample, &q_vector->rx_dim,

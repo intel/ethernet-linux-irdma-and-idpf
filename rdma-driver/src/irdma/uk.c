@@ -942,6 +942,32 @@ static void irdma_copy_inline_data(u8 *wqe, struct ib_sge *sge_list,
 }
 
 /**
+ * irdma_calc_inline_total_size - Validate and calculate inline SGE total size
+ * @sge_list: SGE array
+ * @num_sges: Number of SGEs in array
+ * @max_inline_data: Maximum inline payload allowed by QP
+ * @total_size: Output total SGE length
+ */
+static int irdma_calc_inline_total_size(struct ib_sge *sge_list,
+					u32 num_sges, u32 max_inline_data,
+					u32 *total_size)
+{
+	u32 i;
+	u32 size = 0;
+
+	for (i = 0; i < num_sges; i++) {
+		if (unlikely(sge_list[i].length > max_inline_data ||
+			     size > max_inline_data - sge_list[i].length))
+			return -EINVAL;
+
+		size += sge_list[i].length;
+	}
+	*total_size = size;
+
+	return 0;
+}
+
+/**
  * irdma_inline_data_size_to_quanta - based on inline data, quanta
  * @data_size: data size for inline
  *
@@ -982,7 +1008,8 @@ int irdma_uk_inline_rdma_write(struct irdma_qp_uk *qp,
 	u32 wqe_idx;
 	bool read_fence = false;
 	u16 quanta;
-	u32 i, total_size = 0;
+	u32 total_size = 0;
+	int ret;
 
 	info->push_wqe = qp->push_db ? true : false;
 	op_info = &info->op.rdma_write;
@@ -990,11 +1017,12 @@ int irdma_uk_inline_rdma_write(struct irdma_qp_uk *qp,
 	if (unlikely(qp->max_sq_frag_cnt < op_info->num_lo_sges))
 		return -EINVAL;
 
-	for (i = 0; i < op_info->num_lo_sges; i++)
-		total_size += op_info->lo_sg_list[i].length;
-
-	if (unlikely(total_size > qp->max_inline_data))
-		return -EINVAL;
+	ret = irdma_calc_inline_total_size(op_info->lo_sg_list,
+					   op_info->num_lo_sges,
+					   qp->max_inline_data,
+					   &total_size);
+	if (ret)
+		return ret;
 
 	quanta = qp->wqe_ops.iw_inline_data_size_to_quanta(total_size);
 
@@ -1052,7 +1080,8 @@ int irdma_uk_inline_send(struct irdma_qp_uk *qp,
 	u32 wqe_idx;
 	bool read_fence = false;
 	u16 quanta;
-	u32 i, total_size = 0;
+	u32 total_size = 0;
+	int ret;
 
 	info->push_wqe = qp->push_db ? true : false;
 	op_info = &info->op.send;
@@ -1060,11 +1089,12 @@ int irdma_uk_inline_send(struct irdma_qp_uk *qp,
 	if (unlikely(qp->max_sq_frag_cnt < op_info->num_sges))
 		return -EINVAL;
 
-	for (i = 0; i < op_info->num_sges; i++)
-		total_size += op_info->sg_list[i].length;
-
-	if (unlikely(total_size > qp->max_inline_data))
-		return -EINVAL;
+	ret = irdma_calc_inline_total_size(op_info->sg_list,
+					   op_info->num_sges,
+					   qp->max_inline_data,
+					   &total_size);
+	if (ret)
+		return ret;
 
 	quanta = qp->wqe_ops.iw_inline_data_size_to_quanta(total_size);
 	wqe = irdma_qp_get_next_send_wqe(qp, &wqe_idx, &quanta, total_size, info);
@@ -1975,7 +2005,7 @@ int irdma_get_srqdepth(struct irdma_uk_attrs *uk_attrs, u32 srq_size, u8 shift, 
 	else if (hw_quanta > uk_attrs->max_hw_srq_quanta)
 		return -EINVAL;
 
-	*srqdepth = hw_quanta;
+	*srqdepth = (u32)hw_quanta;
 	return 0;
 }
 
