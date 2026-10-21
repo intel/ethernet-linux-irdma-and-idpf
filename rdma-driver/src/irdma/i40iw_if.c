@@ -238,7 +238,7 @@ static int i40iw_probe(struct auxiliary_device *aux_dev, const struct auxiliary_
 		return -EINVAL;
 	}
 
-	strncpy(i40iw_client.name, "irdma", I40E_CLIENT_STR_LENGTH);
+	strcpy(i40iw_client.name, "irdma");
 	cdev_info->client = &i40iw_client;
 
 	return cdev_info->ops->client_device_register(cdev_info);

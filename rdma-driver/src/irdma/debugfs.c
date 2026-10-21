@@ -1498,9 +1498,10 @@ void irdma_dbg_pf_init(struct irdma_handler *hdl)
 		pfile =
 		    debugfs_create_file("dump", 0600, hdl->irdma_dbg_dentry,
 					hdl, &irdma_dbg_dump_fops);
-	else
+	else {
 		irdma_rblog_pr_err("%s: debugfs entry for %s failed\n",
 				   __func__, name);
+	}
 }
 
 /**
@@ -1522,8 +1523,9 @@ void irdma_dbg_pf_exit(struct irdma_handler *hdl)
 void irdma_dbg_init(void)
 {
 	irdma_dbg_root = debugfs_create_dir(irdma_driver_name, NULL);
-	if (!irdma_dbg_root)
+	if (!irdma_dbg_root) {
 		irdma_rblog_pr_err("%s: init of debugfs failed\n", __func__);
+	}
 
 	/* Create Ring Buffer Log file if backend is active */
 	if (log_backend == IRDMA_LOG_BACKEND_RBLOG) {

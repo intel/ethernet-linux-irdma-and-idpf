@@ -25,6 +25,7 @@
 #define rdma_ah_attr ib_ah_attr
 #define ah_attr_to_dmac(attr) ((attr).dmac)
 #define ib_device_put(dev)
+#define ib_device_try_get(dev) (1)
 
 #define ib_alloc_device(irdma_device, ibdev) \
 	((struct irdma_device *)ib_alloc_device(sizeof(struct irdma_device)))
@@ -209,6 +210,9 @@ int irdma_del_gid(struct ib_device *device,
 #define USE_KMAP
 #define NEED_IDA_ALLOC_MIN_MAX_RANGE_FREE
 #define SET_PCIDEV_PARENT
+#if defined(RHEL_7_4) || defined(RHEL_7_5)
+#define NO_PCI_ENABLE_ATOMIC_API
+#endif
 
 #define wait_queue_entry __wait_queue
 #define kc_ib_register_device(device, name, dev) ib_register_device(device, NULL)
@@ -216,6 +220,7 @@ int irdma_del_gid(struct ib_device *device,
 #define kc_deref_sgid_attr(sgid_attr)        (sgid_attr.ndev)
 #define kc_rdma_udata_to_drv_context(ibpd, udata) to_ucontext((ibpd)->uobject->context)
 #define ib_device_put(dev)
+#define ib_device_try_get(dev) (1)
 #define kc_get_ucontext(udata) to_ucontext(context)
 #define set_ibdev_dma_device(ibdev, dev)
 #define ah_attr_to_dmac(attr) ((attr).roce.dmac)
@@ -328,12 +333,14 @@ int irdma_del_gid(struct ib_device *device,
 #define USE_KMAP
 #define NEED_IDA_ALLOC_MIN_MAX_RANGE_FREE
 #define SET_PCIDEV_PARENT
+#define NO_PCI_ENABLE_ATOMIC_API
 
 #define kc_ib_register_device(device, name, dev) ib_register_device(device, NULL)
 #define kc_typeq_ib_wr
 #define kc_deref_sgid_attr(sgid_attr)        (sgid_attr.ndev)
 #define kc_rdma_udata_to_drv_context(ibpd, udata) to_ucontext((ibpd)->uobject->context)
 #define ib_device_put(dev)
+#define ib_device_try_get(dev) (1)
 #define kc_get_ucontext(udata) to_ucontext(context)
 #define set_ibdev_dma_device(ibdev, dev)
 

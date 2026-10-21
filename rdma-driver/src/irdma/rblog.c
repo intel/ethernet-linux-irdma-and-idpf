@@ -32,6 +32,7 @@ struct irdma_rblog {
 	u64 tail;                /* Oldest character position */
 	u64 written_bytes;       /* Total bytes written to buffer (ever) */
 	u64 seq;                 /* Sequence counter */
+	u64 newest_ts;           /* Monotonic ns of the most recent line */
 	spinlock_t lock;         /* Protects concurrent access */
 	wait_queue_head_t wq;    /* Wait queue for blocking reads */
 	struct dentry *dentry;   /* File dentry for inotify support */
@@ -127,6 +128,7 @@ static struct irdma_plog irdma_global_plog;
 static int irdma_plog_init(void)
 {
 	struct irdma_plog *plog = &irdma_global_plog;
+	struct timespec64 wall;
 
 	plog->buffer = kvmalloc(IRDMA_PLOG_SIZE, GFP_KERNEL);
 	if (!plog->buffer)
@@ -136,6 +138,12 @@ static int irdma_plog_init(void)
 	plog->used = 0;
 	spin_lock_init(&plog->lock);
 	plog->initialized = true;
+
+	/* Anchor monotonic log timestamps to wall-clock time for offline use. */
+	ktime_get_real_ts64(&wall);
+	irdma_plog_write("clock anchor: realtime=%lld.%06llu UTC\n",
+			 (s64)wall.tv_sec,
+			 (u64)wall.tv_nsec / 1000);
 
 	pr_info("irdma: Persistent Log initialized (%u KB)\n", IRDMA_PLOG_SIZE / 1024);
 	return 0;
@@ -206,6 +214,7 @@ int irdma_rblog_init(void)
 	rblog->tail = 0;
 	rblog->written_bytes = 0;
 	rblog->seq = 0;
+	rblog->newest_ts = 0;
 	rblog->dentry = NULL;
 	rblog->initialized = true;
 	spin_lock_init(&rblog->lock);
@@ -249,6 +258,7 @@ void irdma_rblog_cleanup(void)
 	rblog->tail = 0;
 	rblog->written_bytes = 0;
 	rblog->seq = 0;
+	rblog->newest_ts = 0;
 	rblog->buffer_size = 0;
 	rblog->dentry = NULL;
 	rblog->initialized = false;
@@ -336,6 +346,7 @@ void irdma_rblog_write(u16 flags, struct device *dev, const char *func, int line
 	u64 space_to_end;
 	u64 first_part, second_part;
 	u64 sec, nsec;
+	u64 ts_ns = 0;
 
 	if (!rblog->initialized || !rblog->buffer)
 		return;
@@ -356,6 +367,7 @@ void irdma_rblog_write(u16 flags, struct device *dev, const char *func, int line
 		/* Normal message - add timestamp and optional function prefix */
 		sec = ktime_get_ns();
 		nsec = do_div(sec, 1000000000);
+		ts_ns = sec * 1000000000ull + nsec;
 
 		output_len = snprintf(output_buf, buf_size, "[%5llu.%06llu] ", sec, nsec / 1000);
 
@@ -410,6 +422,8 @@ void irdma_rblog_write(u16 flags, struct device *dev, const char *func, int line
 		rblog->tail = rblog->head;
 
 	rblog->seq++;
+	if (!(flags & IRDMA_RBLOG_FLAG_CONTINUATION))
+		rblog->newest_ts = ts_ns;
 
 	/* Update inode size and get reference for fsnotify */
 	if (rblog->dentry && !IS_ERR(rblog->dentry)) {
@@ -548,6 +562,38 @@ int irdma_rblog_read(struct file *filp, char *buf, size_t buf_size, loff_t *pos)
 	return to_read;
 }
 
+/* Copy the timestamp prefix of the oldest complete line retained in the ring. */
+static bool irdma_rblog_oldest_ts_prefix(struct irdma_rblog *rblog, char *tmp,
+					 size_t tmp_size)
+{
+	u64 valid, start, i, n;
+
+	valid = min(rblog->written_bytes, rblog->buffer_size);
+	if (!valid || !tmp_size)
+		return false;
+
+	if (rblog->written_bytes < rblog->buffer_size) {
+		start = rblog->tail;
+	} else {
+		/* The wrapped tail may point into a partially overwritten line. */
+		for (i = 0; i < valid; i++) {
+			u64 pos = (rblog->tail + i) % rblog->buffer_size;
+
+			if (rblog->buffer[pos] == '\n')
+				break;
+		}
+		if (i == valid)
+			return false;
+		start = (rblog->tail + i + 1) % rblog->buffer_size;
+	}
+
+	for (n = 0; n < tmp_size - 1 && n < valid; n++)
+		tmp[n] = rblog->buffer[(start + n) % rblog->buffer_size];
+	tmp[n] = '\0';
+
+	return true;
+}
+
 /**
  * irdma_rblog_stats_seq_show - seq_file show for ring buffer statistics
  * @m: seq_file output
@@ -557,7 +603,11 @@ int irdma_rblog_stats_seq_show(struct seq_file *m, void *v)
 {
 	struct irdma_rblog *rblog = &irdma_global_rblog;
 	unsigned long flags;
-	u64 used_bytes;
+	u64 buffer_size, head, tail, written_bytes, seq;
+	u64 used_bytes, oldest_ns = 0, newest_ns;
+	u64 oldest_sec = 0, oldest_usec = 0;
+	char oldest_prefix[32];
+	bool have_oldest_prefix, have_oldest, initialized;
 	u32 percent_used;
 
 	if (!rblog->initialized || !rblog->buffer) {
@@ -567,13 +617,26 @@ int irdma_rblog_stats_seq_show(struct seq_file *m, void *v)
 
 	spin_lock_irqsave(&rblog->lock, flags);
 
-	/* Calculate current usage */
-	used_bytes = (rblog->written_bytes < rblog->buffer_size) ?
-		     rblog->written_bytes : rblog->buffer_size;
+	buffer_size = rblog->buffer_size;
+	head = rblog->head;
+	tail = rblog->tail;
+	written_bytes = rblog->written_bytes;
+	seq = rblog->seq;
+	initialized = rblog->initialized;
+	have_oldest_prefix = irdma_rblog_oldest_ts_prefix(rblog, oldest_prefix,
+							 sizeof(oldest_prefix));
+	newest_ns = rblog->newest_ts;
+	spin_unlock_irqrestore(&rblog->lock, flags);
 
-	/* Calculate percentage using integer arithmetic (x100 for two decimal places) */
-	if (rblog->buffer_size > 0)
-		percent_used = (u32)((used_bytes * 10000) / rblog->buffer_size);
+	have_oldest = have_oldest_prefix &&
+		      sscanf(oldest_prefix, "[%llu.%llu]", &oldest_sec,
+			     &oldest_usec) == 2;
+	if (have_oldest)
+		oldest_ns = oldest_sec * 1000000000ull + oldest_usec * 1000ull;
+
+	used_bytes = min(written_bytes, buffer_size);
+	if (buffer_size)
+		percent_used = (u32)((used_bytes * 10000) / buffer_size);
 	else
 		percent_used = 0;
 
@@ -588,18 +651,35 @@ int irdma_rblog_stats_seq_show(struct seq_file *m, void *v)
 		   "Status:         %s\n"
 		   "Used:           %llu bytes (%u.%02u%%)\n"
 		   "Free:           %llu bytes\n",
-		   rblog->buffer_size,
+		   buffer_size,
 		   rblog_buffer_size,
-		   rblog->head,
-		   rblog->tail,
-		   rblog->written_bytes,
-		   rblog->seq,
-		   rblog->initialized ? "initialized" : "not initialized",
+		   head,
+		   tail,
+		   written_bytes,
+		   seq,
+		   initialized ? "initialized" : "not initialized",
 		   used_bytes,
 		   percent_used / 100, percent_used % 100,
-		   rblog->buffer_size - used_bytes);
+		   buffer_size - used_bytes);
 
-	spin_unlock_irqrestore(&rblog->lock, flags);
+	if (have_oldest && newest_ns >= oldest_ns) {
+		u64 oldest_sec = oldest_ns;
+		u64 newest_sec = newest_ns;
+		u64 span_sec = newest_ns - oldest_ns;
+		u64 oldest_nsec = do_div(oldest_sec, 1000000000);
+		u64 newest_nsec = do_div(newest_sec, 1000000000);
+		u64 span_nsec = do_div(span_sec, 1000000000);
+
+		seq_printf(m,
+			   "Oldest Entry:   %llu.%06llu s\n"
+			   "Newest Entry:   %llu.%06llu s\n"
+			   "Time Span:      %llu.%06llu s\n",
+			   oldest_sec, oldest_nsec / 1000,
+			   newest_sec, newest_nsec / 1000,
+			   span_sec, span_nsec / 1000);
+	} else {
+		seq_puts(m, "Time Range:     n/a\n");
+	}
 
 	return 0;
 }

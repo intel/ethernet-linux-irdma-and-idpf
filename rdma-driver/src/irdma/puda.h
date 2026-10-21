@@ -162,6 +162,7 @@ int irdma_puda_poll_cmpl(struct irdma_sc_dev *dev, struct irdma_sc_cq *cq,
 
 struct irdma_sc_qp *irdma_ieq_get_qp(struct irdma_sc_dev *dev,
 				     struct irdma_puda_buf *buf);
+void irdma_ieq_put_qp(struct irdma_sc_qp *qp);
 int irdma_puda_get_tcpip_info(struct irdma_puda_cmpl_info *info,
 			      struct irdma_puda_buf *buf);
 int irdma_ieq_check_mpacrc(struct shash_desc *desc, void *addr, u32 len, u32 val);

@@ -217,10 +217,11 @@ static void irdma_vchnl_pf_send_resp(struct irdma_sc_dev *dev, u16 vf_id,
 
 	ret = irdma_vchnl_send_pf(dev, vf_id, resp_buf,
 				  vchnl_msg_resp->buf_len);
-	if (ret)
+	if (ret) {
 		irdma_rblog_ibdev_dbg(to_ibdev(dev),
 				      "VIRT: virt channel send failed ret = %d\n",
 				      ret);
+	}
 }
 
 /**
@@ -357,10 +358,11 @@ irdma_pf_manage_ws_node(struct irdma_vchnl_dev *vc_dev,
 
 	if (ws_node->add) {
 		ret = vsi->dev->ws_add(vsi, ws_node->user_pri);
-		if (ret)
+		if (ret) {
 			irdma_rblog_ibdev_dbg(to_ibdev(vc_dev->pf_dev),
 					      "VIRT: irdma_ws_add failed ret = %d\n",
 					      ret);
+		}
 		else
 			*qs_handle = vsi->qos[ws_node->user_pri].qs_handle[0];
 	} else {
@@ -457,22 +459,6 @@ static enum irdma_protocol_used irdma_get_protocol_used(struct irdma_vchnl_op_bu
 }
 
 /**
- * irdma_get_next_vf_idx - return the next vf_idx available
- * @dev: pointer to RDMA dev structure
- */
-static u16 irdma_get_next_vf_idx(struct irdma_sc_dev *dev)
-{
-	u16 vf_idx;
-
-	for (vf_idx = 0; vf_idx < dev->num_vfs; vf_idx++) {
-		if (!dev->vc_dev[vf_idx])
-			break;
-	}
-
-	return vf_idx < dev->num_vfs ? vf_idx : IRDMA_VCHNL_INVALID_VF_IDX;
-}
-
-/**
  * irdma_put_vfdev - put vfdev and free memory
  * @dev: pointer to RDMA dev structure
  * @vc_dev: pointer to RDMA vf dev structure
@@ -491,7 +477,8 @@ void irdma_put_vfdev(struct irdma_sc_dev *dev, struct irdma_vchnl_dev *vc_dev)
 		}
 
 		virt_mem.va = vc_dev;
-		virt_mem.size = sizeof(*vc_dev);
+		virt_mem.size = sizeof(*vc_dev) +
+				sizeof(struct irdma_hmc_obj_info) * IRDMA_HMC_IW_MAX;
 		kfree(virt_mem.va);
 	}
 }
@@ -533,12 +520,9 @@ static struct irdma_vchnl_dev *irdma_pf_get_vf_hmc_fcn(struct irdma_sc_dev *dev,
 	struct irdma_virt_mem virt_mem;
 	struct irdma_vchnl_dev *vc_dev;
 	struct irdma_sc_vsi *vsi;
-	u16 iw_vf_idx = 0;
+	u16 iw_vf_idx;
 	u32 size;
-
-	iw_vf_idx = irdma_get_next_vf_idx(dev);
-	if (iw_vf_idx == IRDMA_VCHNL_INVALID_VF_IDX)
-		return NULL;
+	unsigned long flags;
 
 	size = sizeof(*vc_dev) +
 	       sizeof(struct irdma_hmc_obj_info) * IRDMA_HMC_IW_MAX;
@@ -555,7 +539,6 @@ static struct irdma_vchnl_dev *irdma_pf_get_vf_hmc_fcn(struct irdma_sc_dev *dev,
 	vc_dev = virt_mem.va;
 	vc_dev->pf_dev = dev;
 	vc_dev->vf_id = vf_id;
-	vc_dev->iw_vf_idx = iw_vf_idx;
 	vc_dev->protocol_used = protocol_used;
 	vc_dev->pf_hmc_initialized = false;
 	vc_dev->hmc_info.hmc_obj = (struct irdma_hmc_obj_info *)(&vc_dev[1]);
@@ -569,14 +552,33 @@ static struct irdma_vchnl_dev *irdma_pf_get_vf_hmc_fcn(struct irdma_sc_dev *dev,
 		irdma_rblog_ibdev_dbg(to_ibdev(dev),
 				      "VIRT: VF%u failed updating vsi ctx .\n",
 				      vf_id);
-		dev->vc_dev[vc_dev->iw_vf_idx] = NULL;
 		kfree(virt_mem.va);
 		return NULL;
 	}
 	vc_dev->vf_vsi = vsi;
 
+	/* Find and insert index while holding the lock to prevent race */
+	spin_lock_irqsave(&dev->vc_dev_lock, flags);
+	iw_vf_idx = 0;
+	while (iw_vf_idx < dev->num_vfs && dev->vc_dev[iw_vf_idx])
+		iw_vf_idx++;
+
+	if (iw_vf_idx >= dev->num_vfs) {
+		spin_unlock_irqrestore(&dev->vc_dev_lock, flags);
+		irdma_rblog_ibdev_dbg(to_ibdev(dev),
+				      "VIRT: VF%u Unable to allocate a VF index.\n",
+				      vf_id);
+		/* Clean up on failure */
+		irdma_update_vsi_ctx(dev, vc_dev, false);
+		vc_dev->vf_vsi = NULL;
+		kfree(virt_mem.va);
+		return NULL;
+	}
+
+	vc_dev->iw_vf_idx = iw_vf_idx;
 	refcount_set(&vc_dev->refcnt, 1);
 	dev->vc_dev[iw_vf_idx] = vc_dev;
+	spin_unlock_irqrestore(&dev->vc_dev_lock, flags);
 	vc_dev->vf_vsi = vsi;
 	vsi->vf_id = (u16)vc_dev->vf_id;
 	vsi->vc_dev = vc_dev;
@@ -586,8 +588,11 @@ static struct irdma_vchnl_dev *irdma_pf_get_vf_hmc_fcn(struct irdma_sc_dev *dev,
 					 &vc_dev->pmf_index)) {
 		irdma_update_vsi_ctx(dev, vc_dev, false);
 		vc_dev->vf_vsi = NULL;
-		dev->vc_dev[vc_dev->iw_vf_idx] = NULL;
-		kfree(virt_mem.va);
+		spin_lock_irqsave(&dev->vc_dev_lock, flags);
+		if (dev->vc_dev[vc_dev->iw_vf_idx] == vc_dev)
+			dev->vc_dev[vc_dev->iw_vf_idx] = NULL;
+		spin_unlock_irqrestore(&dev->vc_dev_lock, flags);
+		irdma_put_vfdev(dev, vc_dev);
 		irdma_rblog_ibdev_dbg(to_ibdev(dev),
 				      "VIRT: VF%u error CQP Get HMC Function operation.\n",
 				      vf_id);
@@ -615,10 +620,11 @@ void irdma_pf_put_vf_hmc_fcn(struct irdma_sc_dev *dev,
 	irdma_set_hmc_fcn_info(vc_dev, &hmc_fcn_info);
 	hmc_fcn_info.free_fcn = true;
 	if (irdma_cqp_manage_hmc_fcn_cmd(dev, &hmc_fcn_info,
-					 &vc_dev->pmf_index))
+					 &vc_dev->pmf_index)) {
 		irdma_rblog_ibdev_dbg(to_ibdev(dev),
 				      "VIRT: VF%u error CQP Free HMC Function operation.\n",
 				      vc_dev->vf_id);
+	}
 
 	irdma_remove_vc_dev(dev, vc_dev);
 
@@ -1404,6 +1410,7 @@ int irdma_vchnl_req_get_multi_qs(struct irdma_sc_dev *dev)
 	struct irdma_vchnl_resp_multi_qs_info resp_multi_qs = {};
 	struct irdma_vchnl_req_init_info info = {};
 	struct irdma_qs_entry *entry;
+	u8 qs_cnt;
 	int ret, i;
 
 	if (!dev->vchnl_up)
@@ -1424,10 +1431,18 @@ int irdma_vchnl_req_get_multi_qs(struct irdma_sc_dev *dev)
 	dev->qos_dist_mode = resp_multi_qs.dist_mode;
 	for (i = 0;  i < IRDMA_MAX_USER_PRIORITY; i++) {
 		entry = &resp_multi_qs.qs_entry[i];
-		dev->qos[i].qs_cnt = entry->qs_cnt;
+		qs_cnt = entry->qs_cnt;
+		if (!qs_cnt || qs_cnt > IRDMA_MAX_QSETS) {
+			irdma_rblog_ibdev_dbg(to_ibdev(dev),
+					      "DEV: invalid qs_cnt %u for up %d\n",
+					      qs_cnt, i);
+			return -EINVAL;
+		}
+
+		dev->qos[i].qs_cnt = qs_cnt;
 		memcpy(dev->qos[i].qs_handle,
 			     entry->qs_handle,
-			     entry->qs_cnt * sizeof(u16));
+			     qs_cnt * sizeof(u16));
 	}
 
 	return 0;

@@ -1461,8 +1461,14 @@ poll_next_cqe:
 		get_64bit_val(cqe, 40, (u64 *)&qp);
 	else
 		qp = (struct irdma_qp_uk *)(unsigned long)comp_ctx;
+	get_64bit_val(cqe, 16, &qword2);
+	info->qp_id = (u32)FIELD_GET(IRDMACQ_QPID, qword2);
 	if (!qp || qp->destroy_pending) {
 		ret_code = -EFAULT;
+		goto exit;
+	}
+	if (qp->qp_id != info->qp_id) {
+		ret_code = -EINVAL;
 		goto exit;
 	}
 	if (info->error) {
@@ -1504,9 +1510,7 @@ poll_next_cqe:
 	}
 
 	get_64bit_val(cqe, 0, &qword0);
-	get_64bit_val(cqe, 16, &qword2);
 
-	info->qp_id = (u32)FIELD_GET(IRDMACQ_QPID, qword2);
 	info->ud_src_qpn = (u32)FIELD_GET(IRDMACQ_UDSRCQPN, qword2);
 
 	info->solicited_event = (bool)FIELD_GET(IRDMACQ_SOEVENT, qword3);
@@ -1534,6 +1538,10 @@ poll_next_cqe:
 		u32 array_idx;
 
 		array_idx = wqe_idx / qp->rq_wqe_size_multiplier;
+		if (array_idx >= qp->rq_size) {
+			ret_code = -EINVAL;
+			goto exit;
+		}
 		info->bytes_xfered = (u32)FIELD_GET(IRDMACQ_PAYLDLEN, qword0);
 
 		if (qword3 & IRDMACQ_STAG) {
@@ -1584,6 +1592,11 @@ poll_next_cqe:
 			qp->push_dropped = true;
 		}
 		if (info->comp_status != IRDMA_COMPL_STATUS_FLUSHED) {
+			if (wqe_idx >= qp->sq_ring.size) {
+				ret_code = -EINVAL;
+				goto exit;
+			}
+
 			if (info->op_type == IRDMA_OP_TYPE_NOP) {
 				IRDMA_RING_SET_TAIL(qp->sq_ring,
 						    wqe_idx + qp->sq_wrtrk_array[wqe_idx].quanta);
@@ -1886,9 +1899,10 @@ void irdma_print_sq_wqes(struct irdma_qp_uk *qp)
 				    qp->sq_wrtrk_array[wqe_idx].wr_len,
 				    qp->sq_wrtrk_array[wqe_idx].quanta, val);
 
-		for (i = 0; i < (qp->sq_wrtrk_array[wqe_idx].quanta * IRDMA_QP_WQE_MIN_SIZE / 8); i++)
+		for (i = 0; i < (qp->sq_wrtrk_array[wqe_idx].quanta * IRDMA_QP_WQE_MIN_SIZE / 8); i++) {
 			irdma_rblog_pr_debug("index %03d val: %016llx\n", i,
 					     *(wqe + i));
+		}
 		wqe_idx += qp->sq_wrtrk_array[wqe_idx].quanta;
 
 		if (!wqe_idx)

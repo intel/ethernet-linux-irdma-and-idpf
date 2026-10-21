@@ -2620,7 +2620,6 @@ struct ib_cq *irdma_create_cq(struct ib_device *ibdev,
 			}
 			cqmr_shadow = &iwpbl_shadow->cq_mr;
 			info.shadow_area_pa = cqmr_shadow->cq_pbl.addr;
-			cqmr->split = true;
 		} else {
 			info.shadow_area_pa = cqmr->shadow;
 		}
@@ -2698,7 +2697,8 @@ struct ib_cq *irdma_create_cq(struct ib_device *ibdev,
 	cqp_info->post_sq = 1;
 	cqp_info->in.u.cq_create.cq = cq;
 	cqp_info->in.u.cq_create.check_overflow = true;
-	if (dev->hw_wa & CQ_NO_CHECKFLOW)
+	if ((dev->hw_wa & CQ_NO_CHECKFLOW) ||
+	    (attr->flags & IB_UVERBS_CQ_FLAGS_IGNORE_OVERRUN))
 		cqp_info->in.u.cq_create.check_overflow = false;
 	cqp_info->in.u.cq_create.scratch = (uintptr_t)cqp_request;
 	cqp_info->create = true;
@@ -2825,6 +2825,8 @@ void irdma_copy_user_pgaddrs(struct irdma_mr *iwmr, u64 *pbl,
 				break;
 			pbl = irdma_next_pbl_addr(pbl, &pinfo, &idx);
 		}
+		if (!pbl_len)
+			break;
 	}
 }
 #endif
@@ -3121,6 +3123,9 @@ int irdma_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start, u64 len,
 	if (flags & ~(IB_MR_REREG_TRANS | IB_MR_REREG_PD | IB_MR_REREG_ACCESS))
 		return -EOPNOTSUPP;
 
+	if (iwmr->type != IRDMA_MEMREG_TYPE_MEM)
+		return -EOPNOTSUPP;
+
 	ret = irdma_hwdereg_mr(ib_mr);
 	if (ret)
 		return ret;
@@ -3188,6 +3193,9 @@ struct ib_mr *irdma_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 		return ERR_PTR(-EINVAL);
 
 	if (flags & ~(IB_MR_REREG_TRANS | IB_MR_REREG_PD | IB_MR_REREG_ACCESS))
+		return ERR_PTR(-EOPNOTSUPP);
+
+	if (iwmr->type != IRDMA_MEMREG_TYPE_MEM)
 		return ERR_PTR(-EOPNOTSUPP);
 
 	ret = irdma_hwdereg_mr(ib_mr);
@@ -3754,7 +3762,8 @@ void kc_set_loc_seq_num_mss(struct irdma_cm_node *cm_node)
 			cm_node->tcp_cntxt.mss = cm_node->iwdev->vsi.mtu - IRDMA_MTU_TO_MSS_IPV6;
 	}
 #else
-	cm_node->tcp_cntxt.loc_seq_num = htonl(current_kernel_time().tv_nsec);
+	get_random_bytes(&cm_node->tcp_cntxt.loc_seq_num,
+			 sizeof(cm_node->tcp_cntxt.loc_seq_num));
 	if (cm_node->iwdev->vsi.mtu > 1500 &&
 	    2 * cm_node->iwdev->vsi.mtu > cm_node->iwdev->rcv_wnd)
 		cm_node->tcp_cntxt.mss = (cm_node->ipv4) ?

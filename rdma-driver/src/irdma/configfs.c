@@ -1574,6 +1574,8 @@ static void irdma_release_vsi_grp(struct config_item *item)
 						     struct irdma_vsi_grp,
 						     group);
 
+	/* Release reference taken during group creation */
+	ib_device_put(&vsi_grp->iwdev->ibdev);
 	kfree(vsi_grp);
 }
 
@@ -1619,11 +1621,17 @@ static struct config_group *irdma_vsi_make_group(struct config_group *group,
 	if (!iwdev)
 		return ERR_PTR(-ENODEV);
 
+	/* Take a reference to prevent use-after-free if device is unbound */
+	if (!ib_device_try_get(&iwdev->ibdev))
+		return ERR_PTR(-ENODEV);
+
 	hw_ver = iwdev->rf->sc_dev.hw_attrs.uk_attrs.hw_rev;
 
 	vsi_grp = kzalloc(sizeof(*vsi_grp), GFP_KERNEL);
-	if (!vsi_grp)
+	if (!vsi_grp) {
+		ib_device_put(&iwdev->ibdev);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	vsi_grp->iwdev = iwdev;
 

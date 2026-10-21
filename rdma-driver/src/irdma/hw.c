@@ -741,9 +741,10 @@ static void irdma_destroy_cqp(struct irdma_pci_f *rf, bool free_hwcqp)
 	int status = 0;
 
 	status = irdma_sc_cqp_destroy(dev->cqp, free_hwcqp);
-	if (status)
+	if (status) {
 		irdma_rblog_ibdev_dbg(to_ibdev(dev),
 				      "ERR: Destroy CQP failed %d\n", status);
+	}
 
 	irdma_cleanup_pending_cqp_op(rf);
 	dma_free_coherent(dev->hw->device, cqp->sq.size, cqp->sq.va,
@@ -797,9 +798,10 @@ static void irdma_destroy_aeq(struct irdma_pci_f *rf)
 
 	aeq->sc_aeq.size = 0;
 	status = irdma_cqp_aeq_cmd(dev, &aeq->sc_aeq, IRDMA_OP_AEQ_DESTROY);
-	if (status)
+	if (status) {
 		irdma_rblog_ibdev_dbg(to_ibdev(dev),
 				      "ERR: Destroy AEQ failed %d\n", status);
+	}
 
 exit:
 	if (aeq->virtual_map)
@@ -836,10 +838,11 @@ static void irdma_destroy_ceq(struct irdma_pci_f *rf, struct irdma_ceq *iwceq)
 	}
 
 	status = irdma_sc_cceq_destroy_done(&iwceq->sc_ceq);
-	if (status)
+	if (status) {
 		irdma_rblog_ibdev_dbg(to_ibdev(dev),
 				      "ERR: CEQ destroy completion failed %d\n",
 				      status);
+	}
 exit:
 	dma_free_coherent(dev->hw->device, iwceq->mem.size, iwceq->mem.va,
 			  iwceq->mem.pa);
@@ -931,9 +934,10 @@ static void irdma_destroy_ccq(struct irdma_pci_f *rf)
 		destroy_workqueue(rf->cqp_cmpl_wq);
 	if (!rf->reset)
 		status = irdma_sc_ccq_destroy(dev->ccq, 0, true);
-	if (status)
+	if (status) {
 		irdma_rblog_ibdev_dbg(to_ibdev(dev),
 				      "ERR: CCQ destroy failed %d\n", status);
+	}
 	dma_free_coherent(dev->hw->device, ccq->mem_cq.size, ccq->mem_cq.va,
 			  ccq->mem_cq.pa);
 	ccq->mem_cq.va = NULL;
@@ -958,10 +962,11 @@ static void irdma_close_hmc_objects_type(struct irdma_sc_dev *dev,
 	info.rsrc_type = obj_type;
 	info.count = hmc_info->hmc_obj[obj_type].cnt;
 	info.privileged = privileged;
-	if (irdma_sc_del_hmc_obj(dev, &info, reset))
+	if (irdma_sc_del_hmc_obj(dev, &info, reset)) {
 		irdma_rblog_ibdev_dbg(to_ibdev(dev),
 				      "ERR: del HMC obj of type %d failed\n",
 				      obj_type);
+	}
 }
 
 /**
@@ -1791,8 +1796,9 @@ static int irdma_initialize_ilq(struct irdma_device *iwdev)
 	info.receive = irdma_receive_ilq;
 	info.xmit_complete = irdma_free_sqbuf;
 	status = irdma_puda_create_rsrc(&iwdev->vsi, &info);
-	if (status)
+	if (status) {
 		irdma_rblog_ibdev_dbg(&iwdev->ibdev, "ERR: ilq create fail\n");
+	}
 
 	return status;
 }
@@ -1819,8 +1825,9 @@ static int irdma_initialize_ieq(struct irdma_device *iwdev)
 	info.buf_size = iwdev->vsi.mtu + IRDMA_IPV4_PAD;
 	info.tx_buf_cnt = 4096;
 	status = irdma_puda_create_rsrc(&iwdev->vsi, &info);
-	if (status)
+	if (status) {
 		irdma_rblog_ibdev_dbg(&iwdev->ibdev, "ERR: ieq create fail\n");
+	}
 
 	return status;
 }
@@ -1980,7 +1987,7 @@ void irdma_rt_deinit_hw(struct irdma_device *iwdev)
 {
 	struct irdma_sc_qp qp = {};
 	irdma_rblog_ibdev_dbg(&iwdev->ibdev, "INIT: state = %d\n",
-		              iwdev->init_state);
+			      iwdev->init_state);
 
 	switch (iwdev->init_state) {
 	case IP_ADDR_REGISTERED:
@@ -2537,17 +2544,10 @@ void irdma_cqp_ce_handler_rca(struct irdma_pci_f *rf, struct irdma_sc_cq *cq,
 	int execute = 1;	/* execute on behalf of originating function */
 	u8 op;
 
-	struct irdma_device *iwdev = rf->iwdev;
-
-	if (!iwdev) {
-		irdma_rblog_pr_err("irdma_device not found!\n");
-		return;
+	if (info->error) {
+		irdma_rblog_pr_err("CQP: [Error] maj=0x%x min=0x%x\n",
+				   info->maj_err_code, info->min_err_code);
 	}
-
-	if (info->error)
-		irdma_rblog_ibdev_err(&rf->iwdev->ibdev,
-				      "CQP: [Error] maj=0x%x min=0x%x\n",
-				      info->maj_err_code, info->min_err_code);
 
 	/* These error codes indicate that one of the functions with CQP op
 	 * forwarding enabled is being reset.  It means there is no forwarded
@@ -2556,10 +2556,9 @@ void irdma_cqp_ce_handler_rca(struct irdma_pci_f *rf, struct irdma_sc_cq *cq,
 	 * for given function, as there will be no final completions for them.
 	 */
 	if (info->maj_err_code == 0xf002 && info->min_err_code == 0x0001) {
-		irdma_rblog_ibdev_err(&rf->iwdev->ibdev,
-				      "CQP: [RCA Function Reset Error] maj=0x%x min=0x%x hmc_fcn_id=%u\n",
-				      info->maj_err_code, info->min_err_code,
-				      info->orig_hmc_fcn_id);
+		irdma_rblog_pr_err("CQP: [RCA Function Reset Error] maj=0x%x min=0x%x hmc_fcn_id=%u\n",
+				   info->maj_err_code, info->min_err_code,
+				   info->orig_hmc_fcn_id);
 		/* TBD: clean up pending list */
 		/* TBD: in case of PFR, invalidate also VFs */
 		return;
@@ -2588,10 +2587,9 @@ void irdma_cqp_ce_handler_rca(struct irdma_pci_f *rf, struct irdma_sc_cq *cq,
 	rf->cqp.rca_stats[RCA_LAST_RCVD_PMF] = info->orig_hmc_fcn_id;
 	rf->cqp.rca_rcvd_ops[op]++;
 
-	irdma_rblog_ibdev_dbg(&iwdev->ibdev, "RCA: op %d exec %d pend %d\n",
-			      op, execute, pending);
-	irdma_rblog_ibdev_dbg(&iwdev->ibdev, "RCA: wqe %08lx\n",
-			      (uintptr_t)rqe->small_buf.va);
+	irdma_rblog_pr_debug("RCA: op %d exec %d pend %d\n", op, execute,
+			     pending);
+	irdma_rblog_pr_debug("RCA: wqe %08lx\n", (uintptr_t)rqe->small_buf.va);
 
 	/* return pending completion first */
 	if (pending) {
@@ -2684,11 +2682,12 @@ void irdma_cqp_ce_handler(struct irdma_pci_f *rf, struct irdma_sc_cq *cq)
 		if (info.error && irdma_cqp_crit_err(dev,
 						     cqp_request->info.cqp_cmd,
 						     info.maj_err_code,
-						     info.min_err_code))
+						     info.min_err_code)) {
 			irdma_rblog_ibdev_err(&rf->iwdev->ibdev,
 					      "cqp opcode = 0x%x maj_err_code = 0x%x min_err_code = 0x%x\n",
 					      info.op_code, info.maj_err_code,
 					      info.min_err_code);
+		}
 
 		if (cqp_request) {
 			cqp_request->compl_info.maj_err_code =
@@ -3141,7 +3140,7 @@ int irdma_manage_qhash(struct irdma_device *iwdev, struct irdma_cm_info *cminfo,
 		if (!wait)
 			irdma_add_ref_cmnode(cm_node);
 	}
-	if (info->ipv4_valid)
+	if (info->ipv4_valid) {
 		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
 				      "CM: %s caller: %pS loc_port=0x%04x rem_port=0x%04x loc_addr=%pI4 rem_addr=%pI4 mac=%pM, vlan_id=%d cm_node=%p\n",
 				      (!mtype) ? "DELETE" : "ADD",
@@ -3150,7 +3149,8 @@ int irdma_manage_qhash(struct irdma_device *iwdev, struct irdma_cm_info *cminfo,
 				      info->dest_ip, info->src_ip,
 				      info->mac_addr, cminfo->vlan_id,
 				      cmnode ? cmnode : NULL);
-	else
+	}
+	else {
 		irdma_rblog_ibdev_dbg(&iwdev->ibdev,
 				      "CM: %s caller: %pS loc_port=0x%04x rem_port=0x%04x loc_addr=%pI6 rem_addr=%pI6 mac=%pM, vlan_id=%d cm_node=%p\n",
 				      (!mtype) ? "DELETE" : "ADD",
@@ -3159,6 +3159,7 @@ int irdma_manage_qhash(struct irdma_device *iwdev, struct irdma_cm_info *cminfo,
 				      info->dest_ip, info->src_ip,
 				      info->mac_addr, cminfo->vlan_id,
 				      cmnode ? cmnode : NULL);
+	}
 
 	cqp_info->in.u.manage_qhash_table_entry.cqp = &iwdev->rf->cqp.sc_cqp;
 	cqp_info->in.u.manage_qhash_table_entry.scratch = (uintptr_t)cqp_request;
@@ -3364,9 +3365,10 @@ void irdma_flush_wqes(struct irdma_qp *iwqp, u32 flush_mask)
 		}
 		if (irdma_upload_context &&
 		    irdma_upload_qp_context(rf, iwqp->sc_qp.qp_uk.qp_id,
-					    iwqp->sc_qp.qp_uk.qp_type, 0, 1))
+					    iwqp->sc_qp.qp_uk.qp_type, 0, 1)) {
 			irdma_rblog_ibdev_warn(&iwqp->iwdev->ibdev,
-				               "failed to upload QP context\n");
+					       "failed to upload QP context\n");
+		}
 		if (!iwqp->user_mode)
 			irdma_sched_qp_flush_work(iwqp);
 	}

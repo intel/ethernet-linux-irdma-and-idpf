@@ -1594,6 +1594,7 @@ static int idpf_txq_group_alloc(struct idpf_vport *vport, struct idpf_q_vec_rsrc
 			struct idpf_queue *q = tx_qgrp->txqs[j];
 
 			u64_stats_init(&q->stats_sync);
+			spin_lock_init(&q->xdp_tx_lock);
 			q->dev = idpf_adapter_to_dev(adapter);
 			q->netdev = vport->netdev;
 			q->vport = vport;
@@ -2876,6 +2877,7 @@ static void idpf_tx_splitq_pkt_err_unmap(struct idpf_queue *txq,
 		.dev    = txq->dev,
 		.ss     = &ss,
 	};
+	struct sk_buff *skb = first->skb;
 
 	u64_stats_update_begin(&txq->stats_sync);
 	u64_stats_inc(&txq->q_stats.tx.dma_map_errs);
@@ -2886,6 +2888,9 @@ static void idpf_tx_splitq_pkt_err_unmap(struct idpf_queue *txq,
 		tx_buf = &txq->tx.bufs[idpf_tx_buf_next(tx_buf)];
 		libeth_tx_complete(tx_buf, &cp);
 	}
+
+	first->skb = NULL;
+	dev_kfree_skb_any(skb);
 
 	/* Update tail in case netdev_xmit_more was previously true. */
 	idpf_tx_buf_hw_update(txq, params->prev_ntu, false);
@@ -3871,7 +3876,7 @@ static int idpf_rx_rsc(struct idpf_queue *rxq, struct sk_buff *skb,
 
 	u64_stats_update_begin(&rxq->stats_sync);
 	u64_stats_inc(&rxq->q_stats.rx.rsc_pkts);
-	rsc_seg_stat = min_t(u16, IDPF_MAX_SEGS, rsc_segments) - 1;
+	rsc_seg_stat = clamp_t(u16, rsc_segments, 1, IDPF_MAX_SEGS) - 1;
 	u64_stats_inc(&rxq->q_stats.rx.segs[rsc_seg_stat]);
 	u64_stats_add(&rxq->q_stats.rx.rsc_segs_tot, rsc_segments);
 	u64_stats_add(&rxq->q_stats.rx.rsc_bytes, skb->data_len);
@@ -4348,17 +4353,14 @@ int idpf_xmit_xdpq(struct xdp_buff *xdp, struct idpf_queue *xdpq)
 #endif
 {
 	struct idpf_tx_splitq_params tx_params = { };
-	u16 ntu = xdpq->next_to_use;
 	struct idpf_tx_buf *tx_buf;
 	dma_addr_t dma;
 	void *data;
 	u32 buf_id;
 	u32 size;
+	u16 ntu;
 
 	if (unlikely(!xdp))
-		return IDPF_XDP_CONSUMED;
-
-	if (unlikely(!IDPF_DESC_UNUSED(xdpq)))
 		return IDPF_XDP_CONSUMED;
 
 #ifdef HAVE_XDP_FRAME_STRUCT
@@ -4372,13 +4374,19 @@ int idpf_xmit_xdpq(struct xdp_buff *xdp, struct idpf_queue *xdpq)
 	if (dma_mapping_error(xdpq->dev, dma))
 		return IDPF_XDP_CONSUMED;
 
+	spin_lock_bh(&xdpq->xdp_tx_lock);
+	if (unlikely(!IDPF_DESC_UNUSED(xdpq)))
+		goto err_unmap_dma;
+
+	ntu = xdpq->next_to_use;
+
 	if (unlikely(idpf_queue_has(FLOW_SCH_EN, xdpq))) {
 		/* Xdp only uses a single buffer. No need to save refillq state
 		 * for rollback like we do in the standard data path.
 		 */
 		if (unlikely(!idpf_tx_get_free_buf_id(xdpq->tx.refillq,
 						      &buf_id)))
-			return IDPF_XDP_CONSUMED;
+			goto err_unmap_dma;
 
 		tx_params.compl_tag = buf_id;
 
@@ -4389,7 +4397,7 @@ int idpf_xmit_xdpq(struct xdp_buff *xdp, struct idpf_queue *xdpq)
 		if (idpf_tx_splitq_need_re(xdpq)) {
 			tx_params.eop_cmd |= IDPF_TXD_FLEX_FLOW_CMD_RE;
 			xdpq->txq_grp->num_completions_pending++;
-			xdpq->tx.last_re = xdpq->next_to_use;
+			xdpq->tx.last_re = ntu;
 		}
 	} else {
 		buf_id = ntu;
@@ -4427,9 +4435,17 @@ int idpf_xmit_xdpq(struct xdp_buff *xdp, struct idpf_queue *xdpq)
 
 	tx_buf->type = LIBETH_SQE_XDP_TX;
 	tx_buf->rs_idx = ntu;
+	idpf_tx_buf_next(tx_buf) = IDPF_TXBUF_NULL;
 	xdpq->next_to_use = idpf_tx_splitq_bump_ntu(xdpq, ntu);
+	spin_unlock_bh(&xdpq->xdp_tx_lock);
 
 	return IDPF_XDP_TX;
+
+err_unmap_dma:
+	spin_unlock_bh(&xdpq->xdp_tx_lock);
+	dma_unmap_single(xdpq->dev, dma, size, DMA_TO_DEVICE);
+
+	return IDPF_XDP_CONSUMED;
 }
 
 #ifdef HAVE_XDP_FRAME_STRUCT
@@ -5259,6 +5275,7 @@ static int idpf_vport_intr_req_irq(struct idpf_vport *vport,
 		err = request_irq(irq_num, idpf_vport_intr_clean_queues, 0,
 				  name, q_vector);
 		if (err) {
+			kfree(name);
 			netdev_err(vport->netdev,
 				   "Request_irq failed, error: %d\n", err);
 			goto free_q_irqs;

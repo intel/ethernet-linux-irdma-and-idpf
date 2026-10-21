@@ -154,9 +154,10 @@ static void icrdma_lan_unregister_qset(struct irdma_sc_vsi *vsi,
 		mqset.num = 2;
 		mqset.teid[0] = tc_node1->l2_sched_node_id;
 		mqset.teid[1] = tc_node2->l2_sched_node_id;
-		if (cdev_info->ops->free_multi_res(cdev_info, &mqset))
+		if (cdev_info->ops->free_multi_res(cdev_info, &mqset)) {
 			irdma_rblog_ibdev_warn(&iwdev->ibdev,
 					       "WS: LAN free_res for rdma qset failed.\n");
+		}
 	} else {
 		struct iidc_rdma_qset_params qset = { };
 		struct irdma_ws_node *tc_node = tc_node1 ? tc_node1 : tc_node2;
@@ -166,9 +167,10 @@ static void icrdma_lan_unregister_qset(struct irdma_sc_vsi *vsi,
 		qset.vport_id = vsi->vsi_idx;
 		qset.teid = tc_node->l2_sched_node_id;
 
-		if (cdev_info->ops->free_res(cdev_info, &qset))
+		if (cdev_info->ops->free_res(cdev_info, &qset)) {
 			irdma_rblog_ibdev_warn(&iwdev->ibdev,
 					       "WS: LAN free_res for rdma qset failed.\n");
+		}
 	}
 }
 
@@ -305,12 +307,8 @@ static int icrdma_fill_device_info(struct irdma_device *iwdev,
 			return -EINVAL;
 		}
 
-		if (cdev_info->ver.major >= 10 && cdev_info->ver.minor >= 3)
-			iwdev->lag_mode = cdev_info->bond_aa ?
-					IRDMA_LAG_ACTIVE_ACTIVE :
-					IRDMA_LAG_ACTIVE_PASSIVE;
-		else
-			iwdev->lag_mode = IRDMA_LAG_ACTIVE_PASSIVE;
+		iwdev->lag_mode = cdev_info->bond_aa ?
+			IRDMA_LAG_ACTIVE_ACTIVE : IRDMA_LAG_ACTIVE_PASSIVE;
 	}
 	iwdev->vsi_num = cdev_info->vport_id;
 	iwdev->init_state = INITIAL_STATE;
@@ -555,10 +553,11 @@ static int icrdma_probe(struct auxiliary_device *aux_dev, const struct auxiliary
 	if (irdma_fw_major_ver(&rf->sc_dev) == 2 && mod_rdpu_bw)
 		irdma_modify_rdpu_bw(rf);
 
-	if (irdma_set_attr_from_fragcnt(&rf->sc_dev, rf->fragcnt_limit))
+	if (irdma_set_attr_from_fragcnt(&rf->sc_dev, rf->fragcnt_limit)) {
 		irdma_rblog_dev_warn(rf->hw.device,
 				     "device limit update failed for fragment count %d\n",
 				     rf->fragcnt_limit);
+	}
 	l2params.mtu = iwdev->netdev->mtu;
 	icrdma_fill_qos_info(&l2params, &cdev_info->qos_info);
 	if (rf->protocol_used != IRDMA_IWARP_PROTOCOL_ONLY)
@@ -581,6 +580,7 @@ static int icrdma_probe(struct auxiliary_device *aux_dev, const struct auxiliary
 	if (err)
 		goto err_notifier_reg;
 	irdma_add_handler(hdl);
+	irdma_update_iwarp_rd_fence_rate(rf->pcidev);
 #ifdef CONFIG_DEBUG_FS
 	irdma_dbg_pf_init(hdl);
 #endif
@@ -642,7 +642,7 @@ static void icrdma_remove(struct auxiliary_device *aux_dev)
 							    adev);
 	struct iidc_core_dev_info *cdev_info = iidc_adev->cdev_info;
 	struct irdma_device *iwdev = auxiliary_get_drvdata(aux_dev);
-
+	struct pci_dev *pcidev = iwdev->rf->pcidev;
 	u8 rdma_ver = iwdev->rf->rdma_ver;
 
 	if (!iwdev->rf->ftype &&
@@ -685,6 +685,7 @@ static void icrdma_remove(struct auxiliary_device *aux_dev)
 	irdma_ib_unregister_device(iwdev);
 	irdma_unregister_notifiers(iwdev);
 	irdma_deinit_device(iwdev);
+	irdma_update_iwarp_rd_fence_rate(pcidev);
 	ib_dealloc_device(&iwdev->ibdev);
 	irdma_rblog_pr_debug("INIT: Gen[%d] func[%d] device remove success\n",
 			     rdma_ver, PCI_FUNC(cdev_info->pdev->devfn));

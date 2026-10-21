@@ -191,8 +191,9 @@ static int ig3rdma_core_fill_device_info(struct irdma_pci_f *rf,
 	irdma_set_rf_user_cfg_params(rf);
 
 	rf->rca_config = irdma_rca_config;
-	if (irdma_rca_ena)
+	if (irdma_rca_ena) {
 		irdma_rblog_pr_info("RCA: cfg=0x%x\n", irdma_rca_config);
+	}
 
 	irdma_rblog_dev_info(rf->hw.device, "%s: feature_cap 0x%016llx\n",
 			     __func__, rf->sc_dev.vc_caps.feature_cap);
@@ -297,11 +298,12 @@ static int ig3rdma_core_probe(struct auxiliary_device *aux_dev,
 		irdma_rblog_pr_info("irdma: Please update both LAN and RDMA drivers from same release for interface compatibility\n");
 		return -EINVAL;
 	}
-	if (cdev_info->ver.minor != IIDC_MINOR_VER)
+	if (cdev_info->ver.minor != IIDC_MINOR_VER) {
 		irdma_rblog_pr_info("probe: minor version mismatch: expected %0d.%0d caller specified %0d.%0d\n",
 				    IIDC_MAJOR_VER, IIDC_MINOR_VER,
 				    cdev_info->ver.major,
 				    cdev_info->ver.minor);
+	}
 	irdma_rblog_pr_info("probe: cdev_info=%p, cdev_info->dev.aux_dev.bus->number=%d msix_count=%d ftype=%d ver.major=%d ver.minor=%d\n",
 			    cdev_info, cdev_info->pdev->bus->number,
 			    ((struct iidc_rdma_priv_dev_info *)cdev_info->iidc_priv)->msix_count,
@@ -324,6 +326,13 @@ static int ig3rdma_core_probe(struct auxiliary_device *aux_dev,
 	err = irdma_ctrl_init_hw(rf);
 	if (err)
 		goto err_ctrl_init;
+
+#ifndef NO_PCI_ENABLE_ATOMIC_API
+	if (!rf->ftype
+	    && pci_enable_atomic_ops_to_root(cdev_info->pdev, PCI_EXP_DEVCAP2_ATOMIC_COMP64)) {
+		irdma_rblog_pr_debug("irdma: Enabling pci atomics failed\n");
+	}
+#endif /* NO_PCI_ENABLE_ATOMIC_API */
 
 	if (rf->rdma_ver >= IRDMA_GEN_3 &&
 	    rf->sc_dev.hw_wa & TIMER_NEEDED)
